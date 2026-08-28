@@ -19,7 +19,9 @@ sampling overhead and the required session-destroy-before-socket-close
 lifecycle for both providers. Full field, controlled performance, and
 deployment-profile qualification remain open. The project intentionally does
 not yet contain a production agent, backend, dashboard, alert engine, or RCA
-engine.
+engine. The first deterministic constant-loss incident fixture now preserves
+paired sender/receiver evidence and explicit non-claims for future diagnostic
+work.
 
 The first product claim to prove is:
 
@@ -124,8 +126,10 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [SRT statistics field map](docs/architecture/srt-stats-field-map.md)
 - [Public SRT API adapter](docs/architecture/public-srt-adapter.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
+- [Golden incident datasets](docs/architecture/golden-incidents.md)
 - [Provider qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
 - [Retained cross-provider evidence](qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
 - [Retained sampling and lifecycle evidence](qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
+- [Constant-loss golden incident](testdata/golden-incidents/incident-001-constant-loss/README.md)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)

@@ -169,6 +169,30 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
         PRIVATE RobotweaxSRTTelemetry::core)
     add_test(NAME robotweax_srt_telemetry_c_api_test
         COMMAND robotweax_srt_telemetry_c_api_test)
+
+    set(ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/testdata/golden-incidents/incident-001-constant-loss")
+    add_executable(robotweax_srt_telemetry_golden_incident_test
+        sdk/tests/test_golden_incident.cpp)
+    target_link_libraries(robotweax_srt_telemetry_golden_incident_test
+        PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_golden_incident_test
+        PRIVATE cxx_std_20)
+    add_test(NAME robotweax_srt_telemetry_golden_incident_test
+        COMMAND robotweax_srt_telemetry_golden_incident_test
+            "${ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR}/samples.csv")
+
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME robotweax_srt_telemetry_golden_incident_manifest_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
+                "${ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR}/manifest.json")
+        add_test(NAME robotweax_srt_telemetry_golden_incident_reproducibility_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR}/generate.py"
+                --check)
+    endif()
 endif()
 
 install(TARGETS robotweax_srt_telemetry

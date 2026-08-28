@@ -27,3 +27,7 @@ ctest --test-dir build --output-on-failure
 Keep builds out of the source tree and preserve compiler warnings. Do not add
 media payloads, passphrases, key material, private infrastructure, customer
 identifiers, or unredacted Stream IDs to fixtures.
+
+Golden incidents must include a manifest, a digest-pinned sample dataset,
+machine expectations, contradictions, and deterministic regeneration. Mark
+synthetic fixtures explicitly; never present them as provider qualification.

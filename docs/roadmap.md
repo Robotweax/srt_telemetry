@@ -23,7 +23,8 @@
 - macOS arm64 sampling microbenchmark and close/sample lifecycle candidate
   complete; controlled multi-platform release budgets and stress profiles open;
   and
-- first golden incident datasets.
+- first constant-loss golden incident contract fixture complete; captured fault
+  datasets and the remaining initial corpus open.
 
 ## Phase 2: diagnostic proof
 

@@ -1,0 +1,145 @@
+{
+  "contradictions": [
+    "The fixture does not establish the location or cause of real network loss.",
+    "Unavailable drop and undecrypt counters cannot support a zero-drop or no-decrypt-failure claim.",
+    "Synthetic wall-clock alignment does not qualify real endpoint clock synchronization."
+  ],
+  "dataset": {
+    "format": "robotweax-srt-telemetry-csv-v1",
+    "roles": [
+      "sender",
+      "receiver"
+    ],
+    "rows": 18,
+    "sampleIntervalNano": 1000000000,
+    "samplesFile": "samples.csv",
+    "sha256": "5612df55b29f9a5c2689b1739471b60941ba326d96f1d674cc55b47dcb8d4fa9"
+  },
+  "direction": "sender-to-receiver",
+  "expectedEvidence": [
+    "receiver loss is observed only at the receiver and retains its observation side",
+    "sender loss and retransmission rise together during the active fault window",
+    "physical sent packets equal unique sent packets plus retransmissions during loss",
+    "drop and undecrypt counters remain unavailable rather than synthetic zero",
+    "loss and retransmission deltas return to zero after the fault window"
+  ],
+  "failureClass": "constant-packet-loss",
+  "faultPlan": {
+    "description": "Five original DATA packets per second are lost and recovered by retransmission during samples 3 through 6.",
+    "firstActiveSample": 3,
+    "lastActiveSample": 6,
+    "seed": 104729
+  },
+  "incidentId": "incident-001-constant-loss",
+  "machineExpectations": [
+    {
+      "field": "receiver_loss_packet_delta",
+      "id": "receiver-loss-active",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "value": 5
+    },
+    {
+      "field": "sender_loss_packet_delta",
+      "id": "sender-loss-active",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "value": 5
+    },
+    {
+      "field": "retransmitted_packet_delta",
+      "id": "retransmission-active",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "value": 5
+    },
+    {
+      "comparisonField": "unique_sent_packet_delta",
+      "field": "sent_packet_delta",
+      "id": "physical-includes-retransmission",
+      "operator": "equals-field-plus",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "value": 5
+    },
+    {
+      "field": "receiver_loss_packet_delta",
+      "id": "receiver-loss-recovered",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 7,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_drop_packet_delta",
+      "id": "receiver-drop-unavailable",
+      "operator": "unavailable",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      }
+    },
+    {
+      "field": "receiver_undecryptable_packet_delta",
+      "id": "undecrypt-unavailable",
+      "operator": "unavailable",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      }
+    }
+  ],
+  "provenance": {
+    "capturedFromProvider": false,
+    "description": "Deterministic semantic fixture; it is not provider-runtime qualification evidence.",
+    "generator": "generate.py",
+    "kind": "synthetic-contract-fixture",
+    "telemetryVersion": "0.1.0-alpha.0"
+  },
+  "providers": [
+    {
+      "buildProfile": "clean-release-shared-openssl",
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "role": "sender",
+      "version": "0.2.0-4-g271f832"
+    },
+    {
+      "buildProfile": "release-shared-openssl-generated-install",
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "role": "receiver",
+      "version": "1.5.5"
+    }
+  ],
+  "schemaVersion": "1alpha1",
+  "topology": "one sender connected directly to one receiver",
+  "transportProfile": {
+    "addressFamily": "ipv4",
+    "api": "message",
+    "encryption": "none",
+    "fec": "none",
+    "group": "none",
+    "mode": "live"
+  }
+}
