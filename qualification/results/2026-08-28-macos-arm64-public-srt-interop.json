@@ -1,0 +1,144 @@
+{
+  "environment": {
+    "coordination": "out-of-band-stdio-barrier",
+    "encryption": "none",
+    "fec": "none",
+    "group": false,
+    "machine": "arm64",
+    "mode": "live-message",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "pythonVersion": "3.9.6",
+    "transport": "ipv4-loopback"
+  },
+  "generatedAt": "2026-08-28T14:44:13.733484+00:00",
+  "kind": "public-srt-interop-qualification",
+  "payloads": [
+    {
+      "bytes": 1316,
+      "direction": "caller-to-listener",
+      "sha256": "ef97178fce43f78773e1c57cebaadd55904a1e5d810f8f75219b23e92c00687d"
+    },
+    {
+      "bytes": 1316,
+      "direction": "listener-to-caller",
+      "sha256": "25eede99947aab4e38c8be1a037a757404b73af767b0ba85723b5356202decf5"
+    }
+  ],
+  "providers": [
+    {
+      "artifacts": {
+        "peerExecutableSha256": "7eb1156eb8be88803334fa8de60de49b5a47edb61cf8589d9e6fe1a410a7cece",
+        "providerLibrarySha256": "1377a61d159856f7785bcc6c6fd9af74d1f11e78804c8e6db7b8bc6cb8e95f6a"
+      },
+      "buildProfile": "clean-release-shared-openssl",
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "version": "0.2.0-4-g271f832"
+    },
+    {
+      "artifacts": {
+        "peerExecutableSha256": "cad5d3b86384c0ff72f3080d2e287fd61c6256e34f0165935fd6b8828c96d23b",
+        "providerLibrarySha256": "f5db9ca66be4d681c3271664c6f25ae269a7ad62ae75c815e0fb521f991cff04"
+      },
+      "buildProfile": "release-shared-openssl-generated-install",
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "version": "1.5.5"
+    }
+  ],
+  "scenarios": [
+    {
+      "callerProvider": "haivision-srt",
+      "listenerProvider": "robotweax-srt",
+      "name": "robotweax-listener-haivision-caller",
+      "participants": [
+        {
+          "availableFields": 48143,
+          "intervalNano": 253369958,
+          "provider": "robotweax-srt",
+          "receivedPacketDelta": 1,
+          "receivedWireByteDelta": 1360,
+          "role": "listener",
+          "rttSeconds": 0.00237,
+          "sentPacketDelta": 1,
+          "sentWireByteDelta": 1360,
+          "uniqueReceivedPacketDelta": 1,
+          "uniqueReceivedWireByteDelta": 1360,
+          "uniqueSentPacketDelta": 1,
+          "uniqueSentWireByteDelta": 1360
+        },
+        {
+          "availableFields": 48143,
+          "intervalNano": 253373417,
+          "provider": "haivision-srt",
+          "receivedPacketDelta": 1,
+          "receivedWireByteDelta": 1360,
+          "role": "caller",
+          "rttSeconds": 0.001573,
+          "sentPacketDelta": 1,
+          "sentWireByteDelta": 1360,
+          "uniqueReceivedPacketDelta": 1,
+          "uniqueReceivedWireByteDelta": 1360,
+          "uniqueSentPacketDelta": 1,
+          "uniqueSentWireByteDelta": 1360
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "callerProvider": "robotweax-srt",
+      "listenerProvider": "haivision-srt",
+      "name": "haivision-listener-robotweax-caller",
+      "participants": [
+        {
+          "availableFields": 48143,
+          "intervalNano": 252401250,
+          "provider": "haivision-srt",
+          "receivedPacketDelta": 1,
+          "receivedWireByteDelta": 1360,
+          "role": "listener",
+          "rttSeconds": 0.0013369999999999999,
+          "sentPacketDelta": 1,
+          "sentWireByteDelta": 1360,
+          "uniqueReceivedPacketDelta": 1,
+          "uniqueReceivedWireByteDelta": 1360,
+          "uniqueSentPacketDelta": 1,
+          "uniqueSentWireByteDelta": 1360
+        },
+        {
+          "availableFields": 48143,
+          "intervalNano": 252401041,
+          "provider": "robotweax-srt",
+          "receivedPacketDelta": 1,
+          "receivedWireByteDelta": 1360,
+          "role": "caller",
+          "rttSeconds": 0.002604,
+          "sentPacketDelta": 1,
+          "sentWireByteDelta": 1360,
+          "uniqueReceivedPacketDelta": 1,
+          "uniqueReceivedWireByteDelta": 1360,
+          "uniqueSentPacketDelta": 1,
+          "uniqueSentWireByteDelta": 1360
+        }
+      ],
+      "status": "pass"
+    }
+  ],
+  "schemaVersion": "1alpha1",
+  "status": "pass",
+  "telemetry": {
+    "adapterVersion": "0.1.0-alpha.0",
+    "revision": "93473212fe2077734d409e7ad35d6505145596e6",
+    "runtimeFields": [
+      "sent_packet_total",
+      "received_packet_total",
+      "unique_sent_packet_total",
+      "unique_received_packet_total",
+      "sent_wire_byte_total",
+      "received_wire_byte_total",
+      "unique_sent_wire_byte_total",
+      "unique_received_wire_byte_total",
+      "rtt_seconds"
+    ]
+  }
+}

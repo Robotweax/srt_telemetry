@@ -12,10 +12,11 @@ telemetry contract, provider model, versioned C ABI, a non-destructive delta
 engine, a bounded in-memory recorder, an injected public SRT API adapter,
 initial schemas, and the validation plan. The adapter has deterministic
 header/signature coverage and live bidirectional self-loopback coverage for
-Robotweax SRT and Haivision SRT v1.5.5. Cross-implementation interoperability
-and full field/profile qualification remain open. The project intentionally
-does not yet contain a production agent, backend, dashboard, alert engine, or
-RCA engine.
+Robotweax SRT and Haivision SRT v1.5.5. Robotweax-to-Haivision interoperability
+also passes in both caller/listener role combinations for the common nine-field
+Live/Message IPv4 loopback subset. Full field and deployment-profile
+qualification remain open. The project intentionally does not yet contain a
+production agent, backend, dashboard, alert engine, or RCA engine.
 
 The first product claim to prove is:
 
@@ -121,5 +122,6 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Public SRT API adapter](docs/architecture/public-srt-adapter.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
 - [Provider qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
+- [Retained cross-provider evidence](qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)

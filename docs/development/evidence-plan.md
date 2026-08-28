@@ -16,6 +16,11 @@ but do not satisfy the provider qualification requirement by themselves. The
 remaining gate requires live sockets, both relevant data directions, explicit
 reset observations, lifecycle races, and measured sampling overhead.
 
+The first retained cross-provider result covers live sockets and both
+caller/listener role combinations for the common nine-field Live/Message IPv4
+loopback subset. It does not close the reset, lifecycle, performance, encrypted,
+IPv6, FEC, group, or remaining-field gates.
+
 ## Initial fault corpus
 
 1. constant loss;

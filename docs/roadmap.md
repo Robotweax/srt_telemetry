@@ -18,6 +18,8 @@
   profile complete, full profile open;
 - pinned Haivision SRT v1.5.5 header/signature and bidirectional self-loopback
   candidate profile complete, full profile open;
+- Robotweax-to-Haivision Live/Message IPv4 loopback interop complete in both
+  caller/listener role combinations for the common nine-field subset;
 - microbenchmarks and close/sample lifecycle tests; and
 - first golden incident datasets.
 

@@ -30,3 +30,7 @@ transfer barriers use stdio, so only the two deterministic 1,316-byte payloads
 cross SRT after both telemetry baselines exist. The result includes exact
 revisions plus SHA-256 digests of both peer executables, provider libraries,
 and payloads.
+
+Retained results:
+
+- [2026-08-28 macOS arm64 public SRT interop](results/2026-08-28-macos-arm64-public-srt-interop.json)

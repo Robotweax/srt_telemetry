@@ -54,6 +54,10 @@ propagation.
 Provider-linked tests also establish real loopback connections and exchange
 payloads in both directions. They sample both endpoints and require physical
 and unique packet and wire-byte deltas plus RTT availability. These are
-self-provider runtime checks, not Robotweax-to-Haivision interoperability.
-Cross-implementation runs, the remaining candidate fields, reset behavior,
+self-provider runtime checks.
+
+A separate two-process harness also passes Robotweax-to-Haivision exchange in
+both caller/listener role combinations. That retained qualification covers the
+nine-field common subset on unencrypted Live/Message IPv4 loopback. The
+remaining candidate fields, IPv6, encrypted/FEC/group profiles, reset behavior,
 sampling overhead, and close/sample races remain qualification work.

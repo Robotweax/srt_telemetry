@@ -6,8 +6,9 @@ This map defines candidate mappings from the public SRT v1.5.5
 Robotweax SRT mappings are backed by its released public statistics contract.
 The adapter and its exact `srt_bistats` callback signature compile against both
 the Robotweax public header and pinned Haivision SRT v1.5.5. Haivision mappings
-remain qualification candidates until executed on live sockets against that
-exact pinned version in both relevant directions.
+for physical and unique packet/byte totals plus RTT have now executed on live
+cross-provider sockets against that exact pinned version in both caller/listener
+role combinations. The remaining mappings stay qualification candidates.
 
 Collection uses `clear = 0`. The adapter derives rates from lifetime counters
 and monotonic sample time rather than taking ownership of the host's interval

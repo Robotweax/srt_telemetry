@@ -10,10 +10,11 @@
   "qualifiedProfiles": [
     "public-header-and-bistats-signature",
     "deterministic-adapter-mapping",
-    "bidirectional-self-loopback-common-subset"
+    "bidirectional-self-loopback-common-subset",
+    "robotweax-haivision-bidirectional-loopback-common-subset"
   ],
   "notes": [
-    "Candidate record only; cross-implementation and full-field qualification have not been completed.",
-    "Headers and shared library were generated from the exact v1.5.5 tag through Haivision SRT's CMake interface and passed real caller/listener payload exchange in both directions."
+    "Candidate record only; full-field and deployment-profile qualification have not been completed.",
+    "Headers and shared library were generated from the exact v1.5.5 tag through Haivision SRT's CMake interface and passed real caller/listener payload exchange in both self-provider and Robotweax cross-provider directions."
   ]
 }

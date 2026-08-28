@@ -8,8 +8,8 @@ capabilities by itself.
 
 | Provider candidate | Exact source | Public header/signature | Deterministic adapter behavior | Bidirectional self-loopback | Cross-implementation interop | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Robotweax SRT `v0.2.0-4-g271f832` | `271f832ef4bb96fab13777a313a0af9d7e20af7e`; clean local clone | Pass | Pass | Pass | Not run | Runtime candidate |
-| Haivision SRT v1.5.5 | `b6b4ae990daa8193625a4ddeaeaed03023b23125`; tag `v1.5.5`; generated installed headers | Pass | Pass | Pass | Not run | Runtime candidate |
+| Robotweax SRT `v0.2.0-4-g271f832` | `271f832ef4bb96fab13777a313a0af9d7e20af7e`; clean local clone | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Interop candidate |
+| Haivision SRT v1.5.5 | `b6b4ae990daa8193625a4ddeaeaed03023b23125`; tag `v1.5.5`; generated installed headers | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Interop candidate |
 
 Both builds use the same adapter source and a compile-time assertion that the
 provider's `srt_bistats` address has exactly the injected callback type. The
@@ -22,15 +22,23 @@ The provider-linked loopback test opens real caller/listener sockets, exchanges
 and requires availability plus positive deltas for physical and unique packet
 and wire-byte counters. RTT must also be available on both endpoints.
 
+The two-process qualification executes each implementation once as caller and
+once as listener. Both directions carry a deterministic 1,316-byte payload only
+after out-of-band baseline barriers. The retained result records source
+revisions, build profiles, participant observations, and SHA-256 digests of the
+provider libraries, peer executables, and payloads:
+
+- [2026-08-28 macOS arm64 public SRT interop](../../qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
+
 ## Remaining release qualification
 
-- live caller-to-listener and listener-to-caller sampling where applicable;
-- Robotweax-to-Haivision runs in both data directions;
-- exact roles, modes, address families, encryption, FEC, and group profiles;
+- live caller-to-listener and listener-to-caller sampling for the remaining
+  candidate fields and profiles;
+- additional modes, address families, encryption, FEC, and group profiles;
 - observed reset and reconnect semantics for every enabled field;
 - sampling overhead and close/sample lifecycle race tests; and
 - retained evidence manifests with exact binaries, build flags, payloads, and
   expected observations.
 
-Until full field and cross-implementation checks pass, the candidate records
+Until full field and deployment-profile checks pass, the candidate records
 intentionally declare no release-qualified runtime capabilities.
