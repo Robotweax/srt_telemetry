@@ -11,6 +11,11 @@ Exit requires:
 - a recorder can preserve raw snapshots and data-quality boundaries; and
 - fault scenarios are deterministic and reproducible.
 
+Header compatibility and deterministic adapter mapping are necessary evidence,
+but do not satisfy the provider qualification requirement by themselves. The
+remaining gate requires live sockets, both relevant data directions, explicit
+reset observations, lifecycle races, and measured sampling overhead.
+
 ## Initial fault corpus
 
 1. constant loss;

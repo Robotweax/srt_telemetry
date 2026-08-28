@@ -33,7 +33,8 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_OK = 0,
         ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT = 1,
         ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH = 2,
-        ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE = 3
+        ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE = 3,
+        ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE = 4
     } robotweax_srt_telemetry_error;
 
     typedef enum robotweax_srt_telemetry_provider
@@ -166,7 +167,16 @@ extern "C"
         double unique_received_wire_bits_per_second;
     } robotweax_srt_telemetry_delta_v1;
 
+    typedef struct robotweax_srt_telemetry_record_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        robotweax_srt_telemetry_raw_sample_v1 raw;
+        robotweax_srt_telemetry_delta_v1 delta;
+    } robotweax_srt_telemetry_record_v1;
+
     typedef struct robotweax_srt_telemetry_delta_engine robotweax_srt_telemetry_delta_engine;
+    typedef struct robotweax_srt_telemetry_recorder robotweax_srt_telemetry_recorder;
 
     ROBOTWEAX_SRT_TELEMETRY_API const char *robotweax_srt_telemetry_version(void);
 
@@ -186,6 +196,36 @@ extern "C"
     robotweax_srt_telemetry_delta_engine_update(robotweax_srt_telemetry_delta_engine *engine,
                                                 const robotweax_srt_telemetry_raw_sample_v1 *sample,
                                                 robotweax_srt_telemetry_delta_v1 *delta);
+
+    /* The complete ring is allocated at creation. Push, read, and clear do not
+     * grow it. A full ring overwrites its oldest record. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_recorder_create(size_t capacity,
+                                            robotweax_srt_telemetry_recorder **recorder);
+
+    ROBOTWEAX_SRT_TELEMETRY_API void
+    robotweax_srt_telemetry_recorder_destroy(robotweax_srt_telemetry_recorder *recorder);
+
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_recorder_push(robotweax_srt_telemetry_recorder *recorder,
+                                          const robotweax_srt_telemetry_raw_sample_v1 *raw,
+                                          const robotweax_srt_telemetry_delta_v1 *delta);
+
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_read(
+        const robotweax_srt_telemetry_recorder *recorder, size_t oldest_first_index,
+        robotweax_srt_telemetry_record_v1 *record);
+
+    ROBOTWEAX_SRT_TELEMETRY_API size_t
+    robotweax_srt_telemetry_recorder_size(const robotweax_srt_telemetry_recorder *recorder);
+
+    ROBOTWEAX_SRT_TELEMETRY_API size_t
+    robotweax_srt_telemetry_recorder_capacity(const robotweax_srt_telemetry_recorder *recorder);
+
+    ROBOTWEAX_SRT_TELEMETRY_API uint64_t robotweax_srt_telemetry_recorder_overwritten_count(
+        const robotweax_srt_telemetry_recorder *recorder);
+
+    ROBOTWEAX_SRT_TELEMETRY_API void
+    robotweax_srt_telemetry_recorder_clear(robotweax_srt_telemetry_recorder *recorder);
 
 #ifdef __cplusplus
 }

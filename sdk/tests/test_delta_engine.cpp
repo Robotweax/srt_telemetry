@@ -126,6 +126,31 @@ void test_clock_and_provider_discontinuities()
           "provider change creates a new baseline");
 }
 
+void test_bounded_recorder_overwrite_order()
+{
+    robotweax::srt::telemetry::DeltaEngine engine;
+    robotweax::srt::telemetry::BoundedRecorder recorder(2);
+    check(recorder.capacity() == 2, "recorder preallocates requested capacity");
+
+    for (std::uint64_t index = 1; index <= 3; ++index)
+    {
+        auto raw = sample_at(index * 1'000);
+        raw.available_fields = ROBOTWEAX_SRT_TELEMETRY_FIELD_SENT_PACKET_TOTAL;
+        raw.sent_packet_total = index;
+        const auto delta = engine.update(raw);
+        recorder.push(raw, delta);
+    }
+
+    check(recorder.size() == 2, "recorder size remains bounded");
+    check(recorder.overwritten_count() == 1, "overwrite is observable");
+    check(recorder.read(0).raw.sent_packet_total == 2, "oldest retained record is second");
+    check(recorder.read(1).raw.sent_packet_total == 3, "newest retained record is third");
+
+    recorder.clear();
+    check(recorder.size() == 0, "clear removes retained records");
+    check(recorder.overwritten_count() == 0, "clear resets overwrite accounting");
+}
+
 } // namespace
 
 int main()
@@ -134,6 +159,7 @@ int main()
     test_missing_is_not_zero();
     test_counter_reset_is_field_local();
     test_clock_and_provider_discontinuities();
+    test_bounded_recorder_overwrite_order();
     if (failures != 0)
     {
         std::cerr << failures << " test checks failed\n";

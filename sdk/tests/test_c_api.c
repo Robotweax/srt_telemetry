@@ -36,6 +36,22 @@ int main(void)
         return 4;
     }
 
+    robotweax_srt_telemetry_recorder *recorder = NULL;
+    if (robotweax_srt_telemetry_recorder_create(2, &recorder) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        robotweax_srt_telemetry_delta_engine_destroy(engine);
+        return 5;
+    }
+    if (robotweax_srt_telemetry_recorder_push(recorder, &sample, &delta) !=
+            ROBOTWEAX_SRT_TELEMETRY_OK ||
+        robotweax_srt_telemetry_recorder_size(recorder) != 1)
+    {
+        robotweax_srt_telemetry_recorder_destroy(recorder);
+        robotweax_srt_telemetry_delta_engine_destroy(engine);
+        return 6;
+    }
+
+    robotweax_srt_telemetry_recorder_destroy(recorder);
     robotweax_srt_telemetry_delta_engine_destroy(engine);
     return 0;
 }

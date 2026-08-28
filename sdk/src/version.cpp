@@ -18,6 +18,8 @@ robotweax_srt_telemetry_error_string(const robotweax_srt_telemetry_error error)
         return "telemetry ABI mismatch";
     case ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE:
         return "allocation failure";
+    case ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE:
+        return "provider sample failure";
     }
     return "unknown telemetry error";
 }

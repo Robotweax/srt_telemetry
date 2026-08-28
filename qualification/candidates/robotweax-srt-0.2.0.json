@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1alpha1",
+  "provider": "robotweax-srt",
+  "providerVersion": "0.2.0-4-g271f832",
+  "publicApiProfile": "srt-1.5.5",
+  "adapterVersion": "0.1.0-alpha.0",
+  "buildProfile": "clean-release-shared-openssl",
+  "providerRevision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+  "capabilities": [],
+  "qualifiedProfiles": [
+    "public-header-and-bistats-signature",
+    "deterministic-adapter-mapping",
+    "bidirectional-self-loopback-common-subset"
+  ],
+  "notes": [
+    "Candidate record only; cross-implementation and full-field qualification have not been completed.",
+    "A clean local clone was built as a shared library and passed real caller/listener payload exchange in both directions."
+  ]
+}

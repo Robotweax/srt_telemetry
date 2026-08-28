@@ -9,8 +9,13 @@ extensions to expose additional diagnostic evidence.
 
 **Pre-alpha / evidence foundation.** The repository currently contains the
 telemetry contract, provider model, versioned C ABI, a non-destructive delta
-engine, initial schemas, and the validation plan. It intentionally does not yet
-contain a production agent, backend, dashboard, alert engine, or RCA engine.
+engine, a bounded in-memory recorder, an injected public SRT API adapter,
+initial schemas, and the validation plan. The adapter has deterministic
+header/signature coverage and live bidirectional self-loopback coverage for
+Robotweax SRT and Haivision SRT v1.5.5. Cross-implementation interoperability
+and full field/profile qualification remain open. The project intentionally
+does not yet contain a production agent, backend, dashboard, alert engine, or
+RCA engine.
 
 The first product claim to prove is:
 
@@ -43,7 +48,7 @@ Host-selected SRT implementation
                   |
              Delta engine
                   |
-        Recorder / callback (next)
+          Bounded recorder
                   |
           OTLP agent (after evidence gate)
 ```
@@ -74,7 +79,27 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The installed target is `RobotweaxSRTTelemetry::core`. The public headers are:
+To build the optional adapter, point CMake at an installed or generated public
+SRT header tree. The adapter accepts `srt_bistats` from the host as an injected
+function pointer and does not link another SRT implementation.
+
+```sh
+cmake -S . -B build-adapter \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON \
+  -DROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER=ON \
+  -DROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR=/path/to/srt/include
+cmake --build build-adapter --parallel
+ctest --test-dir build-adapter --output-on-failure
+```
+
+Live provider tests are enabled only when both
+`ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY` and
+`ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER` (`robotweax-srt` or
+`haivision-srt`) are supplied. These tests open an ephemeral UDP loopback port.
+
+The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
+`RobotweaxSRTTelemetry::public_srt_adapter`. The public headers are:
 
 ```c
 #include <robotweax/srt_telemetry.h>
@@ -84,10 +109,17 @@ The installed target is `RobotweaxSRTTelemetry::core`. The public headers are:
 #include <robotweax/srt_telemetry.hpp>
 ```
 
+```c
+#include <robotweax/srt_telemetry_public_srt.h>
+```
+
 ## Start here
 
 - [Telemetry contract](docs/architecture/telemetry-contract.md)
 - [Provider and capability model](docs/architecture/provider-model.md)
 - [SRT statistics field map](docs/architecture/srt-stats-field-map.md)
+- [Public SRT API adapter](docs/architecture/public-srt-adapter.md)
+- [Bounded recorder](docs/architecture/bounded-recorder.md)
+- [Provider qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)

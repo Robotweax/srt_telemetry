@@ -1,6 +1,6 @@
 # Roadmap
 
-## Phase 0: evidence foundation — current
+## Phase 0: evidence foundation — complete
 
 - common provider contract;
 - versioned C ABI;
@@ -10,12 +10,14 @@
 - adapter capability schema; and
 - golden-incident manifest.
 
-## Phase 1: recorder and provider qualification
+## Phase 1: recorder and provider qualification — current
 
-- callback and bounded JSONL/protobuf recorder;
-- public SRT API adapter using the host-selected library;
-- Robotweax SRT adapter profile;
-- pinned Haivision SRT adapter profile;
+- bounded in-memory recorder complete; callback and JSONL/protobuf export open;
+- public SRT API adapter using the host-selected library complete;
+- Robotweax SRT header/signature and bidirectional self-loopback candidate
+  profile complete, full profile open;
+- pinned Haivision SRT v1.5.5 header/signature and bidirectional self-loopback
+  candidate profile complete, full profile open;
 - microbenchmarks and close/sample lifecycle tests; and
 - first golden incident datasets.
 
