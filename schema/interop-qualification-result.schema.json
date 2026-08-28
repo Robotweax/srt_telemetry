@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/interop-qualification-result-v1alpha1.json",
+  "title": "Robotweax and Haivision public SRT interoperability qualification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "generatedAt",
+    "telemetry",
+    "environment",
+    "payloads",
+    "providers",
+    "scenarios"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1alpha1" },
+    "kind": { "const": "public-srt-interop-qualification" },
+    "status": { "const": "pass" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "adapterVersion", "runtimeFields"],
+      "properties": {
+        "revision": { "type": "string", "minLength": 7 },
+        "adapterVersion": { "type": "string", "minLength": 1 },
+        "runtimeFields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "machine",
+        "pythonVersion",
+        "transport",
+        "mode",
+        "encryption",
+        "fec",
+        "group",
+        "coordination"
+      ],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1 },
+        "machine": { "type": "string", "minLength": 1 },
+        "pythonVersion": { "type": "string", "minLength": 1 },
+        "transport": { "const": "ipv4-loopback" },
+        "mode": { "const": "live-message" },
+        "encryption": { "const": "none" },
+        "fec": { "const": "none" },
+        "group": { "const": false },
+        "coordination": { "const": "out-of-band-stdio-barrier" }
+      }
+    },
+    "payloads": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["direction", "bytes", "sha256"],
+        "properties": {
+          "direction": {
+            "enum": ["caller-to-listener", "listener-to-caller"]
+          },
+          "bytes": { "type": "integer", "minimum": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "providers": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/provider" }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/scenario" }
+    }
+  },
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "version", "revision", "buildProfile", "artifacts"],
+      "properties": {
+        "provider": { "enum": ["robotweax-srt", "haivision-srt"] },
+        "version": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 7 },
+        "buildProfile": { "type": "string", "minLength": 1 },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["peerExecutableSha256", "providerLibrarySha256"],
+          "properties": {
+            "peerExecutableSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "providerLibrarySha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "listenerProvider",
+        "callerProvider",
+        "status",
+        "participants"
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "listenerProvider": { "enum": ["robotweax-srt", "haivision-srt"] },
+        "callerProvider": { "enum": ["robotweax-srt", "haivision-srt"] },
+        "status": { "const": "pass" },
+        "participants": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/participant" }
+        }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "role",
+        "availableFields",
+        "intervalNano",
+        "sentPacketDelta",
+        "receivedPacketDelta",
+        "uniqueSentPacketDelta",
+        "uniqueReceivedPacketDelta",
+        "sentWireByteDelta",
+        "receivedWireByteDelta",
+        "uniqueSentWireByteDelta",
+        "uniqueReceivedWireByteDelta",
+        "rttSeconds"
+      ],
+      "properties": {
+        "provider": { "enum": ["robotweax-srt", "haivision-srt"] },
+        "role": { "enum": ["listener", "caller"] },
+        "availableFields": { "type": "integer", "minimum": 0 },
+        "intervalNano": { "type": "integer", "minimum": 1 },
+        "sentPacketDelta": { "type": "integer", "minimum": 1 },
+        "receivedPacketDelta": { "type": "integer", "minimum": 1 },
+        "uniqueSentPacketDelta": { "type": "integer", "minimum": 1 },
+        "uniqueReceivedPacketDelta": { "type": "integer", "minimum": 1 },
+        "sentWireByteDelta": { "type": "integer", "minimum": 1 },
+        "receivedWireByteDelta": { "type": "integer", "minimum": 1 },
+        "uniqueSentWireByteDelta": { "type": "integer", "minimum": 1 },
+        "uniqueReceivedWireByteDelta": { "type": "integer", "minimum": 1 },
+        "rttSeconds": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}
