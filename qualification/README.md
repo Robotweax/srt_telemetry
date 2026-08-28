@@ -72,11 +72,12 @@ Retained results:
 ## Constant-loss capture runner
 
 Build `robotweax_srt_telemetry_public_srt_incident_peer` once against each exact
-provider. The runner starts a Haivision receiver, a Robotweax sender, and a
-user-space UDP proxy between them:
+provider. The runner starts the selected sender/receiver pair and a user-space
+UDP proxy between them. Robotweax-to-Haivision remains the default direction:
 
 ```sh
 python3 qualification/run_constant_loss_capture.py \
+  --direction robotweax-to-haivision \
   --robotweax-peer /path/to/robotweax/incident-peer \
   --robotweax-library /path/to/robotweax/libsrt \
   --robotweax-version VERSION \
@@ -102,6 +103,12 @@ retained evidence is never overwritten. Logical one-second sample timestamps
 make delta-rate replay deterministic and therefore do not measure wall-clock
 throughput.
 
+Use `--direction haivision-to-robotweax --messages-per-interval 201` for the
+retained reverse-direction gap-loss profile. The extra, non-dropped message
+after the tenth fault makes the final injected gap visible to the receiver.
+That profile does not qualify flight-tail recovery when no later DATA follows.
+
 Retained captures:
 
 - [2026-08-28 Robotweax sender to Haivision receiver constant loss](../testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/manifest.json)
+- [2026-08-28 Haivision sender to Robotweax receiver constant loss](../testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/manifest.json)

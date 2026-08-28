@@ -1,0 +1,237 @@
+{
+  "capture": {
+    "artifacts": [
+      {
+        "peerExecutableSha256": "03ae7bfea1b9177d6b8a91ca286d72470817e41235e70acec638ce395e4351b6",
+        "providerLibrarySha256": "f5db9ca66be4d681c3271664c6f25ae269a7ad62ae75c815e0fb521f991cff04",
+        "role": "sender"
+      },
+      {
+        "peerExecutableSha256": "1eb0a700ccdb4d353f693f78b053d7d1d81dc8d333711b2f3a14057cc766ccf2",
+        "providerLibrarySha256": "1377a61d159856f7785bcc6c6fd9af74d1f11e78804c8e6db7b8bc6cb8e95f6a",
+        "role": "receiver"
+      }
+    ],
+    "environment": {
+      "machine": "arm64",
+      "platform": "macOS-26.5.2-arm64-arm-64bit",
+      "pythonVersion": "3.9.6",
+      "timingSource": "orchestrator-logical-one-second",
+      "transport": "ipv4-loopback-udp-proxy"
+    },
+    "faultProxy": {
+      "classification": "SRT DATA when the first header bit is zero; first observation keyed by the 31-bit packet sequence",
+      "dropEveryOriginalDataPacket": 20,
+      "expectedDropsPerActiveInterval": 10,
+      "messagesPerInterval": 201,
+      "payloadBytesPerMessage": 1316,
+      "stages": [
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 3,
+          "forwardedDataPackets": 201,
+          "originalDataPackets": 201,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 1
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 2,
+          "forwardedDataPackets": 201,
+          "originalDataPackets": 201,
+          "repeatedDataPackets": 0,
+          "reversePackets": 4,
+          "sampleIndex": 2
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 10,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 201,
+          "originalDataPackets": 201,
+          "repeatedDataPackets": 10,
+          "reversePackets": 14,
+          "sampleIndex": 3
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 10,
+          "forwardedControlPackets": 1,
+          "forwardedDataPackets": 201,
+          "originalDataPackets": 201,
+          "repeatedDataPackets": 10,
+          "reversePackets": 14,
+          "sampleIndex": 4
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 10,
+          "forwardedControlPackets": 2,
+          "forwardedDataPackets": 201,
+          "originalDataPackets": 201,
+          "repeatedDataPackets": 10,
+          "reversePackets": 13,
+          "sampleIndex": 5
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 10,
+          "forwardedControlPackets": 3,
+          "forwardedDataPackets": 201,
+          "originalDataPackets": 201,
+          "repeatedDataPackets": 10,
+          "reversePackets": 13,
+          "sampleIndex": 6
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 201,
+          "originalDataPackets": 201,
+          "repeatedDataPackets": 0,
+          "reversePackets": 4,
+          "sampleIndex": 7
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 3,
+          "forwardedDataPackets": 201,
+          "originalDataPackets": 201,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 8
+        }
+      ]
+    },
+    "generatedAt": "2026-08-28T17:19:33.641149+00:00",
+    "telemetryRevision": "2a698a5f5e5c2bd106c71d2d1a6db16183b3094e"
+  },
+  "contradictions": [
+    "Logical sample timestamps make rate columns deterministic but do not measure wall-clock throughput.",
+    "IPv4 loopback through a user-space proxy does not qualify physical network devices or wide-area paths.",
+    "The capture qualifies only the declared unencrypted Live/Message direction and exact provider artifacts.",
+    "Each active interval sends 1 non-dropped original DATA packet after the final deliberate drop; flight-tail recovery without later DATA remains unqualified."
+  ],
+  "dataset": {
+    "format": "robotweax-srt-telemetry-csv-v1",
+    "roles": [
+      "sender",
+      "receiver"
+    ],
+    "rows": 18,
+    "sampleIntervalNano": 1000000000,
+    "samplesFile": "samples.csv",
+    "sha256": "185a0a71441965787618b6c00a32b0e4a5dbc3ae9d4863f1226b900b01143d24"
+  },
+  "direction": "sender-to-receiver",
+  "expectedEvidence": [
+    "receiver-observed loss is positive only during the proxy fault window",
+    "sender-learned loss and retransmission are positive during the same window",
+    "the proxy forwards retransmissions for every deliberately dropped original sequence",
+    "loss and retransmission deltas return to zero after fault removal"
+  ],
+  "failureClass": "constant-packet-loss",
+  "faultPlan": {
+    "description": "Drop every 20th first-observed sender DATA sequence during samples 3 through 6; forward retransmissions.",
+    "firstActiveSample": 3,
+    "lastActiveSample": 6,
+    "seed": 0
+  },
+  "incidentId": "incident-003-captured-constant-loss-haivision-robotweax",
+  "machineExpectations": [
+    {
+      "field": "receiver_loss_packet_delta",
+      "id": "receiver-loss-active",
+      "operator": "greater-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "value": 0
+    },
+    {
+      "field": "sender_loss_packet_delta",
+      "id": "sender-loss-active",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "value": 0
+    },
+    {
+      "field": "retransmitted_packet_delta",
+      "id": "retransmission-active",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_loss_packet_delta",
+      "id": "receiver-loss-recovered",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 7,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "sender_loss_packet_delta",
+      "id": "sender-loss-recovered",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 7,
+        "last": 8
+      },
+      "value": 0
+    }
+  ],
+  "payloadDigest": "b4bdcd21b125501ebdfbd4aa9cbf1cca18c56bec36d4f589c9cebb71d71a5567",
+  "provenance": {
+    "capturedFromProvider": true,
+    "description": "Public srt_bistats observations captured from exact provider-linked peers through a user-space UDP fault boundary.",
+    "generator": "qualification/run_constant_loss_capture.py",
+    "kind": "captured-provider-run",
+    "telemetryVersion": "0.1.0-alpha.0"
+  },
+  "providers": [
+    {
+      "buildProfile": "release-shared-openssl-generated-install",
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "role": "sender",
+      "version": "1.5.5"
+    },
+    {
+      "buildProfile": "clean-release-shared-openssl",
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "role": "receiver",
+      "version": "0.2.0-4-g271f832"
+    }
+  ],
+  "schemaVersion": "1alpha1",
+  "topology": "Haivision SRT sender through a deterministic UDP fault proxy to a Robotweax SRT receiver",
+  "transportProfile": {
+    "addressFamily": "ipv4",
+    "api": "message",
+    "encryption": "none",
+    "fec": "none",
+    "group": "none",
+    "mode": "live"
+  }
+}

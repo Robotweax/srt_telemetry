@@ -66,12 +66,22 @@ physical packets, and 200 sent unique packets per active interval. Haivision
 reported 9 receiver-loss packets while receiving 200 physical and 200 unique
 packets. Loss and retransmission returned to zero after fault removal.
 
-This is direction- and profile-specific candidate evidence for the public loss,
-retransmission, and physical-versus-unique mappings. The injected drop count is
-not treated as identical to either public loss counter. No release capability
-is declared until the reverse direction and representative profiles pass.
+The reverse capture uses an exact Haivision sender and Robotweax receiver. It
+sends 201 original messages so one non-dropped DATA sequence follows the tenth
+fault. Each active interval records 10 proxy drops, 10 repeated sequences, 10
+Haivision sender-loss and retransmission packets, 211 sent physical packets,
+201 sent unique packets, and 10 Robotweax receiver-loss packets. All 201
+application messages arrive and all three deltas return to zero after recovery.
+
+Together these are direction- and profile-specific candidate evidence for the
+public loss, retransmission, and physical-versus-unique mappings. The injected
+drop count is not treated as identical to either public loss counter. The
+reverse schedule qualifies exposed gap loss, not a lost finite-flight tail
+without later DATA. No release capability is declared until representative
+profiles and that remaining boundary pass.
 
 - [2026-08-28 captured Robotweax-to-Haivision constant loss](../../testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/manifest.json)
+- [2026-08-28 captured Haivision-to-Robotweax constant loss](../../testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/manifest.json)
 
 ## Remaining release qualification
 

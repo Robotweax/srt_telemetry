@@ -69,3 +69,9 @@ unsupported, time-bounded close/sample race probe: both providers returned an
 explicit native sampling failure without exposing fields. This containment
 observation does not relax the required session-destroy-before-socket-close
 order.
+
+Two retained constant-loss captures exercise the cross-provider public loss,
+retransmission, and physical-versus-unique mappings with each implementation
+as sender once. The Haivision-sender schedule leaves a later DATA sequence
+after every injected loss; finite flight-tail recovery without later DATA is
+therefore still outside the qualified boundary.

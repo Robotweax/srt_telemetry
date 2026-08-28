@@ -19,3 +19,4 @@ Current incidents:
 
 - [Incident 001: constant packet loss](incident-001-constant-loss/README.md)
 - [Incident 002: captured Robotweax-to-Haivision constant loss](incident-002-captured-constant-loss-robotweax-haivision/README.md)
+- [Incident 003: captured Haivision-to-Robotweax constant loss](incident-003-captured-constant-loss-haivision-robotweax/README.md)

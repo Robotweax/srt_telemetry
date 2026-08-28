@@ -65,3 +65,10 @@ The first captured incident demonstrates why injected drops are not renamed as
 generic SRT loss. Ten deliberately discarded original datagrams produced ten
 retransmissions but nine new sender- and receiver-side loss observations per
 interval on the tested profile. All three quantities remain separate evidence.
+
+The reverse captured incident sends 201 originals per interval so that a later
+DATA sequence exposes the tenth injected gap. It records ten proxy drops, ten
+retransmissions, and ten public loss increments on both sides. That numerical
+agreement is retained as profile-specific evidence, not a universal identity.
+The manifest explicitly leaves finite flight-tail loss without later DATA
+unqualified.
