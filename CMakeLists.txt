@@ -137,7 +137,11 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
             endif()
             add_test(NAME robotweax_srt_telemetry_public_srt_runtime_tests
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests)
+            add_test(NAME robotweax_srt_telemetry_public_srt_lifecycle_tests
+                COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --lifecycle)
             set_tests_properties(robotweax_srt_telemetry_public_srt_runtime_tests
+                PROPERTIES TIMEOUT 15)
+            set_tests_properties(robotweax_srt_telemetry_public_srt_lifecycle_tests
                 PROPERTIES TIMEOUT 15)
         endif()
     endif()

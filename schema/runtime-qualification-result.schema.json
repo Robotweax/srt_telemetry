@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/runtime-qualification-result-v1alpha1.json",
+  "title": "Public SRT sampling and lifecycle qualification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "generatedAt",
+    "telemetry",
+    "environment",
+    "providers",
+    "interpretation"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1alpha1" },
+    "kind": { "const": "public-srt-runtime-qualification" },
+    "status": { "const": "pass" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "adapterVersion"],
+      "properties": {
+        "revision": { "type": "string", "minLength": 7 },
+        "adapterVersion": { "type": "string", "minLength": 1 }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "machine",
+        "pythonVersion",
+        "transport",
+        "buildType",
+        "processesSequential",
+        "schedulerIsolation",
+        "powerManagementControlled",
+        "timingClock"
+      ],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1 },
+        "machine": { "type": "string", "minLength": 1 },
+        "pythonVersion": { "type": "string", "minLength": 1 },
+        "transport": { "const": "ipv4-loopback" },
+        "buildType": { "const": "Release" },
+        "processesSequential": { "const": true },
+        "schedulerIsolation": { "const": false },
+        "powerManagementControlled": { "const": false },
+        "timingClock": { "const": "steady_clock" }
+      }
+    },
+    "providers": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/provider" }
+    },
+    "interpretation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "benchmarkIsReleaseGate",
+        "closeSampleRaceIsSupportedHostUsage",
+        "supportedLifecycle"
+      ],
+      "properties": {
+        "benchmarkIsReleaseGate": { "const": false },
+        "closeSampleRaceIsSupportedHostUsage": { "const": false },
+        "supportedLifecycle": {
+          "const": "destroy telemetry session before closing its SRT socket"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "version",
+        "revision",
+        "buildProfile",
+        "artifacts",
+        "benchmark",
+        "lifecycle",
+        "closeSampleRace"
+      ],
+      "properties": {
+        "provider": { "enum": ["robotweax-srt", "haivision-srt"] },
+        "version": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 7 },
+        "buildProfile": { "type": "string", "minLength": 1 },
+        "artifacts": { "$ref": "#/$defs/artifacts" },
+        "benchmark": { "$ref": "#/$defs/benchmarkExecution" },
+        "lifecycle": { "$ref": "#/$defs/lifecycleExecution" },
+        "closeSampleRace": { "$ref": "#/$defs/closeRaceExecution" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["peerExecutableSha256", "providerLibrarySha256"],
+      "properties": {
+        "peerExecutableSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "providerLibrarySha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "executionBase": {
+      "type": "object",
+      "required": ["status", "wallClockNano"],
+      "properties": {
+        "status": { "const": "pass" },
+        "wallClockNano": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "timingSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "meanNanoseconds",
+        "minimumNanoseconds",
+        "p50Nanoseconds",
+        "p95Nanoseconds",
+        "maximumNanoseconds"
+      ],
+      "properties": {
+        "meanNanoseconds": { "type": "number" },
+        "minimumNanoseconds": { "type": "number" },
+        "p50Nanoseconds": { "type": "number" },
+        "p95Nanoseconds": { "type": "number" },
+        "maximumNanoseconds": { "type": "number" }
+      }
+    },
+    "benchmarkPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direct", "adapter", "incremental", "adapterToDirectRatio"],
+      "properties": {
+        "direct": { "$ref": "#/$defs/timingSummary" },
+        "adapter": { "$ref": "#/$defs/timingSummary" },
+        "incremental": { "$ref": "#/$defs/timingSummary" },
+        "adapterToDirectRatio": { "type": "number", "minimum": 0 }
+      }
+    },
+    "benchmarkExecution": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["observations"],
+      "allOf": [
+        { "$ref": "#/$defs/executionBase" },
+        {
+          "properties": {
+            "observations": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "provider",
+                "warmupIterations",
+                "batches",
+                "iterationsPerBatch",
+                "providerCall",
+                "syntheticSdk"
+              ],
+              "properties": {
+                "provider": { "enum": ["robotweax-srt", "haivision-srt"] },
+                "warmupIterations": { "type": "integer", "minimum": 1 },
+                "batches": { "type": "integer", "minimum": 1 },
+                "iterationsPerBatch": { "type": "integer", "minimum": 1 },
+                "providerCall": { "$ref": "#/$defs/benchmarkPair" },
+                "syntheticSdk": { "$ref": "#/$defs/benchmarkPair" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "lifecycleExecution": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["observations"],
+      "allOf": [
+        { "$ref": "#/$defs/executionBase" },
+        {
+          "properties": {
+            "observations": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "provider",
+                "sessionDestroyedBeforeClose",
+                "staleHandleProbeUnsupported",
+                "closeNativeResult",
+                "closeElapsedNano",
+                "postCloseError",
+                "postCloseNativeResult",
+                "postCloseAvailableFields",
+                "postCloseElapsedNano"
+              ],
+              "properties": {
+                "provider": { "enum": ["robotweax-srt", "haivision-srt"] },
+                "sessionDestroyedBeforeClose": { "const": true },
+                "staleHandleProbeUnsupported": { "const": true },
+                "closeNativeResult": { "const": 0 },
+                "closeElapsedNano": { "type": "integer", "minimum": 0 },
+                "postCloseError": { "const": 4 },
+                "postCloseNativeResult": { "const": -1 },
+                "postCloseAvailableFields": { "const": 0 },
+                "postCloseElapsedNano": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "closeRaceExecution": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["observations"],
+      "allOf": [
+        { "$ref": "#/$defs/executionBase" },
+        {
+          "properties": {
+            "observations": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "provider",
+                "orderlySessionBeforeClose",
+                "successfulRaceSamples",
+                "providerFailuresAfterClose",
+                "raceFailureNativeResult",
+                "closeNativeResult",
+                "postCloseError",
+                "postCloseNativeResult",
+                "postCloseAvailableFields",
+                "elapsedNano"
+              ],
+              "properties": {
+                "provider": { "enum": ["robotweax-srt", "haivision-srt"] },
+                "orderlySessionBeforeClose": { "const": true },
+                "successfulRaceSamples": { "type": "integer", "minimum": 1 },
+                "providerFailuresAfterClose": { "type": "integer", "minimum": 1 },
+                "raceFailureNativeResult": { "const": -1 },
+                "closeNativeResult": { "const": 0 },
+                "postCloseError": { "const": 4 },
+                "postCloseNativeResult": { "const": -1 },
+                "postCloseAvailableFields": { "const": 0 },
+                "elapsedNano": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
