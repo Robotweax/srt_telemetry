@@ -20,7 +20,9 @@
   candidate profile complete, full profile open;
 - Robotweax-to-Haivision Live/Message IPv4 loopback interop complete in both
   caller/listener role combinations for the common nine-field subset;
-- microbenchmarks and close/sample lifecycle tests; and
+- macOS arm64 sampling microbenchmark and close/sample lifecycle candidate
+  complete; controlled multi-platform release budgets and stress profiles open;
+  and
 - first golden incident datasets.
 
 ## Phase 2: diagnostic proof

@@ -30,13 +30,39 @@ provider libraries, peer executables, and payloads:
 
 - [2026-08-28 macOS arm64 public SRT interop](../../qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
 
+## Sampling and lifecycle candidate evidence
+
+The retained macOS arm64 run executes the providers sequentially and records
+the exact binaries. Its isolated synthetic callback measured median incremental
+SDK work of 40.5 ns in the Robotweax-linked build and 54.5 ns in the
+Haivision-linked build. The provider-call median was 26.6 us for Robotweax SRT
+and 0.211 us for Haivision SRT. The paired Robotweax provider-call difference
+was negative because provider variance exceeded the much smaller SDK cost; the
+synthetic measurement is the meaningful adapter-cost isolation.
+
+Both providers passed the supported order in which the telemetry session is
+destroyed before its socket is closed. The stale-handle probe returned the
+explicit provider-sample failure with native `SRT_ERROR` and no available
+fields. A separate time-bounded close/sample race also terminated without a
+crash or hang and reported the same failure, but it remains deliberately
+unsupported host usage.
+
+Scheduler isolation and power management control were unavailable on this
+host, so these timings are candidate observations rather than release budgets.
+The roughly two-orders-of-magnitude provider-call difference is an
+investigation signal for Robotweax SRT, not yet a regression conclusion.
+
+- [2026-08-28 macOS arm64 sampling and lifecycle](../../qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
+
 ## Remaining release qualification
 
 - live caller-to-listener and listener-to-caller sampling for the remaining
   candidate fields and profiles;
 - additional modes, address families, encryption, FEC, and group profiles;
 - observed reset and reconnect semantics for every enabled field;
-- sampling overhead and close/sample lifecycle race tests; and
+- release sampling budgets on representative controlled platforms and build
+  profiles;
+- longer-duration lifecycle and reconnect stress tests; and
 - retained evidence manifests with exact binaries, build flags, payloads, and
   expected observations.
 

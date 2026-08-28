@@ -18,8 +18,11 @@ reset observations, lifecycle races, and measured sampling overhead.
 
 The first retained cross-provider result covers live sockets and both
 caller/listener role combinations for the common nine-field Live/Message IPv4
-loopback subset. It does not close the reset, lifecycle, performance, encrypted,
-IPv6, FEC, group, or remaining-field gates.
+loopback subset. A second retained macOS arm64 result covers the supported
+session-destroy-before-socket-close order, bounded failure probes, and an
+initial sampling microbenchmark. It does not establish a release performance
+budget, supported close/sample concurrency, or close the reset, encrypted,
+IPv6, FEC, group, remaining-field, and multi-platform gates.
 
 ## Initial fault corpus
 

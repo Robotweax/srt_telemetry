@@ -34,3 +34,37 @@ and payloads.
 Retained results:
 
 - [2026-08-28 macOS arm64 public SRT interop](results/2026-08-28-macos-arm64-public-srt-interop.json)
+
+## Sampling and lifecycle qualification runner
+
+Use the same two provider-linked runtime-test binaries and exact provider
+libraries to run the sampling microbenchmark and lifecycle probes sequentially:
+
+```sh
+python3 qualification/run_runtime_qualification.py \
+  --robotweax-peer /path/to/robotweax/runtime-test \
+  --robotweax-library /path/to/robotweax/libsrt \
+  --robotweax-version VERSION \
+  --robotweax-revision REVISION \
+  --robotweax-build-profile PROFILE \
+  --haivision-peer /path/to/haivision/runtime-test \
+  --haivision-library /path/to/haivision/libsrt \
+  --haivision-version VERSION \
+  --haivision-revision REVISION \
+  --haivision-build-profile PROFILE \
+  --telemetry-revision REVISION \
+  --output qualification/results/runtime.json
+```
+
+Each provider runs separately. Paired batches compare direct `srt_bistats`
+calls with adapter sampling; a synthetic callback separately estimates the SDK
+work without provider cost. The runner also verifies the supported
+session-destroy-before-socket-close order, a stale-handle failure, and a
+time-bounded close/sample race that is explicitly not supported host usage.
+Results record binary digests and whether scheduler isolation and power control
+were active. An uncontrolled result is candidate evidence, not a release
+performance gate.
+
+Retained results:
+
+- [2026-08-28 macOS arm64 sampling and lifecycle](results/2026-08-28-macos-arm64-public-srt-runtime.json)

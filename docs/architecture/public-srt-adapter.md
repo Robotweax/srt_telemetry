@@ -17,8 +17,9 @@ The host creates a `robotweax_srt_telemetry_public_srt_config_v1` with:
 
 The socket and function pointer must remain valid until the session is
 destroyed. Calls using the same session must be externally synchronized. A host
-must stop sampling before closing its socket; close/sample race behavior still
-requires provider-specific qualification.
+must stop sampling and destroy the telemetry session before closing its socket.
+The adapter cannot synchronize a host-owned socket lifetime, so concurrent
+close/sample behavior is not supported.
 
 Every sample calls the injected function as:
 
@@ -60,4 +61,11 @@ A separate two-process harness also passes Robotweax-to-Haivision exchange in
 both caller/listener role combinations. That retained qualification covers the
 nine-field common subset on unencrypted Live/Message IPv4 loopback. The
 remaining candidate fields, IPv6, encrypted/FEC/group profiles, reset behavior,
-sampling overhead, and close/sample races remain qualification work.
+and release performance budgets remain qualification work.
+
+A retained macOS arm64 candidate run now covers sampling microbenchmarks and
+the lifecycle contract for both providers. It also contains a deliberately
+unsupported, time-bounded close/sample race probe: both providers returned an
+explicit native sampling failure without exposing fields. This containment
+observation does not relax the required session-destroy-before-socket-close
+order.

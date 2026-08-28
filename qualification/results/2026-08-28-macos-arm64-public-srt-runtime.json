@@ -1,0 +1,226 @@
+{
+  "environment": {
+    "buildType": "Release",
+    "machine": "arm64",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "powerManagementControlled": false,
+    "processesSequential": true,
+    "pythonVersion": "3.9.6",
+    "schedulerIsolation": false,
+    "timingClock": "steady_clock",
+    "transport": "ipv4-loopback"
+  },
+  "generatedAt": "2026-08-28T15:19:41.499656+00:00",
+  "interpretation": {
+    "benchmarkIsReleaseGate": false,
+    "closeSampleRaceIsSupportedHostUsage": false,
+    "supportedLifecycle": "destroy telemetry session before closing its SRT socket"
+  },
+  "kind": "public-srt-runtime-qualification",
+  "providers": [
+    {
+      "artifacts": {
+        "peerExecutableSha256": "7f7028137432fa054becbbbd6cad590a21012fc4cd1f09159fb4dedbd14fbc9a",
+        "providerLibrarySha256": "1377a61d159856f7785bcc6c6fd9af74d1f11e78804c8e6db7b8bc6cb8e95f6a"
+      },
+      "benchmark": {
+        "observations": {
+          "batches": 25,
+          "iterationsPerBatch": 2000,
+          "provider": "robotweax-srt",
+          "providerCall": {
+            "adapter": {
+              "maximumNanoseconds": 26863.2915,
+              "meanNanoseconds": 26507.73408,
+              "minimumNanoseconds": 26265.7915,
+              "p50Nanoseconds": 26460.375,
+              "p95Nanoseconds": 26823
+            },
+            "adapterToDirectRatio": 0.9955715617786686,
+            "direct": {
+              "maximumNanoseconds": 27580.604,
+              "meanNanoseconds": 26625.644100000005,
+              "minimumNanoseconds": 26224.8335,
+              "p50Nanoseconds": 26565.729,
+              "p95Nanoseconds": 27328.4165
+            },
+            "incremental": {
+              "maximumNanoseconds": 359.85399999999936,
+              "meanNanoseconds": -117.91002000000007,
+              "minimumNanoseconds": -1282.5414999999994,
+              "p50Nanoseconds": -104.47950000000128,
+              "p95Nanoseconds": 349.79149999999936
+            }
+          },
+          "syntheticSdk": {
+            "adapter": {
+              "maximumNanoseconds": 49.833,
+              "meanNanoseconds": 48.10416,
+              "minimumNanoseconds": 47.708,
+              "p50Nanoseconds": 47.75,
+              "p95Nanoseconds": 49.5415
+            },
+            "adapterToDirectRatio": 6.614528704022001,
+            "direct": {
+              "maximumNanoseconds": 7.5415,
+              "meanNanoseconds": 7.2725,
+              "minimumNanoseconds": 7.1875,
+              "p50Nanoseconds": 7.229,
+              "p95Nanoseconds": 7.5
+            },
+            "incremental": {
+              "maximumNanoseconds": 42.3745,
+              "meanNanoseconds": 40.83166,
+              "minimumNanoseconds": 40.375,
+              "p50Nanoseconds": 40.521,
+              "p95Nanoseconds": 42.062
+            }
+          },
+          "warmupIterations": 1000
+        },
+        "status": "pass",
+        "wallClockNano": 3048097708
+      },
+      "buildProfile": "clean-release-shared-openssl",
+      "closeSampleRace": {
+        "observations": {
+          "closeNativeResult": 0,
+          "elapsedNano": 17353125,
+          "orderlySessionBeforeClose": true,
+          "postCloseAvailableFields": 0,
+          "postCloseError": 4,
+          "postCloseNativeResult": -1,
+          "provider": "robotweax-srt",
+          "providerFailuresAfterClose": 1,
+          "raceFailureNativeResult": -1,
+          "successfulRaceSamples": 140
+        },
+        "status": "pass",
+        "wallClockNano": 22160250
+      },
+      "lifecycle": {
+        "observations": {
+          "closeElapsedNano": 32917,
+          "closeNativeResult": 0,
+          "postCloseAvailableFields": 0,
+          "postCloseElapsedNano": 167,
+          "postCloseError": 4,
+          "postCloseNativeResult": -1,
+          "provider": "robotweax-srt",
+          "sessionDestroyedBeforeClose": true,
+          "staleHandleProbeUnsupported": true
+        },
+        "status": "pass",
+        "wallClockNano": 18086667
+      },
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "version": "0.2.0-4-g271f832"
+    },
+    {
+      "artifacts": {
+        "peerExecutableSha256": "ade09740091f3713882a06acc0386611e5cebc08d39402d9285a2e6db0205603",
+        "providerLibrarySha256": "f5db9ca66be4d681c3271664c6f25ae269a7ad62ae75c815e0fb521f991cff04"
+      },
+      "benchmark": {
+        "observations": {
+          "batches": 25,
+          "iterationsPerBatch": 2000,
+          "provider": "haivision-srt",
+          "providerCall": {
+            "adapter": {
+              "maximumNanoseconds": 326.7915,
+              "meanNanoseconds": 260.68914,
+              "minimumNanoseconds": 188.9585,
+              "p50Nanoseconds": 258.333,
+              "p95Nanoseconds": 326.5625
+            },
+            "adapterToDirectRatio": 1.2659727791401731,
+            "direct": {
+              "maximumNanoseconds": 266.1875,
+              "meanNanoseconds": 205.92001999999997,
+              "minimumNanoseconds": 153.917,
+              "p50Nanoseconds": 210.5,
+              "p95Nanoseconds": 245.3335
+            },
+            "incremental": {
+              "maximumNanoseconds": 169.5625,
+              "meanNanoseconds": 54.76912,
+              "minimumNanoseconds": 34.834,
+              "p50Nanoseconds": 48.083,
+              "p95Nanoseconds": 67.0205
+            }
+          },
+          "syntheticSdk": {
+            "adapter": {
+              "maximumNanoseconds": 69.0415,
+              "meanNanoseconds": 63.08331999999999,
+              "minimumNanoseconds": 59.25,
+              "p50Nanoseconds": 64.146,
+              "p95Nanoseconds": 64.667
+            },
+            "adapterToDirectRatio": 6.6549623700040295,
+            "direct": {
+              "maximumNanoseconds": 9.7915,
+              "meanNanoseconds": 9.47914,
+              "minimumNanoseconds": 8.9165,
+              "p50Nanoseconds": 9.6875,
+              "p95Nanoseconds": 9.771
+            },
+            "incremental": {
+              "maximumNanoseconds": 59.3125,
+              "meanNanoseconds": 53.604179999999985,
+              "minimumNanoseconds": 50.3125,
+              "p50Nanoseconds": 54.458,
+              "p95Nanoseconds": 54.917
+            }
+          },
+          "warmupIterations": 1000
+        },
+        "status": "pass",
+        "wallClockNano": 234451791
+      },
+      "buildProfile": "release-shared-openssl-generated-install",
+      "closeSampleRace": {
+        "observations": {
+          "closeNativeResult": 0,
+          "elapsedNano": 3898250,
+          "orderlySessionBeforeClose": true,
+          "postCloseAvailableFields": 0,
+          "postCloseError": 4,
+          "postCloseNativeResult": -1,
+          "provider": "haivision-srt",
+          "providerFailuresAfterClose": 1,
+          "raceFailureNativeResult": -1,
+          "successfulRaceSamples": 4749
+        },
+        "status": "pass",
+        "wallClockNano": 41144959
+      },
+      "lifecycle": {
+        "observations": {
+          "closeElapsedNano": 13708,
+          "closeNativeResult": 0,
+          "postCloseAvailableFields": 0,
+          "postCloseElapsedNano": 49125,
+          "postCloseError": 4,
+          "postCloseNativeResult": -1,
+          "provider": "haivision-srt",
+          "sessionDestroyedBeforeClose": true,
+          "staleHandleProbeUnsupported": true
+        },
+        "status": "pass",
+        "wallClockNano": 39591417
+      },
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "version": "1.5.5"
+    }
+  ],
+  "schemaVersion": "1alpha1",
+  "status": "pass",
+  "telemetry": {
+    "adapterVersion": "0.1.0-alpha.0",
+    "revision": "3359b49a9d2d27223541f5402296f07bcbab048c"
+  }
+}
