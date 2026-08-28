@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/adapter-capabilities-v1alpha1.json",
+  "title": "Robotweax SRT telemetry adapter capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "provider",
+    "providerVersion",
+    "publicApiProfile",
+    "adapterVersion",
+    "buildProfile",
+    "capabilities"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1alpha1"
+    },
+    "provider": {
+      "enum": ["haivision-srt", "robotweax-srt"]
+    },
+    "providerVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publicApiProfile": {
+      "const": "srt-1.5.5"
+    },
+    "adapterVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "buildProfile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providerRevision": {
+      "type": "string",
+      "minLength": 7
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "stats.common.v1",
+          "stats.fec.v1",
+          "groups.members.v1",
+          "robotweax.extensions.v1"
+        ]
+      }
+    },
+    "qualifiedProfiles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

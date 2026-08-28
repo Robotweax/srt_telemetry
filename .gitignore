@@ -1,0 +1,7 @@
+/build/
+/build-*/
+/CMakeUserPresets.json
+/.cache/
+.DS_Store
+*.swp
+*.tmp

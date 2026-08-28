@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package robotweax.srt.telemetry.v1alpha1;
+
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_HAIVISION_SRT = 1;
+  PROVIDER_ROBOTWEAX_SRT = 2;
+}
+
+enum MetricKind {
+  METRIC_KIND_UNSPECIFIED = 0;
+  METRIC_KIND_COUNTER = 1;
+  METRIC_KIND_GAUGE = 2;
+  METRIC_KIND_DERIVED = 3;
+}
+
+message ResourceIdentity {
+  string customer_id = 1;
+  string site_id = 2;
+  string endpoint_id = 3;
+  string application_id = 4;
+  string service_instance_id = 5;
+  string deployment_id = 6;
+  string sdk_version = 7;
+}
+
+message FlowIdentity {
+  string flow_id = 1;
+  string session_id = 2;
+  string source_id = 3;
+  string destination_id = 4;
+  optional string connection_group_id = 5;
+  optional string path_id = 6;
+  optional string member_id = 7;
+}
+
+message ProviderProfile {
+  Provider provider = 1;
+  string provider_version = 2;
+  string public_api_profile = 3;
+  string adapter_version = 4;
+  repeated string capabilities = 5;
+}
+
+message MetricPoint {
+  string name = 1;
+  string unit = 2;
+  MetricKind kind = 3;
+  string source_field = 4;
+  string observation_side = 5;
+
+  oneof value {
+    uint64 unsigned_value = 6;
+    int64 signed_value = 7;
+    double double_value = 8;
+  }
+}
+
+message Event {
+  string name = 1;
+  map<string, string> attributes = 2;
+}
+
+message TelemetryEnvelope {
+  ResourceIdentity resource = 1;
+  FlowIdentity flow = 2;
+  ProviderProfile provider = 3;
+  uint64 observed_at_unix_nano = 4;
+  uint64 sample_monotonic_nano = 5;
+  repeated MetricPoint metrics = 6;
+  repeated Event events = 7;
+  repeated string data_quality = 8;
+}

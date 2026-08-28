@@ -1,0 +1,72 @@
+# Evidence plan
+
+## Milestone 0: telemetry contract
+
+Exit requires:
+
+- every common field has source, unit, side, temporality, reset semantics, and
+  missing-data behavior;
+- Robotweax and pinned Haivision qualification records exist;
+- collection never clears application-owned SRT interval counters;
+- a recorder can preserve raw snapshots and data-quality boundaries; and
+- fault scenarios are deterministic and reproducible.
+
+## Initial fault corpus
+
+1. constant loss;
+2. burst loss;
+3. RTT step and RTT ramp;
+4. bandwidth reduction with queue growth;
+5. receiver pause/backpressure;
+6. hard path outage;
+7. reconnect loop; and
+8. key-management or decrypt failure where the provider exposes evidence.
+
+Every retained incident must name exact revisions, roles, directions, mode,
+address family, encryption, FEC, fault plan, timing source, payload digest, and
+expected observations. A Robotweax-to-Robotweax result is self-evidence, not a
+Haivision interoperability qualification.
+
+## Robotweax telemetry extension gate
+
+Do not extend Robotweax SRT pre-emptively. First demonstrate that the common
+public field set cannot answer a concrete operator question or discriminate a
+required failure class.
+
+Use this request template when coordination with the Robotweax SRT coding agent
+is necessary:
+
+```yaml
+operator_question: string
+rca_hypothesis: string
+missing_evidence: string
+existing_public_fields_considered: []
+proposed_signal:
+  name: string
+  type: counter | gauge | event | state
+  unit: string
+  observation_side: sender | receiver | group | process
+  temporality: lifetime | interval | instantaneous
+  reset_behavior: string
+lifecycle: string
+security_and_privacy: string
+expected_sampling_frequency_hz: number
+hot_path_overhead_budget: string
+haivision_fallback: unavailable | weaker_hypothesis
+required_tests: []
+```
+
+An accepted extension must use a versioned installed C surface and update the
+Robotweax public contract, manifest, symbols, installed consumers, tests, and
+documentation together.
+
+## Diagnostic-value gate
+
+Before a production backend is selected, compare a local incident timeline
+with raw SRT statistics for real or representative incidents. Measure:
+
+- time to detect the first deviation;
+- time to identify a useful failure domain;
+- incorrect or unsupported hypotheses;
+- missing evidence; and
+- operator confidence in the explanation.
