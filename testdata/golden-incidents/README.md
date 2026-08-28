@@ -11,7 +11,9 @@ relevant contradictions.
 
 Synthetic fixtures must declare that they were not captured from a provider.
 They prove contract behavior, not runtime qualification. Captured incidents
-must retain exact artifacts and a reproducible fault boundary.
+must retain exact artifacts and a reproducible fault boundary. Their changing
+runtime gauges may prevent byte-for-byte regeneration, so reproduction is
+judged against machine expectations and recorded proxy behavior.
 
 Current incidents:
 

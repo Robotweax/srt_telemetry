@@ -25,7 +25,7 @@ Each incident directory contains:
 - `manifest.json`, validated against the golden-incident schema;
 - `samples.csv`, whose SHA-256 digest and row count are retained by the
   manifest;
-- a deterministic generator with a `--check` mode; and
+- a generator or capture runner; and
 - a short incident-specific explanation.
 
 CSV rows contain raw lifetime observations followed by `expected_*` delta and
@@ -45,9 +45,18 @@ Validation has independent layers:
    provider/role identity, contiguous samples, and machine expectations;
 2. the C++ golden test sends every raw row through the production delta engine
    and compares quality flags, availability, counter deltas, and rates; and
-3. the generator's `--check` mode proves that checked-in artifacts are
-   reproducible from their declared model.
+3. a synthetic generator's `--check` mode proves byte-for-byte reproducibility
+   from its declared model. Captured runs instead retain exact binary hashes,
+   fault-proxy observations, and semantic expectations; runtime gauges such as
+   RTT need not be byte-identical across reproductions.
 
 A passing synthetic incident proves deterministic SDK behavior only. Provider
 qualification still requires a captured run with exact artifacts and a real
 fault injection boundary.
+
+The initial capture boundary is a user-space UDP proxy. It classifies an SRT
+DATA datagram by the clear high bit in the first header word and keys the first
+observation by the 31-bit packet sequence. A fault stage may drop a deterministic
+subset of first observations while forwarding later packets with the same
+sequence. The proxy records originals, repeats, drops, control traffic, and
+reverse traffic for every stage.

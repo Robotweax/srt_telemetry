@@ -233,7 +233,7 @@
             "pattern": "^[a-z][a-z0-9_]*$"
           },
           "operator": {
-            "enum": ["equals", "equals-field-plus", "unavailable"]
+            "enum": ["equals", "equals-field-plus", "greater-than", "unavailable"]
           },
           "comparisonField": {
             "type": "string",
@@ -270,6 +270,15 @@
           },
           {
             "if": {
+              "properties": { "operator": { "const": "greater-than" } }
+            },
+            "then": {
+              "required": ["value"],
+              "not": { "required": ["comparisonField"] }
+            }
+          },
+          {
+            "if": {
               "properties": { "operator": { "const": "unavailable" } }
             },
             "then": {
@@ -284,6 +293,114 @@
         ]
       }
     },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generatedAt",
+        "telemetryRevision",
+        "environment",
+        "artifacts",
+        "faultProxy"
+      ],
+      "properties": {
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "telemetryRevision": {
+          "type": "string",
+          "minLength": 7
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "platform",
+            "machine",
+            "pythonVersion",
+            "transport",
+            "timingSource"
+          ],
+          "properties": {
+            "platform": { "type": "string", "minLength": 1 },
+            "machine": { "type": "string", "minLength": 1 },
+            "pythonVersion": { "type": "string", "minLength": 1 },
+            "transport": { "const": "ipv4-loopback-udp-proxy" },
+            "timingSource": { "const": "orchestrator-logical-one-second" }
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "peerExecutableSha256", "providerLibrarySha256"],
+            "properties": {
+              "role": {
+                "enum": ["sender", "receiver", "relay-in", "relay-out"]
+              },
+              "peerExecutableSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "providerLibrarySha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          }
+        },
+        "faultProxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "classification",
+            "messagesPerInterval",
+            "payloadBytesPerMessage",
+            "dropEveryOriginalDataPacket",
+            "expectedDropsPerActiveInterval",
+            "stages"
+          ],
+          "properties": {
+            "classification": { "type": "string", "minLength": 1 },
+            "messagesPerInterval": { "type": "integer", "minimum": 1 },
+            "payloadBytesPerMessage": { "type": "integer", "minimum": 1 },
+            "dropEveryOriginalDataPacket": { "type": "integer", "minimum": 2 },
+            "expectedDropsPerActiveInterval": { "type": "integer", "minimum": 1 },
+            "stages": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sampleIndex",
+                  "active",
+                  "originalDataPackets",
+                  "repeatedDataPackets",
+                  "droppedOriginalDataPackets",
+                  "forwardedDataPackets",
+                  "forwardedControlPackets",
+                  "reversePackets"
+                ],
+                "properties": {
+                  "sampleIndex": { "type": "integer", "minimum": 1 },
+                  "active": { "type": "boolean" },
+                  "originalDataPackets": { "type": "integer", "minimum": 1 },
+                  "repeatedDataPackets": { "type": "integer", "minimum": 0 },
+                  "droppedOriginalDataPackets": { "type": "integer", "minimum": 0 },
+                  "forwardedDataPackets": { "type": "integer", "minimum": 1 },
+                  "forwardedControlPackets": { "type": "integer", "minimum": 0 },
+                  "reversePackets": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "contradictions": {
       "type": "array",
       "items": {
@@ -295,5 +412,27 @@
       "type": "string",
       "pattern": "^[a-fA-F0-9]{64}$"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": { "kind": { "const": "captured-provider-run" } }
+          }
+        }
+      },
+      "then": { "required": ["capture"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance": {
+            "properties": { "kind": { "const": "synthetic-contract-fixture" } }
+          }
+        }
+      },
+      "then": { "not": { "required": ["capture"] } }
+    }
+  ]
 }

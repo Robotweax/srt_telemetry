@@ -68,3 +68,36 @@ performance gate.
 Retained results:
 
 - [2026-08-28 macOS arm64 sampling and lifecycle](results/2026-08-28-macos-arm64-public-srt-runtime.json)
+
+## Constant-loss capture runner
+
+Build `robotweax_srt_telemetry_public_srt_incident_peer` once against each exact
+provider. The runner starts a Haivision receiver, a Robotweax sender, and a
+user-space UDP proxy between them:
+
+```sh
+python3 qualification/run_constant_loss_capture.py \
+  --robotweax-peer /path/to/robotweax/incident-peer \
+  --robotweax-library /path/to/robotweax/libsrt \
+  --robotweax-version VERSION \
+  --robotweax-revision REVISION \
+  --robotweax-build-profile PROFILE \
+  --haivision-peer /path/to/haivision/incident-peer \
+  --haivision-library /path/to/haivision/libsrt \
+  --haivision-version VERSION \
+  --haivision-revision REVISION \
+  --haivision-build-profile PROFILE \
+  --telemetry-revision REVISION \
+  --output-dir /new/incident-directory
+```
+
+The default experiment transfers 200 application messages per interval. During
+four active intervals the proxy drops every twentieth first-observed SRT DATA
+sequence and forwards retransmissions. It requires complete application
+delivery, exact proxy drop counts, positive public sender/receiver loss
+evidence, positive retransmission evidence, and zero loss after recovery.
+
+The output directory must not already contain `manifest.json` or `samples.csv`;
+retained evidence is never overwritten. Logical one-second sample timestamps
+make delta-rate replay deterministic and therefore do not measure wall-clock
+throughput.

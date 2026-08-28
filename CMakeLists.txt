@@ -119,20 +119,33 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
             endif()
             add_executable(robotweax_srt_telemetry_public_srt_runtime_tests
                 adapters/public_srt/tests/test_public_srt_runtime.cpp)
+            add_executable(robotweax_srt_telemetry_public_srt_incident_peer
+                adapters/public_srt/tests/public_srt_incident_peer.cpp)
             target_include_directories(robotweax_srt_telemetry_public_srt_runtime_tests
+                PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
+            target_include_directories(robotweax_srt_telemetry_public_srt_incident_peer
                 PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
             target_link_libraries(robotweax_srt_telemetry_public_srt_runtime_tests
                 PRIVATE RobotweaxSRTTelemetry::public_srt_adapter
                         ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY})
+            target_link_libraries(robotweax_srt_telemetry_public_srt_incident_peer
+                PRIVATE RobotweaxSRTTelemetry::public_srt_adapter
+                        ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY})
             target_compile_features(robotweax_srt_telemetry_public_srt_runtime_tests
+                PRIVATE cxx_std_20)
+            target_compile_features(robotweax_srt_telemetry_public_srt_incident_peer
                 PRIVATE cxx_std_20)
             if(ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER STREQUAL "robotweax-srt")
                 target_compile_definitions(robotweax_srt_telemetry_public_srt_runtime_tests
+                    PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_PROVIDER_ROBOTWEAX)
+                target_compile_definitions(robotweax_srt_telemetry_public_srt_incident_peer
                     PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_PROVIDER_ROBOTWEAX)
             endif()
             if(EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt.h" AND
                NOT EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt/srt.h")
                 target_compile_definitions(robotweax_srt_telemetry_public_srt_runtime_tests
+                    PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
+                target_compile_definitions(robotweax_srt_telemetry_public_srt_incident_peer
                     PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
             endif()
             add_test(NAME robotweax_srt_telemetry_public_srt_runtime_tests

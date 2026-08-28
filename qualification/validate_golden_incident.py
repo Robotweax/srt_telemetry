@@ -130,6 +130,12 @@ def validate_expectations(manifest: dict, fieldnames: list, by_key: dict) -> Non
             expected = Decimal(str(expectation["value"]))
             if operator == "equals" and actual != expected:
                 fail(f"{identifier} expected {expected}, got {actual} at {sample_index}")
+            if operator == "greater-than":
+                if actual <= expected:
+                    fail(
+                        f"{identifier} expected greater than {expected}, got {actual} at {sample_index}"
+                    )
+                continue
             if operator == "equals-field-plus":
                 comparison = f"expected_{expectation['comparisonField']}"
                 if comparison not in fieldnames or row[comparison] == "":
@@ -142,6 +148,47 @@ def validate_expectations(manifest: dict, fieldnames: list, by_key: dict) -> Non
                 continue
             if operator != "equals":
                 fail(f"{identifier} uses unsupported operator: {operator}")
+
+
+def validate_capture(manifest: dict, by_key: dict) -> None:
+    provenance = manifest["provenance"]
+    capture = manifest.get("capture")
+    if provenance["kind"] == "synthetic-contract-fixture":
+        if capture is not None:
+            fail("synthetic fixture cannot contain captured-provider metadata")
+        return
+    if provenance["kind"] != "captured-provider-run" or not isinstance(capture, dict):
+        fail("captured provider run requires capture metadata")
+    artifacts = capture.get("artifacts")
+    if not isinstance(artifacts, list):
+        fail("capture artifacts are missing")
+    artifact_roles = {artifact.get("role") for artifact in artifacts}
+    if artifact_roles != set(manifest["dataset"]["roles"]):
+        fail(f"capture artifact roles do not match dataset roles: {artifact_roles}")
+    proxy = capture.get("faultProxy")
+    if not isinstance(proxy, dict) or not isinstance(proxy.get("stages"), list):
+        fail("capture fault proxy observations are missing")
+    stages = proxy["stages"]
+    indexes = [stage.get("sampleIndex") for stage in stages]
+    expected_indexes = list(range(1, max(index for _, index in by_key) + 1))
+    if indexes != expected_indexes:
+        fail(f"capture fault stages are not contiguous: {indexes}")
+    first_active = manifest["faultPlan"]["firstActiveSample"]
+    last_active = manifest["faultPlan"]["lastActiveSample"]
+    expected_drops = proxy.get("expectedDropsPerActiveInterval")
+    messages = proxy.get("messagesPerInterval")
+    for stage in stages:
+        index = stage["sampleIndex"]
+        active = first_active <= index <= last_active
+        if stage.get("active") != active:
+            fail(f"fault proxy active state mismatch at sample {index}")
+        if stage.get("originalDataPackets") != messages:
+            fail(f"fault proxy original packet count mismatch at sample {index}")
+        drops = stage.get("droppedOriginalDataPackets")
+        if drops != (expected_drops if active else 0):
+            fail(f"fault proxy drop count mismatch at sample {index}: {drops}")
+        if active and stage.get("repeatedDataPackets", 0) < expected_drops:
+            fail(f"fault proxy did not observe retransmission attempts at sample {index}")
 
 
 def validate_manifest(manifest_path: Path) -> None:
@@ -193,6 +240,7 @@ def validate_manifest(manifest_path: Path) -> None:
         if (role, first_active) not in by_key or (role, last_active) not in by_key:
             fail(f"fault plan is outside the dataset for role {role}")
     validate_expectations(manifest, fieldnames, by_key)
+    validate_capture(manifest, by_key)
     print(f"golden incident valid: {manifest['incidentId']} ({len(rows)} rows)")
 
 
