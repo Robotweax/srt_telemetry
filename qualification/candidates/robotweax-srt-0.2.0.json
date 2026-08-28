@@ -12,11 +12,13 @@
     "deterministic-adapter-mapping",
     "bidirectional-self-loopback-common-subset",
     "robotweax-haivision-bidirectional-loopback-common-subset",
-    "sampling-and-lifecycle-macos-arm64-candidate"
+    "sampling-and-lifecycle-macos-arm64-candidate",
+    "constant-loss-robotweax-sender-haivision-receiver-candidate"
   ],
   "notes": [
     "Candidate record only; full-field and deployment-profile qualification have not been completed.",
     "A clean local clone was built as a shared library and passed real caller/listener payload exchange in both self-provider and Haivision v1.5.5 cross-provider directions.",
-    "The macOS arm64 sampling and lifecycle result is candidate evidence only; it does not establish a release performance budget or support concurrent socket close and sampling."
+    "The macOS arm64 sampling and lifecycle result is candidate evidence only; it does not establish a release performance budget or support concurrent socket close and sampling.",
+    "The captured constant-loss result exercises sender loss, retransmission, and physical-versus-unique traffic only in the Robotweax-sender to Haivision-receiver profile."
   ]
 }

@@ -21,7 +21,9 @@ deployment-profile qualification remain open. The project intentionally does
 not yet contain a production agent, backend, dashboard, alert engine, or RCA
 engine. The first deterministic constant-loss incident fixture now preserves
 paired sender/receiver evidence and explicit non-claims for future diagnostic
-work.
+work. A captured Robotweax-sender to Haivision-receiver run additionally
+retains exact public loss, retransmission, and recovery observations through a
+deterministic user-space fault boundary.
 
 The first product claim to prove is:
 
@@ -131,5 +133,6 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Retained cross-provider evidence](qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
 - [Retained sampling and lifecycle evidence](qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
 - [Constant-loss golden incident](testdata/golden-incidents/incident-001-constant-loss/README.md)
+- [Captured Robotweax-to-Haivision constant-loss incident](testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/README.md)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)

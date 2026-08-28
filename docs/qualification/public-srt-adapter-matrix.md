@@ -54,6 +54,25 @@ investigation signal for Robotweax SRT, not yet a regression conclusion.
 
 - [2026-08-28 macOS arm64 sampling and lifecycle](../../qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
 
+## Constant-loss field candidate evidence
+
+An exact Robotweax sender and Haivision receiver were connected through a
+user-space UDP proxy. For each of four active intervals, the proxy discarded 10
+of 200 first-observed DATA sequences and forwarded 10 later observations of the
+same sequences. All application messages arrived.
+
+Robotweax reported 9 sender-loss packets, 10 retransmitted packets, 210 sent
+physical packets, and 200 sent unique packets per active interval. Haivision
+reported 9 receiver-loss packets while receiving 200 physical and 200 unique
+packets. Loss and retransmission returned to zero after fault removal.
+
+This is direction- and profile-specific candidate evidence for the public loss,
+retransmission, and physical-versus-unique mappings. The injected drop count is
+not treated as identical to either public loss counter. No release capability
+is declared until the reverse direction and representative profiles pass.
+
+- [2026-08-28 captured Robotweax-to-Haivision constant loss](../../testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/manifest.json)
+
 ## Remaining release qualification
 
 - live caller-to-listener and listener-to-caller sampling for the remaining

@@ -60,3 +60,8 @@ observation by the 31-bit packet sequence. A fault stage may drop a deterministi
 subset of first observations while forwarding later packets with the same
 sequence. The proxy records originals, repeats, drops, control traffic, and
 reverse traffic for every stage.
+
+The first captured incident demonstrates why injected drops are not renamed as
+generic SRT loss. Ten deliberately discarded original datagrams produced ten
+retransmissions but nine new sender- and receiver-side loss observations per
+interval on the tested profile. All three quantities remain separate evidence.

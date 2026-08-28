@@ -194,6 +194,11 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     add_test(NAME robotweax_srt_telemetry_golden_incident_test
         COMMAND robotweax_srt_telemetry_golden_incident_test
             "${ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR}/samples.csv")
+    set(ROBOTWEAX_SRT_TELEMETRY_CAPTURED_GOLDEN_INCIDENT_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision")
+    add_test(NAME robotweax_srt_telemetry_captured_golden_incident_test
+        COMMAND robotweax_srt_telemetry_golden_incident_test
+            "${ROBOTWEAX_SRT_TELEMETRY_CAPTURED_GOLDEN_INCIDENT_DIR}/samples.csv")
 
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
@@ -205,6 +210,10 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}"
                 "${ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR}/generate.py"
                 --check)
+        add_test(NAME robotweax_srt_telemetry_captured_golden_incident_manifest_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
+                "${ROBOTWEAX_SRT_TELEMETRY_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json")
     endif()
 endif()
 

@@ -101,3 +101,7 @@ The output directory must not already contain `manifest.json` or `samples.csv`;
 retained evidence is never overwritten. Logical one-second sample timestamps
 make delta-rate replay deterministic and therefore do not measure wall-clock
 throughput.
+
+Retained captures:
+
+- [2026-08-28 Robotweax sender to Haivision receiver constant loss](../testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/manifest.json)

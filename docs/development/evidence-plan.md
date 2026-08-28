@@ -26,8 +26,9 @@ IPv6, FEC, group, remaining-field, and multi-platform gates.
 
 ## Initial fault corpus
 
-1. constant loss — first synthetic contract fixture complete; captured provider
-   evidence open;
+1. constant loss — synthetic contract fixture and first captured Robotweax
+   sender to Haivision receiver candidate complete; reverse direction and
+   deployment profiles open;
 2. burst loss;
 3. RTT step and RTT ramp;
 4. bandwidth reduction with queue growth;
