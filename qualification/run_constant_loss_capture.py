@@ -178,9 +178,11 @@ class FaultProxy:
             endpoint.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
             endpoint.bind(("127.0.0.1", 0))
             endpoint.setblocking(False)
+        self.listen_port = int(self.downstream.getsockname()[1])
         self.upstream.connect(("127.0.0.1", target_port))
         self.client_address = None
         self.sequences = set()
+        self.reverse_control_packet_types = {}
         self.lock = threading.Lock()
         self.stage = None
         self.error = None
@@ -190,7 +192,7 @@ class FaultProxy:
 
     @property
     def port(self) -> int:
-        return int(self.downstream.getsockname()[1])
+        return self.listen_port
 
     def begin_stage(self, sample_index: int, active: bool) -> None:
         with self.lock:
@@ -206,6 +208,7 @@ class FaultProxy:
                 "forwardedControlPackets": 0,
                 "reversePackets": 0,
             }
+            self.reverse_control_packet_types = {}
 
     def finish_stage(self) -> dict:
         with self.lock:
@@ -219,6 +222,19 @@ class FaultProxy:
     def raise_if_failed(self) -> None:
         if self.error is not None:
             raise RuntimeError(f"fault proxy failed: {self.error}")
+
+    def describe(self) -> dict:
+        with self.lock:
+            stage = dict(self.stage) if self.stage is not None else None
+            observed_sequences = len(self.sequences)
+        return {
+            "port": self.port,
+            "clientAddressKnown": self.client_address is not None,
+            "observedSequences": observed_sequences,
+            "activeStage": stage,
+            "reverseControlPacketTypes": dict(self.reverse_control_packet_types),
+            "error": str(self.error) if self.error is not None else None,
+        }
 
     def stop(self) -> None:
         self.stopping.set()
@@ -277,6 +293,14 @@ class FaultProxy:
                         with self.lock:
                             if self.stage is not None:
                                 self.stage["reversePackets"] += 1
+                                if len(packet) >= 4 and (packet[0] & 0x80) != 0:
+                                    packet_type = str(
+                                        (int.from_bytes(packet[0:4], "big") >> 16)
+                                        & 0x7FFF
+                                    )
+                                    self.reverse_control_packet_types[packet_type] = (
+                                        self.reverse_control_packet_types.get(packet_type, 0) + 1
+                                    )
                         self.downstream.sendto(packet, self.client_address)
         except Exception as error:
             self.error = error
@@ -305,7 +329,13 @@ def validate_sample(sample: dict, provider: str, role: str, sample_index: int) -
         raise RuntimeError(f"missing raw/delta sample objects: {sample}")
 
 
-def sample_pair(listener: Peer, caller: Peer, sample_index: int) -> list:
+def sample_pair(
+    listener: Peer,
+    caller: Peer,
+    sample_index: int,
+    receiver_provider: str,
+    sender_provider: str,
+) -> list:
     monotonic_nano = (sample_index + 1) * LOGICAL_INTERVAL_NANO
     unix_nano = 1_800_000_000_000_000_000 + monotonic_nano
     command = f"SAMPLE {sample_index} {unix_nano} {monotonic_nano}"
@@ -313,26 +343,36 @@ def sample_pair(listener: Peer, caller: Peer, sample_index: int) -> list:
     caller.send(command)
     receiver = parse_prefixed_json(listener.wait_for("INCIDENT_SAMPLE"), "INCIDENT_SAMPLE")
     sender = parse_prefixed_json(caller.wait_for("INCIDENT_SAMPLE"), "INCIDENT_SAMPLE")
-    validate_sample(receiver, "haivision-srt", "receiver", sample_index)
-    validate_sample(sender, "robotweax-srt", "sender", sample_index)
+    validate_sample(receiver, receiver_provider, "receiver", sample_index)
+    validate_sample(sender, sender_provider, "sender", sample_index)
     return [sender, receiver]
 
 
-def run_capture(haivision_peer: Path, robotweax_peer: Path, messages: int, drop_every: int) -> tuple:
-    listener = Peer(haivision_peer, ["--role", "listener"])
+def run_capture(
+    receiver_peer: Path,
+    sender_peer: Path,
+    receiver_provider: str,
+    sender_provider: str,
+    messages: int,
+    drop_every: int,
+) -> tuple:
+    listener = Peer(receiver_peer, ["--role", "listener"])
     caller = None
     proxy = None
+    primary_error = None
     try:
         ready = parse_prefixed_json(listener.wait_for("READY"), "READY")
         listener_port = ready.get("port")
         if not isinstance(listener_port, int) or not 0 < listener_port <= 65_535:
             raise RuntimeError(f"invalid listener port: {ready}")
         proxy = FaultProxy(listener_port, drop_every)
-        caller = Peer(robotweax_peer, ["--role", "caller", "--port", str(proxy.port)])
+        caller = Peer(sender_peer, ["--role", "caller", "--port", str(proxy.port)])
         listener.wait_for("CONNECTED")
         caller.wait_for("CONNECTED")
 
-        samples = sample_pair(listener, caller, 0)
+        samples = sample_pair(
+            listener, caller, 0, receiver_provider, sender_provider
+        )
         stages = []
         for sample_index in range(1, LAST_SAMPLE + 1):
             active = FIRST_ACTIVE_SAMPLE <= sample_index <= LAST_ACTIVE_SAMPLE
@@ -356,21 +396,43 @@ def run_capture(haivision_peer: Path, robotweax_peer: Path, messages: int, drop_
             if active and stage["repeatedDataPackets"] < expected_drops:
                 raise RuntimeError(f"proxy did not observe retransmission attempts: {stage}")
             stages.append(stage)
-            samples.extend(sample_pair(listener, caller, sample_index))
+            samples.extend(
+                sample_pair(
+                    listener,
+                    caller,
+                    sample_index,
+                    receiver_provider,
+                    sender_provider,
+                )
+            )
 
+        proxy.stop()
+        proxy = None
         listener.send("DONE")
         caller.send("DONE")
         listener.finish()
         caller.finish()
-        proxy.stop()
-        proxy = None
         return samples, stages
+    except Exception as error:
+        primary_error = error
+        diagnostic = {
+            "receiver": listener.describe(),
+            "sender": caller.describe() if caller is not None else None,
+            "proxy": proxy.describe() if proxy is not None else None,
+        }
+        raise RuntimeError(
+            f"{error}; capture diagnostics: {json.dumps(diagnostic, sort_keys=True)}"
+        ) from error
     finally:
         listener.stop()
         if caller is not None:
             caller.stop()
         if proxy is not None:
-            proxy.stop()
+            try:
+                proxy.stop()
+            except Exception:
+                if primary_error is None:
+                    raise
 
 
 def samples_csv(samples: list) -> bytes:
@@ -433,6 +495,46 @@ def artifact_manifest(role: str, peer: Path, library: Path) -> dict:
     }
 
 
+def capture_direction(arguments: argparse.Namespace) -> dict:
+    providers = {
+        "robotweax": {
+            "name": "Robotweax SRT",
+            "provider": "robotweax-srt",
+            "peer": arguments.robotweax_peer,
+            "library": arguments.robotweax_library,
+            "version": arguments.robotweax_version,
+            "revision": arguments.robotweax_revision,
+            "build_profile": arguments.robotweax_build_profile,
+        },
+        "haivision": {
+            "name": "Haivision SRT",
+            "provider": "haivision-srt",
+            "peer": arguments.haivision_peer,
+            "library": arguments.haivision_library,
+            "version": arguments.haivision_version,
+            "revision": arguments.haivision_revision,
+            "build_profile": arguments.haivision_build_profile,
+        },
+    }
+    if arguments.direction == "robotweax-to-haivision":
+        sender = providers["robotweax"]
+        receiver = providers["haivision"]
+        incident_id = "incident-002-captured-constant-loss-robotweax-haivision"
+    else:
+        sender = providers["haivision"]
+        receiver = providers["robotweax"]
+        incident_id = "incident-003-captured-constant-loss-haivision-robotweax"
+    return {
+        "incident_id": incident_id,
+        "topology": (
+            f"{sender['name']} sender through a deterministic UDP fault proxy "
+            f"to a {receiver['name']} receiver"
+        ),
+        "sender": sender,
+        "receiver": receiver,
+    }
+
+
 def require_incident_evidence(samples: list) -> None:
     by_key = {(sample["role"], sample["sampleIndex"]): sample for sample in samples}
     for sample_index in range(FIRST_ACTIVE_SAMPLE, LAST_ACTIVE_SAMPLE + 1):
@@ -453,26 +555,42 @@ def require_incident_evidence(samples: list) -> None:
 
 def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) -> bytes:
     expected_drops = arguments.messages_per_interval // arguments.drop_every
+    direction = capture_direction(arguments)
+    sender = direction["sender"]
+    receiver = direction["receiver"]
+    contradictions = [
+        "Logical sample timestamps make rate columns deterministic but do not measure wall-clock throughput.",
+        "IPv4 loopback through a user-space proxy does not qualify physical network devices or wide-area paths.",
+        "The capture qualifies only the declared unencrypted Live/Message direction and exact provider artifacts.",
+    ]
+    trailing_originals = arguments.messages_per_interval % arguments.drop_every
+    if trailing_originals != 0:
+        packet_label = "packet" if trailing_originals == 1 else "packets"
+        contradictions.append(
+            f"Each active interval sends {trailing_originals} non-dropped original "
+            f"DATA {packet_label} after the final deliberate drop; flight-tail recovery "
+            "without later DATA remains unqualified."
+        )
     manifest = {
         "schemaVersion": "1alpha1",
-        "incidentId": "incident-002-captured-constant-loss-robotweax-haivision",
+        "incidentId": direction["incident_id"],
         "failureClass": "constant-packet-loss",
-        "topology": "Robotweax SRT sender through a deterministic UDP fault proxy to a Haivision SRT receiver",
+        "topology": direction["topology"],
         "direction": "sender-to-receiver",
         "providers": [
             provider_manifest(
                 "sender",
-                "robotweax-srt",
-                arguments.robotweax_version,
-                arguments.robotweax_revision,
-                arguments.robotweax_build_profile,
+                sender["provider"],
+                sender["version"],
+                sender["revision"],
+                sender["build_profile"],
             ),
             provider_manifest(
                 "receiver",
-                "haivision-srt",
-                arguments.haivision_version,
-                arguments.haivision_revision,
-                arguments.haivision_build_profile,
+                receiver["provider"],
+                receiver["version"],
+                receiver["revision"],
+                receiver["build_profile"],
             ),
         ],
         "transportProfile": {
@@ -515,8 +633,8 @@ def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) 
                 "timingSource": "orchestrator-logical-one-second",
             },
             "artifacts": [
-                artifact_manifest("sender", arguments.robotweax_peer, arguments.robotweax_library),
-                artifact_manifest("receiver", arguments.haivision_peer, arguments.haivision_library),
+                artifact_manifest("sender", sender["peer"], sender["library"]),
+                artifact_manifest("receiver", receiver["peer"], receiver["library"]),
             ],
             "faultProxy": {
                 "classification": "SRT DATA when the first header bit is zero; first observation keyed by the 31-bit packet sequence",
@@ -576,18 +694,20 @@ def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) 
                 "sampleRange": {"first": LAST_ACTIVE_SAMPLE + 1, "last": LAST_SAMPLE},
             },
         ],
-        "contradictions": [
-            "Logical sample timestamps make rate columns deterministic but do not measure wall-clock throughput.",
-            "IPv4 loopback through a user-space proxy does not qualify physical network devices or wide-area paths.",
-            "The capture qualifies only the declared unencrypted Live/Message direction and exact provider artifacts.",
-        ],
+        "contradictions": contradictions,
     }
     return (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Capture a deterministic Robotweax-to-Haivision constant-loss incident"
+        description="Capture a deterministic cross-provider constant-loss incident"
+    )
+    parser.add_argument(
+        "--direction",
+        choices=["robotweax-to-haivision", "haivision-to-robotweax"],
+        default="robotweax-to-haivision",
+        help="sender-to-receiver provider direction (default: %(default)s)",
     )
     parser.add_argument("--robotweax-peer", type=Path, required=True)
     parser.add_argument("--robotweax-library", type=Path, required=True)
@@ -618,15 +738,18 @@ def main() -> int:
             raise RuntimeError(f"required artifact does not exist: {path}")
     if arguments.messages_per_interval <= 0 or arguments.drop_every <= 1:
         raise RuntimeError("messages-per-interval must be positive and drop-every must exceed one")
-    if arguments.messages_per_interval % arguments.drop_every != 0:
-        raise RuntimeError("messages-per-interval must be divisible by drop-every")
+    if arguments.messages_per_interval < arguments.drop_every:
+        raise RuntimeError("messages-per-interval must be at least drop-every")
     retained_paths = [arguments.output_dir / "manifest.json", arguments.output_dir / "samples.csv"]
     if any(path.exists() for path in retained_paths):
         raise RuntimeError(f"refusing to overwrite retained capture in {arguments.output_dir}")
 
+    direction = capture_direction(arguments)
     samples, stages = run_capture(
-        arguments.haivision_peer,
-        arguments.robotweax_peer,
+        direction["receiver"]["peer"],
+        direction["sender"]["peer"],
+        direction["receiver"]["provider"],
+        direction["sender"]["provider"],
         arguments.messages_per_interval,
         arguments.drop_every,
     )
