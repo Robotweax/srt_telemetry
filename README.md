@@ -30,7 +30,12 @@ captures now also retain public receive-buffer growth, overlapping sender
 flight/send-buffer pressure, lossless recovery, and a supported receiver
 endpoint hypothesis in both directions. Exact application-consumption timing
 remains a non-claim, and no Robotweax-only extension is required for this
-operator question. The first deterministic constant-loss fixture preserves
+operator question. Paired egress-capacity captures additionally retain proxy
+queue growth, public sender-buffer/flight pressure, a receiver buffer below its
+conservative pressure threshold, lossless recovery, and a supported sender
+endpoint hypothesis. Public statistics do not identify the exact restriction,
+but no Robotweax-only extension is required for the bounded localization
+question. The first deterministic constant-loss fixture preserves
 paired sender/receiver evidence and explicit
 non-claims for future diagnostic work. Captured constant- and burst-loss runs
 in both sender directions additionally retain exact public loss,
@@ -42,12 +47,13 @@ in one 50 ms window from the same aggregate loss distributed across eight
 windows in both cross-provider directions. Therefore no Robotweax-only signal
 is currently required for that coarse operator question. Exact within-window
 packet adjacency and a controlled release cost budget remain open.
-An executable, counterbalanced operator-evaluation candidate now compares four
+An executable, counterbalanced operator-evaluation candidate now compares six
 real cross-provider recordings as inference-free normalized public SRT
 statistics versus deterministic incident reports. It records pseudonymous
 timing, accuracy, unsupported hypotheses, missing-evidence recognition, and
 confidence. The automated comparison now exercises constant loss, an RTT step,
-and receiver pause/backpressure. Automated answers are explicitly harness-only;
+receiver pause/backpressure, and bandwidth reduction with sender queue growth.
+Automated answers are explicitly harness-only;
 no design-partner or diagnostic-value product claim has been made.
 
 The first product claim to prove is:
@@ -177,5 +183,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Haivision-to-Robotweax RTT-step analysis](testdata/golden-incidents/incident-009-rtt-step-haivision-robotweax/README.md)
 - [Robotweax sender to paused Haivision receiver](testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/README.md)
 - [Haivision sender to paused Robotweax receiver](testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/README.md)
+- [Robotweax sender through reduced egress capacity](testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/README.md)
+- [Haivision sender through reduced egress capacity](testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/README.md)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)

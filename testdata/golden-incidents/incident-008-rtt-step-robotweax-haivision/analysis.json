@@ -3,7 +3,7 @@
     "pressure": {
       "receiverReceiveBufferBytes": null,
       "receiverReceiveBufferStepThreshold": null,
-      "rule": "maximum warm sample 1/2 baseline; byte threshold=max(2x, baseline+65536); packet threshold=max(2x, baseline+8)",
+      "rule": "maximum warm sample 1/2 baseline; sender byte threshold=max(2x, baseline+65536); receiver byte threshold=max(2x, baseline+1048576); packet threshold=max(2x, baseline+8)",
       "senderFlightSizePackets": null,
       "senderFlightStepThreshold": null,
       "senderSendBufferBytes": null,
@@ -92,7 +92,8 @@
       "missingEvidence": [
         "Sender buffer occupancy is unavailable.",
         "Sender flight-size evidence is unavailable.",
-        "Sender application scheduling is unavailable."
+        "Sender application scheduling is unavailable.",
+        "Offered application rate and the exact egress capacity restriction are unavailable."
       ],
       "summary": "Sender pressure requires drop, queue, or flight-window evidence.",
       "supportingEvidence": []
@@ -115,6 +116,7 @@
     "The analysis does not identify the exact failing network hop.",
     "RTT evidence does not isolate one-way delay or its direction.",
     "Public SRT buffer gauges do not expose exact application scheduling or consumption timing.",
+    "Public SRT statistics do not expose the offered application rate or identify an exact egress capacity restriction.",
     "The analysis does not infer unavailable endpoint-pressure metrics as zero."
   ],
   "schemaVersion": "1alpha1",

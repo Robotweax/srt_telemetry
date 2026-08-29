@@ -245,6 +245,44 @@ Retained captures:
 - [2026-08-29 Robotweax sender to paused Haivision receiver](../testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/manifest.json)
 - [2026-08-29 Haivision sender to paused Robotweax receiver](../testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/manifest.json)
 
+## Bandwidth-reduction capture runner
+
+`qualification/run_bandwidth_reduction_capture.py` places a deterministic UDP
+data-packet release boundary between the exact provider-linked peers. The
+default experiment offers 2,000 messages without application pacing, releases
+at 1,400 DATA packets per second during samples 3 through 6, then drains at
+20,000 packets per second.
+
+```sh
+python3 qualification/run_bandwidth_reduction_capture.py \
+  --direction robotweax-to-haivision \
+  --robotweax-peer /path/to/robotweax/incident-peer \
+  --robotweax-library /path/to/robotweax/libsrt \
+  --robotweax-version VERSION \
+  --robotweax-revision REVISION \
+  --robotweax-build-profile PROFILE \
+  --haivision-peer /path/to/haivision/incident-peer \
+  --haivision-library /path/to/haivision/libsrt \
+  --haivision-version VERSION \
+  --haivision-revision REVISION \
+  --haivision-build-profile PROFILE \
+  --telemetry-revision REVISION \
+  --record-jsonl \
+  --output-dir /new/incident-directory
+```
+
+The capture requires proxy queue growth, overlapping public sender-buffer and
+flight growth, a receiver buffer below its conservative pressure threshold,
+complete delivery without loss/drop/retransmission, and recovery. The analyzer
+therefore localizes sender-/egress-side pressure. The proxy records the
+capacity restriction as experiment ground truth; public SRT statistics do not
+identify the exact restriction or offered application rate.
+
+Retained captures:
+
+- [2026-08-29 Robotweax sender through reduced egress capacity](../testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender through reduced egress capacity](../testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/manifest.json)
+
 ## Operator comparison
 
 `tools/operator_evaluation.py` prepares and runs the counterbalanced comparison

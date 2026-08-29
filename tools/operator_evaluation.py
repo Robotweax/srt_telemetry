@@ -69,8 +69,22 @@ MISSING_EVIDENCE_BY_TEXT = {
         "exact-failing-hop",
     },
     "Sender buffer occupancy is unavailable.": {"sender-buffer-occupancy"},
+    "Sender buffer occupancy does not cross the candidate threshold.": {
+        "sender-buffer-occupancy"
+    },
     "Sender flight-size evidence is unavailable.": {"sender-flight-size"},
+    "Sender flight size does not cross the candidate threshold.": {
+        "sender-flight-size"
+    },
+    "Sender pressure recovery is not observed.": {
+        "sender-buffer-occupancy",
+        "sender-flight-size",
+    },
     "Receiver buffer occupancy is unavailable.": {"receiver-buffer-occupancy"},
+    "Receiver buffer occupancy does not cross the candidate threshold.": {
+        "receiver-buffer-occupancy"
+    },
+    "Receiver buffer recovery is not observed.": {"receiver-buffer-occupancy"},
     "Paired sender and receiver loss deltas are not both available.": {
         "paired-loss-alignment"
     },

@@ -150,6 +150,25 @@ signal is selected for this operator question.
 - [2026-08-29 Robotweax sender to paused Haivision receiver](../../testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/manifest.json)
 - [2026-08-29 Haivision sender to paused Robotweax receiver](../../testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/manifest.json)
 
+## Sender-/egress-pressure field candidate evidence
+
+A monotonic user-space UDP proxy restricted downstream DATA release to 1,400
+packets per second while each sender offered 2,000 messages without application
+pacing. The proxy queue exceeded 1,800 packets in both provider directions.
+Public sender-buffer occupancy exceeded 2.4 MB and flight size exceeded 1,790
+packets during samples 3–6, while each receiver buffer remained below the
+conservative 1 MiB pressure threshold. Both gauges recovered at sample 7.
+
+All 2,400 messages arrived in both captures without public loss, endpoint drop,
+undecryptable, or retransmission evidence. Common public gauges therefore
+support a sender-endpoint pressure hypothesis in both directions. Exact offered
+application rate and egress capacity remain unavailable from public statistics;
+the retained proxy stages are ground truth for the controlled restriction. No
+Robotweax-only signal is selected for the bounded localization question.
+
+- [2026-08-29 Robotweax sender through reduced egress capacity](../../testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender through reduced egress capacity](../../testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/manifest.json)
+
 ## Remaining release qualification
 
 - live caller-to-listener and listener-to-caller sampling for the remaining

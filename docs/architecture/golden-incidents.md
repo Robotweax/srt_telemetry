@@ -111,3 +111,13 @@ growth, and returns below the warm-baseline threshold at sample 7. All 7,400
 messages arrive without public loss, drop, undecryptable, or retransmission
 evidence. This localizes receiver-side pressure through common public fields;
 exact application-consumption timing remains unavailable.
+
+Incidents 012 and 013 offer 2,000 messages without application pacing while a
+monotonic UDP proxy restricts downstream DATA release to 1,400 packets per
+second during samples 3 through 6. The proxy queue grows beyond 1,800 packets;
+public sender-buffer and flight gauges rise together while the receiver buffer
+stays below its conservative pressure threshold, then recover in sample 7.
+All 2,400 messages arrive without public loss, drop, or retransmission. This
+localizes sender-/egress-side pressure through common public fields. The proxy
+restriction is capture ground truth: public statistics alone do not expose the
+offered application rate or exact egress capacity.

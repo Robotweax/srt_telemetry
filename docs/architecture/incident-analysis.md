@@ -19,8 +19,13 @@ the SRT estimators can still expose their bootstrap value there; the threshold
 is the larger of twice the baseline and baseline plus 20 ms. Receiver pressure
 is supported when receiver-buffer growth spans at least two samples, overlaps
 sender-buffer or flight growth, and later recovers. Pressure baselines use the
-maximum of warm samples 1 and 2; byte gauges must rise by at least 65,536 bytes
-and packet gauges by at least eight packets as well as doubling the baseline.
+maximum of warm samples 1 and 2. Sender byte gauges must rise by at least
+65,536 bytes, the conservative receiver-pressure gauge by at least 1,048,576
+bytes, and packet gauges by at least eight packets as well as doubling their
+baselines. Sender pressure is supported when sender-buffer growth spans at
+least two samples, overlaps flight growth, the receiver buffer remains below
+its pressure threshold throughout that overlap, and both sender gauges later
+recover.
 Supported receiver pressure is a competing endpoint explanation and therefore
 prevents an overlapping RTT step from being selected as a path-delay incident.
 An RTT estimator may remain above its threshold for a bounded sample after the
@@ -53,10 +58,11 @@ clock-synchronization quality.
 The provider-linked incident peer now supplies this format directly. Every
 successful public-adapter sample is pushed into an endpoint-local bounded
 recorder; the `DONE` barrier atomically publishes the JSONL snapshot. Retained
-Incidents 006 through 011 prove this path for constant loss, an RTT step, and
-receiver pause with exact Robotweax and Haivision libraries in both sender
-directions. The receiver-pause captures additionally consume public buffer and
-flight gauges from the same recorder path. Their CSV views remain an
+Incidents 006 through 013 prove this path for constant loss, an RTT step,
+receiver pause, and bandwidth reduction with sender queue growth using exact
+Robotweax and Haivision libraries in both sender directions. The pressure
+captures additionally consume public buffer and flight gauges from the same
+recorder path. Their CSV views remain an
 independent delta-contract replay rather than an input to the retained JSONL
 analyses.
 
@@ -67,7 +73,8 @@ contract is [`incident-analysis-result.schema.json`](../../schema/incident-analy
 ## Diagnostic boundary
 
 The timeline identifies the first and last sample with a relevant positive
-loss/drop delta, paired RTT-threshold deviation, or receiver-buffer pressure,
+loss/drop delta, paired RTT-threshold deviation, or sender/receiver-buffer
+pressure,
 the first subsequent non-deviating recovery sample, data-quality boundaries,
 and evidence totals.
 An RTT estimator needs later traffic observations to converge after a delay
@@ -77,7 +84,8 @@ artifact hashes and exact provider provenance remain attached to the result.
 This is a local, rule-based candidate rather than a production RCA engine. It
 does not identify an exact failing network hop, infer one-way delay or its
 direction from round-trip measurements, infer missing endpoint metrics or exact
-application scheduling from public SRT buffer gauges, resolve sequence
+application scheduling or an exact egress-capacity restriction from public SRT
+buffer gauges, resolve sequence
 adjacency inside a sample window, or establish the product's operator-value
 claim. Those limits are emitted as non-claims or missing evidence rather than
 hidden behind a generic score.

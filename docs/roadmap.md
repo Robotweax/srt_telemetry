@@ -28,8 +28,10 @@
   exact within-window adjacency and a release cost gate open;
 - constant- and burst-loss captured cross-provider gap candidates complete in
   both sender directions; and
-- receiver-pause/backpressure public-gauge candidates complete in both provider
-  directions with lossless recovery and no Robotweax extension required;
+- receiver-pause/backpressure and reduced-egress-capacity public-gauge
+  candidates complete in both provider directions with lossless recovery and
+  no Robotweax extension required for the bounded endpoint-localization
+  questions;
   flight-tail/profile coverage and the remaining initial corpus open.
 
 ## Phase 2: diagnostic proof — current
@@ -39,11 +41,12 @@
   step with warm-baseline thresholds and observed recovery;
 - explicit insufficient-evidence outcome complete;
 - synthetic correlation plus direct provider-linked recorder-to-analyzer
-  candidates complete for constant loss, an RTT step, and receiver pause in
-  both cross-provider sender directions; real cross-endpoint clock-quality
+  candidates complete for constant loss, an RTT step, receiver pause, and
+  bandwidth reduction with sender queue growth in both cross-provider sender
+  directions; real cross-endpoint clock-quality
   contract open; and
 - versioned, counterbalanced raw-statistics versus incident-report evaluation
-  harness complete; automated coverage of three failure classes complete;
+  harness complete; automated coverage of four failure classes complete;
   internal rehearsal, design-partner observations, and coverage of at least
   five real or representative failure classes open.
 

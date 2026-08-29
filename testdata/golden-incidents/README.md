@@ -28,3 +28,5 @@ Current incidents:
 - [Incident 009: Haivision-to-Robotweax RTT step](incident-009-rtt-step-haivision-robotweax/README.md)
 - [Incident 010: Robotweax sender to paused Haivision receiver](incident-010-receiver-pause-robotweax-haivision/README.md)
 - [Incident 011: Haivision sender to paused Robotweax receiver](incident-011-receiver-pause-haivision-robotweax/README.md)
+- [Incident 012: Robotweax sender through reduced egress capacity](incident-012-bandwidth-reduction-robotweax-haivision/README.md)
+- [Incident 013: Haivision sender through reduced egress capacity](incident-013-bandwidth-reduction-haivision-robotweax/README.md)

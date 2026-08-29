@@ -1,0 +1,325 @@
+{
+  "capture": {
+    "artifacts": [
+      {
+        "peerExecutableSha256": "e1064fdf4feaf1060faa463058bce760ce48b256fc1a99347f1cd4715f6db9e4",
+        "providerLibrarySha256": "1377a61d159856f7785bcc6c6fd9af74d1f11e78804c8e6db7b8bc6cb8e95f6a",
+        "role": "sender"
+      },
+      {
+        "peerExecutableSha256": "ca6c624cdcf91acda7b767eb7e130fe9a4396c985ebe69c4592fd02dd799e07a",
+        "providerLibrarySha256": "f5db9ca66be4d681c3271664c6f25ae269a7ad62ae75c815e0fb521f991cff04",
+        "role": "receiver"
+      }
+    ],
+    "bandwidthProxy": {
+      "activeDataPacketsPerSecond": 1400,
+      "activeTransferMessages": 2000,
+      "clock": "time.monotonic_ns",
+      "payloadBytesPerMessage": 1316,
+      "recoveryDataPacketsPerSecond": 20000,
+      "sampleIntervalMillis": 150,
+      "senderPacingMicroseconds": 0,
+      "settleMillis": 100,
+      "stages": [
+        {
+          "active": false,
+          "downstreamControlPackets": 1,
+          "downstreamDataPackets": 100,
+          "forwardedDataPackets": 100,
+          "maximumQueuedPackets": 0,
+          "queueAtEnd": 0,
+          "queueAtStart": 0,
+          "queuedDataPackets": 0,
+          "reversePackets": 2,
+          "sampleIndex": 1
+        },
+        {
+          "active": false,
+          "downstreamControlPackets": 1,
+          "downstreamDataPackets": 100,
+          "forwardedDataPackets": 100,
+          "maximumQueuedPackets": 0,
+          "queueAtEnd": 0,
+          "queueAtStart": 0,
+          "queuedDataPackets": 0,
+          "reversePackets": 2,
+          "sampleIndex": 2
+        },
+        {
+          "active": true,
+          "downstreamControlPackets": 14,
+          "downstreamDataPackets": 2000,
+          "forwardedDataPackets": 214,
+          "maximumQueuedPackets": 1860,
+          "queueAtEnd": 1786,
+          "queueAtStart": 0,
+          "queuedDataPackets": 2000,
+          "reversePackets": 14,
+          "sampleIndex": 3
+        },
+        {
+          "active": true,
+          "downstreamControlPackets": 15,
+          "downstreamDataPackets": 0,
+          "forwardedDataPackets": 215,
+          "maximumQueuedPackets": 1786,
+          "queueAtEnd": 1571,
+          "queueAtStart": 1786,
+          "queuedDataPackets": 0,
+          "reversePackets": 15,
+          "sampleIndex": 4
+        },
+        {
+          "active": true,
+          "downstreamControlPackets": 15,
+          "downstreamDataPackets": 0,
+          "forwardedDataPackets": 216,
+          "maximumQueuedPackets": 1571,
+          "queueAtEnd": 1355,
+          "queueAtStart": 1571,
+          "queuedDataPackets": 0,
+          "reversePackets": 15,
+          "sampleIndex": 5
+        },
+        {
+          "active": true,
+          "downstreamControlPackets": 15,
+          "downstreamDataPackets": 0,
+          "forwardedDataPackets": 195,
+          "maximumQueuedPackets": 1355,
+          "queueAtEnd": 1160,
+          "queueAtStart": 1355,
+          "queuedDataPackets": 0,
+          "reversePackets": 15,
+          "sampleIndex": 6
+        },
+        {
+          "active": false,
+          "downstreamControlPackets": 14,
+          "downstreamDataPackets": 100,
+          "forwardedDataPackets": 1260,
+          "maximumQueuedPackets": 1160,
+          "queueAtEnd": 0,
+          "queueAtStart": 1160,
+          "queuedDataPackets": 0,
+          "reversePackets": 28,
+          "sampleIndex": 7
+        },
+        {
+          "active": false,
+          "downstreamControlPackets": 2,
+          "downstreamDataPackets": 100,
+          "forwardedDataPackets": 100,
+          "maximumQueuedPackets": 0,
+          "queueAtEnd": 0,
+          "queueAtStart": 0,
+          "queuedDataPackets": 0,
+          "reversePackets": 3,
+          "sampleIndex": 8
+        }
+      ],
+      "steadyMessagesPerInterval": 100
+    },
+    "environment": {
+      "machine": "arm64",
+      "platform": "macOS-26.5.2-arm64-arm-64bit",
+      "pythonVersion": "3.9.6",
+      "timingSource": "orchestrator-logical-one-second",
+      "transport": "ipv4-loopback-udp-proxy"
+    },
+    "generatedAt": "2026-08-29T13:36:06.830726+00:00",
+    "telemetryRevision": "fa29acf"
+  },
+  "contradictions": [
+    "The proxy proves a controlled data-packet release restriction, but public SRT statistics alone do not identify that exact cause.",
+    "Logical sample timestamps make rate columns deterministic but do not measure wall-clock throughput.",
+    "Packet release rate is not a claim about exact payload, UDP, or wire bit rate.",
+    "IPv4 loopback does not qualify physical network devices, wide-area paths, encryption, FEC, groups, or other profiles."
+  ],
+  "dataset": {
+    "format": "robotweax-srt-telemetry-csv-v1",
+    "roles": [
+      "sender",
+      "receiver"
+    ],
+    "rows": 18,
+    "sampleIntervalNano": 1000000000,
+    "samplesFile": "samples.csv",
+    "sha256": "a9e00e744af8d9ffc90a0a69d4026a36d5ad17be3c904f5f562122ccd3ff6849"
+  },
+  "direction": "sender-to-receiver",
+  "expectedEvidence": [
+    "sender buffer occupancy and flight size rise together",
+    "receiver buffer occupancy remains below its pressure threshold",
+    "sender pressure recovers after the proxy queue drains",
+    "all application messages arrive without loss, drop, or retransmission"
+  ],
+  "failureClass": "bandwidth-reduction-with-queue-growth",
+  "faultPlan": {
+    "description": "Offer 2000 messages without application pacing while limiting downstream data release to 1400 packets per second during samples 3 through 6, then drain at the recovery rate.",
+    "firstActiveSample": 3,
+    "lastActiveSample": 6,
+    "seed": 0
+  },
+  "incidentId": "incident-012-bandwidth-reduction-robotweax-haivision",
+  "machineExpectations": [
+    {
+      "field": "send_buffer_bytes",
+      "id": "sender-send-buffer-elevated",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "source": "raw",
+      "value": 65536
+    },
+    {
+      "field": "flight_size_packets",
+      "id": "sender-flight-size-elevated",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "source": "raw",
+      "value": 8
+    },
+    {
+      "field": "receive_buffer_bytes",
+      "id": "receiver-buffer-below-pressure-threshold",
+      "operator": "less-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "source": "raw",
+      "value": 1048576
+    },
+    {
+      "field": "send_buffer_bytes",
+      "id": "sender-buffer-recovered",
+      "operator": "less-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 7,
+        "last": 7
+      },
+      "source": "raw",
+      "value": 65536
+    },
+    {
+      "field": "sender_loss_packet_delta",
+      "id": "sender-sender-loss-packet-delta-zero",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "retransmitted_packet_delta",
+      "id": "sender-retransmitted-packet-delta-zero",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "sender_drop_packet_delta",
+      "id": "sender-sender-drop-packet-delta-zero",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_loss_packet_delta",
+      "id": "receiver-receiver-loss-packet-delta-zero",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_drop_packet_delta",
+      "id": "receiver-receiver-drop-packet-delta-zero",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    }
+  ],
+  "payloadDigest": "72164223cd0d27521d667f3966aa3de71375dc9a91bf38d230737fced031ba62",
+  "provenance": {
+    "capturedFromProvider": true,
+    "description": "Public srt_bistats sender buffer and flight gauges captured from exact provider-linked peers across a controlled egress-capacity boundary.",
+    "generator": "qualification/run_bandwidth_reduction_capture.py",
+    "kind": "captured-provider-run",
+    "telemetryVersion": "0.1.0-alpha.0"
+  },
+  "providers": [
+    {
+      "buildProfile": "clean-release-shared-openssl",
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "role": "sender",
+      "version": "0.2.0-4-g271f832"
+    },
+    {
+      "buildProfile": "release-shared-openssl-generated-install",
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "role": "receiver",
+      "version": "1.5.5"
+    }
+  ],
+  "recordings": {
+    "analysis": {
+      "file": "analysis.json",
+      "schemaVersion": "1alpha1",
+      "sha256": "5bf4e1c133f2cd3f1e659a80c3d4477438f033a3e3d1cd17b94211ef41249693"
+    },
+    "flowId": "incident-012-bandwidth-reduction-robotweax-haivision",
+    "format": "robotweax-srt-telemetry-jsonl-v1",
+    "receiver": {
+      "file": "receiver.jsonl",
+      "records": 9,
+      "sha256": "91e268d6164761c64f34cc343b49e6e2f0d4ef4eb28047288ef3dd4deaf51372"
+    },
+    "schemaVersion": "1alpha1",
+    "sender": {
+      "file": "sender.jsonl",
+      "records": 9,
+      "sha256": "436201486f73a3c16ded259773c188961516607ea9e828b8e37daf8fe0aa3160"
+    }
+  },
+  "schemaVersion": "1alpha1",
+  "topology": "Robotweax SRT sender through a deterministic egress-capacity proxy to a Haivision SRT receiver",
+  "transportProfile": {
+    "addressFamily": "ipv4",
+    "api": "message",
+    "encryption": "none",
+    "fec": "none",
+    "group": "none",
+    "mode": "live"
+  }
+}

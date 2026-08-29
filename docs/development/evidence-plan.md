@@ -75,6 +75,14 @@ exact application-consumption schedule, but that missing precision is not
 required for the current operator question. No Robotweax extension is selected
 for this failure class.
 
+The reduced-egress-capacity captures provide a third extension-gate decision.
+Common public sender-buffer and flight gauges localize sender-/egress-side
+pressure and recovery while the receiver buffer remains below its conservative
+pressure threshold. The exact capacity restriction and offered application rate
+remain unavailable, but the proxy retains those facts as experiment ground
+truth. That precision is not required for the current endpoint-localization
+question, so no Robotweax extension is selected for this failure class.
+
 Use this request template when coordination with the Robotweax SRT coding agent
 is necessary:
 
@@ -116,9 +124,9 @@ with raw SRT statistics for real or representative incidents. Measure:
 The first local analyzer candidate now establishes the machine-testable side of
 this gate: a paired timeline, four explicit hypotheses, supporting,
 contradictory, and missing evidence, plus an insufficient-evidence outcome. It
-passes the synthetic and captured loss incidents. Six retained cross-provider
+passes the synthetic and captured loss incidents. Eight retained cross-provider
 runs now also prove the real public-adapter → recorder → JSONL → analyzer path
-for three failure classes in both directions. This does not close the product
+for four failure classes in both directions. This does not close the product
 claim. A design-partner
 comparison must still measure the operator outcomes above, and real
 cross-endpoint correlation must declare clock-synchronization quality before
@@ -129,9 +137,10 @@ counterbalanced raw-statistics and incident-report tasks from retained
 recordings, captures the two timing milestones and bounded operator answers,
 and emits paired aggregate statistics. Its automated end-to-end test uses only
 `synthetic-harness` responses and cannot satisfy this gate. The updated
-automated packet contains constant loss, an RTT step, and receiver
-pause/backpressure in both provider directions, so the harness now exercises
-three of the five real or representative failure classes required by strategy
+automated packet contains constant loss, an RTT step, receiver
+pause/backpressure, and bandwidth reduction with sender queue growth in both
+provider directions, so the harness now exercises four of the five real or
+representative failure classes required by strategy
 Gate B. The next evidence step is an internal facilitation rehearsal followed
 by controlled design-partner sessions and additional fault classes.
 None should use cross-host wall-clock ordering until clock quality is declared.

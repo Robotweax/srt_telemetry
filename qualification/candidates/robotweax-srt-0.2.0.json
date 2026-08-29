@@ -18,7 +18,8 @@
     "burst-loss-robotweax-sender-haivision-receiver-candidate",
     "burst-loss-haivision-sender-robotweax-receiver-candidate",
     "loss-shape-20hz-bidirectional-cross-provider-candidate",
-    "receiver-pause-backpressure-bidirectional-cross-provider-candidate"
+    "receiver-pause-backpressure-bidirectional-cross-provider-candidate",
+    "bandwidth-reduction-sender-pressure-bidirectional-cross-provider-candidate"
   ],
   "notes": [
     "Candidate record only; full-field and deployment-profile qualification have not been completed.",
@@ -28,6 +29,7 @@
     "The captured Robotweax-receiver result exercises gap-loss recovery and receiver loss against a Haivision sender; finite flight-tail loss without later DATA remains unqualified.",
     "The two captured burst-loss results exercise one exposed contiguous 20-packet gap with Robotweax as sender and receiver in separate runs; public interval counters quantify magnitude and recovery but not sequence adjacency.",
     "A wall-clock-paced 20 Hz candidate distinguishes eight one-packet loss windows from one eight-packet window through the common public counters in both sender directions; exact within-window adjacency and a controlled release cost budget remain unqualified.",
-    "The two receiver-pause candidates localize receiver-side pressure and recovery through common public buffer and flight gauges with Robotweax as sender and receiver in separate runs; exact application scheduling and non-loopback profiles remain unqualified."
+    "The two receiver-pause candidates localize receiver-side pressure and recovery through common public buffer and flight gauges with Robotweax as sender and receiver in separate runs; exact application scheduling and non-loopback profiles remain unqualified.",
+    "The two reduced-egress-capacity candidates localize sender-side pressure and recovery through common public sender-buffer, flight, and receiver-buffer gauges with Robotweax as sender and receiver in separate runs; the exact offered rate, capacity cause, and non-loopback profiles remain unqualified."
   ]
 }
