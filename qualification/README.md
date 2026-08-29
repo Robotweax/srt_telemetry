@@ -69,7 +69,7 @@ Retained results:
 
 - [2026-08-28 macOS arm64 sampling and lifecycle](results/2026-08-28-macos-arm64-public-srt-runtime.json)
 
-## Constant-loss capture runner
+## Packet-loss capture runner
 
 Build `robotweax_srt_telemetry_public_srt_incident_peer` once against each exact
 provider. The runner starts the selected sender/receiver pair and a user-space
@@ -108,7 +108,15 @@ retained reverse-direction gap-loss profile. The extra, non-dropped message
 after the tenth fault makes the final injected gap visible to the receiver.
 That profile does not qualify flight-tail recovery when no later DATA follows.
 
+Select `--loss-pattern burst` to discard one contiguous range instead. The
+retained burst profile uses the defaults `--burst-start 81 --burst-length 20`
+with 200 messages. Positions 101 through 200 expose the gap after the burst;
+the public one-second counters quantify its severity and recovery but do not
+independently encode that the lost sequences were adjacent.
+
 Retained captures:
 
 - [2026-08-28 Robotweax sender to Haivision receiver constant loss](../testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/manifest.json)
 - [2026-08-28 Haivision sender to Robotweax receiver constant loss](../testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/manifest.json)
+- [2026-08-29 Robotweax sender to Haivision receiver burst loss](../testdata/golden-incidents/incident-004-captured-burst-loss-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender to Robotweax receiver burst loss](../testdata/golden-incidents/incident-005-captured-burst-loss-haivision-robotweax/manifest.json)

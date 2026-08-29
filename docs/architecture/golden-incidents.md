@@ -72,3 +72,11 @@ retransmissions, and ten public loss increments on both sides. That numerical
 agreement is retained as profile-specific evidence, not a universal identity.
 The manifest explicitly leaves finite flight-tail loss without later DATA
 unqualified.
+
+Incidents 004 and 005 add an explicitly contiguous fault pattern: original DATA
+positions 81 through 100 are discarded as one burst. Both provider directions
+recover all 20 sequences and expose matching public loss and retransmission
+magnitudes. The one-second counter rows do not preserve packet adjacency;
+therefore the manifest's proxy pattern is required ground truth and the public
+fields alone cannot distinguish the burst shape from another 20-loss
+distribution inside the same interval.

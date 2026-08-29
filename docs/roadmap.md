@@ -23,9 +23,9 @@
 - macOS arm64 sampling microbenchmark and close/sample lifecycle candidate
   complete; controlled multi-platform release budgets and stress profiles open;
   and
-- first constant-loss synthetic fixture and captured cross-provider gap-loss
-  candidates complete in both sender directions; flight-tail/profile coverage
-  and the remaining initial corpus open.
+- constant- and burst-loss captured cross-provider gap candidates complete in
+  both sender directions; flight-tail/profile coverage and the remaining
+  initial corpus open.
 
 ## Phase 2: diagnostic proof
 

@@ -75,3 +75,10 @@ retransmission, and physical-versus-unique mappings with each implementation
 as sender once. The Haivision-sender schedule leaves a later DATA sequence
 after every injected loss; finite flight-tail recovery without later DATA is
 therefore still outside the qualified boundary.
+
+Two additional captures apply one contiguous 20-packet burst with each
+implementation as sender. Both directions recover all application messages
+and preserve loss, retransmission, and physical-versus-unique magnitudes. The
+public interval counters do not expose sequence adjacency, so burst-shape
+classification requires retained fault ground truth or a future, separately
+qualified signal.

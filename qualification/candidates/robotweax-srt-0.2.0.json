@@ -14,13 +14,16 @@
     "robotweax-haivision-bidirectional-loopback-common-subset",
     "sampling-and-lifecycle-macos-arm64-candidate",
     "constant-loss-robotweax-sender-haivision-receiver-candidate",
-    "constant-loss-haivision-sender-robotweax-receiver-candidate"
+    "constant-loss-haivision-sender-robotweax-receiver-candidate",
+    "burst-loss-robotweax-sender-haivision-receiver-candidate",
+    "burst-loss-haivision-sender-robotweax-receiver-candidate"
   ],
   "notes": [
     "Candidate record only; full-field and deployment-profile qualification have not been completed.",
     "A clean local clone was built as a shared library and passed real caller/listener payload exchange in both self-provider and Haivision v1.5.5 cross-provider directions.",
     "The macOS arm64 sampling and lifecycle result is candidate evidence only; it does not establish a release performance budget or support concurrent socket close and sampling.",
     "The captured Robotweax-sender constant-loss result exercises sender loss, retransmission, and physical-versus-unique traffic against a Haivision receiver.",
-    "The captured Robotweax-receiver result exercises gap-loss recovery and receiver loss against a Haivision sender; finite flight-tail loss without later DATA remains unqualified."
+    "The captured Robotweax-receiver result exercises gap-loss recovery and receiver loss against a Haivision sender; finite flight-tail loss without later DATA remains unqualified.",
+    "The two captured burst-loss results exercise one exposed contiguous 20-packet gap with Robotweax as sender and receiver in separate runs; public interval counters quantify magnitude and recovery but not sequence adjacency."
   ]
 }

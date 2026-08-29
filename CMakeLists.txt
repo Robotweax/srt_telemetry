@@ -204,6 +204,16 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     add_test(NAME robotweax_srt_telemetry_reverse_captured_golden_incident_test
         COMMAND robotweax_srt_telemetry_golden_incident_test
             "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_CAPTURED_GOLDEN_INCIDENT_DIR}/samples.csv")
+    set(ROBOTWEAX_SRT_TELEMETRY_BURST_CAPTURED_GOLDEN_INCIDENT_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/testdata/golden-incidents/incident-004-captured-burst-loss-robotweax-haivision")
+    add_test(NAME robotweax_srt_telemetry_burst_captured_golden_incident_test
+        COMMAND robotweax_srt_telemetry_golden_incident_test
+            "${ROBOTWEAX_SRT_TELEMETRY_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/samples.csv")
+    set(ROBOTWEAX_SRT_TELEMETRY_REVERSE_BURST_CAPTURED_GOLDEN_INCIDENT_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/testdata/golden-incidents/incident-005-captured-burst-loss-haivision-robotweax")
+    add_test(NAME robotweax_srt_telemetry_reverse_burst_captured_golden_incident_test
+        COMMAND robotweax_srt_telemetry_golden_incident_test
+            "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/samples.csv")
 
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
@@ -223,6 +233,14 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
                 "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json")
+        add_test(NAME robotweax_srt_telemetry_burst_captured_golden_incident_manifest_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
+                "${ROBOTWEAX_SRT_TELEMETRY_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json")
+        add_test(NAME robotweax_srt_telemetry_reverse_burst_captured_golden_incident_manifest_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
+                "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json")
     endif()
 endif()
 

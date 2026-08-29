@@ -1,6 +1,6 @@
 # Public SRT adapter qualification matrix
 
-Date: 2026-08-28
+Date: 2026-08-29
 
 This matrix separates build-time compatibility from live behavioral
 qualification. A pass in the first three columns does not authorize production
@@ -82,6 +82,26 @@ profiles and that remaining boundary pass.
 
 - [2026-08-28 captured Robotweax-to-Haivision constant loss](../../testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/manifest.json)
 - [2026-08-28 captured Haivision-to-Robotweax constant loss](../../testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/manifest.json)
+
+## Burst-loss field candidate evidence
+
+The same exact peers pass a contiguous burst profile in both sender directions.
+During each active interval the proxy discards original DATA positions 81
+through 100 and forwards the 20 retransmissions. Each sender reports 20 loss
+packets, 20 retransmitted packets, 220 sent physical packets, and 200 sent
+unique packets. Each receiver reports 20 loss packets while receiving all 200
+unique application packets. Loss and retransmission return to zero after fault
+removal.
+
+This qualifies recovery and public counter magnitude for an exposed 20-packet
+gap on the declared profiles. One hundred later originals expose every missing
+sequence, so finite flight-tail behavior remains outside the boundary. The
+one-second public counters also do not establish loss adjacency by themselves;
+the retained proxy pattern is the burst-shape ground truth. No release
+capability is declared from these candidates.
+
+- [2026-08-29 captured Robotweax-to-Haivision burst loss](../../testdata/golden-incidents/incident-004-captured-burst-loss-robotweax-haivision/manifest.json)
+- [2026-08-29 captured Haivision-to-Robotweax burst loss](../../testdata/golden-incidents/incident-005-captured-burst-loss-haivision-robotweax/manifest.json)
 
 ## Remaining release qualification
 

@@ -29,7 +29,9 @@ IPv6, FEC, group, remaining-field, and multi-platform gates.
 1. constant loss — synthetic contract fixture plus captured Robotweax-to-
    Haivision and Haivision-to-Robotweax gap-loss candidates complete;
    flight-tail behavior and deployment profiles open;
-2. burst loss;
+2. burst loss — captured 20-packet gap-loss candidates complete in both
+   provider directions; public interval counters quantify magnitude and
+   recovery but do not independently identify within-interval adjacency;
 3. RTT step and RTT ramp;
 4. bandwidth reduction with queue growth;
 5. receiver pause/backpressure;
@@ -47,6 +49,13 @@ Haivision interoperability qualification.
 Do not extend Robotweax SRT pre-emptively. First demonstrate that the common
 public field set cannot answer a concrete operator question or discriminate a
 required failure class.
+
+The paired burst captures now establish one candidate gap: one-second public
+counter deltas answer how many packets were lost and recovered, but not whether
+those losses were adjacent. Before proposing a Robotweax-only signal, compare
+higher-frequency SDK sampling against a versioned burst event or maximum-run
+metric, state the Haivision fallback explicitly, and coordinate the selected
+contract with the Robotweax SRT coding agent.
 
 Use this request template when coordination with the Robotweax SRT coding agent
 is necessary:
