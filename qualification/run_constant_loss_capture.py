@@ -169,8 +169,18 @@ class Peer:
 
 
 class FaultProxy:
-    def __init__(self, target_port: int, drop_every: int) -> None:
+    def __init__(
+        self,
+        target_port: int,
+        loss_pattern: str,
+        drop_every: int,
+        burst_start: int,
+        burst_length: int,
+    ) -> None:
+        self.loss_pattern = loss_pattern
         self.drop_every = drop_every
+        self.burst_start = burst_start
+        self.burst_length = burst_length
         self.downstream = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.upstream = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         for endpoint in [self.downstream, self.upstream]:
@@ -259,10 +269,16 @@ class FaultProxy:
                 return True
             if first_observation:
                 self.stage["originalDataPackets"] += 1
-                should_drop = (
-                    self.stage["active"]
-                    and self.stage["originalDataPackets"] % self.drop_every == 0
-                )
+                original_index = self.stage["originalDataPackets"]
+                if self.loss_pattern == "constant":
+                    matches_pattern = original_index % self.drop_every == 0
+                else:
+                    matches_pattern = (
+                        self.burst_start
+                        <= original_index
+                        < self.burst_start + self.burst_length
+                    )
+                should_drop = self.stage["active"] and matches_pattern
                 if should_drop:
                     self.stage["droppedOriginalDataPackets"] += 1
                     return False
@@ -354,7 +370,10 @@ def run_capture(
     receiver_provider: str,
     sender_provider: str,
     messages: int,
+    loss_pattern: str,
     drop_every: int,
+    burst_start: int,
+    burst_length: int,
 ) -> tuple:
     listener = Peer(receiver_peer, ["--role", "listener"])
     caller = None
@@ -365,7 +384,13 @@ def run_capture(
         listener_port = ready.get("port")
         if not isinstance(listener_port, int) or not 0 < listener_port <= 65_535:
             raise RuntimeError(f"invalid listener port: {ready}")
-        proxy = FaultProxy(listener_port, drop_every)
+        proxy = FaultProxy(
+            listener_port,
+            loss_pattern,
+            drop_every,
+            burst_start,
+            burst_length,
+        )
         caller = Peer(sender_peer, ["--role", "caller", "--port", str(proxy.port)])
         listener.wait_for("CONNECTED")
         caller.wait_for("CONNECTED")
@@ -388,7 +413,10 @@ def run_capture(
                 if observation != {"sampleIndex": sample_index, "messages": messages}:
                     raise RuntimeError(f"unexpected transfer observation: {observation}")
             stage = proxy.finish_stage()
-            expected_drops = messages // drop_every if active else 0
+            if loss_pattern == "constant":
+                expected_drops = messages // drop_every if active else 0
+            else:
+                expected_drops = burst_length if active else 0
             if stage["originalDataPackets"] != messages:
                 raise RuntimeError(f"proxy observed unexpected original packet count: {stage}")
             if stage["droppedOriginalDataPackets"] != expected_drops:
@@ -519,11 +547,17 @@ def capture_direction(arguments: argparse.Namespace) -> dict:
     if arguments.direction == "robotweax-to-haivision":
         sender = providers["robotweax"]
         receiver = providers["haivision"]
-        incident_id = "incident-002-captured-constant-loss-robotweax-haivision"
+        if arguments.loss_pattern == "constant":
+            incident_id = "incident-002-captured-constant-loss-robotweax-haivision"
+        else:
+            incident_id = "incident-004-captured-burst-loss-robotweax-haivision"
     else:
         sender = providers["haivision"]
         receiver = providers["robotweax"]
-        incident_id = "incident-003-captured-constant-loss-haivision-robotweax"
+        if arguments.loss_pattern == "constant":
+            incident_id = "incident-003-captured-constant-loss-haivision-robotweax"
+        else:
+            incident_id = "incident-005-captured-burst-loss-haivision-robotweax"
     return {
         "incident_id": incident_id,
         "topology": (
@@ -532,6 +566,43 @@ def capture_direction(arguments: argparse.Namespace) -> dict:
         ),
         "sender": sender,
         "receiver": receiver,
+    }
+
+
+def loss_configuration(arguments: argparse.Namespace) -> dict:
+    if arguments.loss_pattern == "constant":
+        expected_drops = arguments.messages_per_interval // arguments.drop_every
+        trailing_originals = arguments.messages_per_interval % arguments.drop_every
+        return {
+            "failure_class": "constant-packet-loss",
+            "pattern": "constant-every-nth",
+            "expected_drops": expected_drops,
+            "trailing_originals": trailing_originals,
+            "description": (
+                f"Drop every {arguments.drop_every}th first-observed sender DATA "
+                f"sequence during samples {FIRST_ACTIVE_SAMPLE} through "
+                f"{LAST_ACTIVE_SAMPLE}; forward retransmissions."
+            ),
+            "proxy_fields": {
+                "dropEveryOriginalDataPacket": arguments.drop_every,
+            },
+        }
+    burst_last = arguments.burst_start + arguments.burst_length - 1
+    return {
+        "failure_class": "burst-packet-loss",
+        "pattern": "contiguous-burst",
+        "expected_drops": arguments.burst_length,
+        "trailing_originals": arguments.messages_per_interval - burst_last,
+        "description": (
+            f"Drop first-observed sender DATA positions {arguments.burst_start} "
+            f"through {burst_last} as one contiguous burst during samples "
+            f"{FIRST_ACTIVE_SAMPLE} through {LAST_ACTIVE_SAMPLE}; forward "
+            "retransmissions."
+        ),
+        "proxy_fields": {
+            "burstStartOriginalDataPacket": arguments.burst_start,
+            "burstLengthPackets": arguments.burst_length,
+        },
     }
 
 
@@ -554,7 +625,7 @@ def require_incident_evidence(samples: list) -> None:
 
 
 def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) -> bytes:
-    expected_drops = arguments.messages_per_interval // arguments.drop_every
+    loss = loss_configuration(arguments)
     direction = capture_direction(arguments)
     sender = direction["sender"]
     receiver = direction["receiver"]
@@ -563,7 +634,7 @@ def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) 
         "IPv4 loopback through a user-space proxy does not qualify physical network devices or wide-area paths.",
         "The capture qualifies only the declared unencrypted Live/Message direction and exact provider artifacts.",
     ]
-    trailing_originals = arguments.messages_per_interval % arguments.drop_every
+    trailing_originals = loss["trailing_originals"]
     if trailing_originals != 0:
         packet_label = "packet" if trailing_originals == 1 else "packets"
         contradictions.append(
@@ -574,7 +645,7 @@ def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) 
     manifest = {
         "schemaVersion": "1alpha1",
         "incidentId": direction["incident_id"],
-        "failureClass": "constant-packet-loss",
+        "failureClass": loss["failure_class"],
         "topology": direction["topology"],
         "direction": "sender-to-receiver",
         "providers": [
@@ -603,7 +674,7 @@ def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) 
         },
         "faultPlan": {
             "seed": 0,
-            "description": f"Drop every {arguments.drop_every}th first-observed sender DATA sequence during samples {FIRST_ACTIVE_SAMPLE} through {LAST_ACTIVE_SAMPLE}; forward retransmissions.",
+            "description": loss["description"],
             "firstActiveSample": FIRST_ACTIVE_SAMPLE,
             "lastActiveSample": LAST_ACTIVE_SAMPLE,
         },
@@ -638,10 +709,11 @@ def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) 
             ],
             "faultProxy": {
                 "classification": "SRT DATA when the first header bit is zero; first observation keyed by the 31-bit packet sequence",
+                "pattern": loss["pattern"],
                 "messagesPerInterval": arguments.messages_per_interval,
                 "payloadBytesPerMessage": PAYLOAD_BYTES,
-                "dropEveryOriginalDataPacket": arguments.drop_every,
-                "expectedDropsPerActiveInterval": expected_drops,
+                **loss["proxy_fields"],
+                "expectedDropsPerActiveInterval": loss["expected_drops"],
                 "stages": stages,
             },
         },
@@ -701,7 +773,7 @@ def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) 
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Capture a deterministic cross-provider constant-loss incident"
+        description="Capture a deterministic cross-provider packet-loss incident"
     )
     parser.add_argument(
         "--direction",
@@ -720,8 +792,16 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--haivision-revision", required=True)
     parser.add_argument("--haivision-build-profile", required=True)
     parser.add_argument("--telemetry-revision", required=True)
+    parser.add_argument(
+        "--loss-pattern",
+        choices=["constant", "burst"],
+        default="constant",
+        help="deterministic loss pattern (default: %(default)s)",
+    )
     parser.add_argument("--messages-per-interval", type=int, default=200)
     parser.add_argument("--drop-every", type=int, default=20)
+    parser.add_argument("--burst-start", type=int, default=81)
+    parser.add_argument("--burst-length", type=int, default=20)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args()
 
@@ -736,10 +816,19 @@ def main() -> int:
     ]:
         if not path.is_file():
             raise RuntimeError(f"required artifact does not exist: {path}")
-    if arguments.messages_per_interval <= 0 or arguments.drop_every <= 1:
-        raise RuntimeError("messages-per-interval must be positive and drop-every must exceed one")
-    if arguments.messages_per_interval < arguments.drop_every:
-        raise RuntimeError("messages-per-interval must be at least drop-every")
+    if arguments.messages_per_interval <= 0:
+        raise RuntimeError("messages-per-interval must be positive")
+    if arguments.loss_pattern == "constant":
+        if arguments.drop_every <= 1:
+            raise RuntimeError("drop-every must exceed one")
+        if arguments.messages_per_interval < arguments.drop_every:
+            raise RuntimeError("messages-per-interval must be at least drop-every")
+    else:
+        if arguments.burst_start <= 0 or arguments.burst_length <= 0:
+            raise RuntimeError("burst-start and burst-length must be positive")
+        burst_last = arguments.burst_start + arguments.burst_length - 1
+        if burst_last > arguments.messages_per_interval:
+            raise RuntimeError("burst range must fit inside messages-per-interval")
     retained_paths = [arguments.output_dir / "manifest.json", arguments.output_dir / "samples.csv"]
     if any(path.exists() for path in retained_paths):
         raise RuntimeError(f"refusing to overwrite retained capture in {arguments.output_dir}")
@@ -751,7 +840,10 @@ def main() -> int:
         direction["receiver"]["provider"],
         direction["sender"]["provider"],
         arguments.messages_per_interval,
+        arguments.loss_pattern,
         arguments.drop_every,
+        arguments.burst_start,
+        arguments.burst_length,
     )
     require_incident_evidence(samples)
     samples_contents = samples_csv(samples)
@@ -759,7 +851,7 @@ def main() -> int:
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     (arguments.output_dir / "samples.csv").write_bytes(samples_contents)
     (arguments.output_dir / "manifest.json").write_bytes(manifest_contents)
-    print(f"constant-loss capture passed: {arguments.output_dir}")
+    print(f"{arguments.loss_pattern}-loss capture passed: {arguments.output_dir}")
     return 0
 
 
@@ -767,5 +859,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as error:
-        print(f"constant-loss capture failed: {error}", file=sys.stderr)
+        print(f"packet-loss capture failed: {error}", file=sys.stderr)
         raise SystemExit(1) from error

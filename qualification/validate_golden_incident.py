@@ -177,6 +177,39 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
     last_active = manifest["faultPlan"]["lastActiveSample"]
     expected_drops = proxy.get("expectedDropsPerActiveInterval")
     messages = proxy.get("messagesPerInterval")
+    if not isinstance(messages, int) or messages <= 0:
+        fail("fault proxy message count is invalid")
+    if not isinstance(expected_drops, int) or expected_drops <= 0:
+        fail("fault proxy expected drop count is invalid")
+    pattern = proxy.get("pattern")
+    if pattern is None:
+        pattern = "constant-every-nth"
+    if pattern == "constant-every-nth":
+        drop_every = proxy.get("dropEveryOriginalDataPacket")
+        if not isinstance(drop_every, int) or drop_every <= 1:
+            fail("constant fault proxy drop interval is invalid")
+        if any(key in proxy for key in ["burstStartOriginalDataPacket", "burstLengthPackets"]):
+            fail("constant fault proxy contains burst configuration")
+        calculated_drops = messages // drop_every
+    elif pattern == "contiguous-burst":
+        burst_start = proxy.get("burstStartOriginalDataPacket")
+        burst_length = proxy.get("burstLengthPackets")
+        if not isinstance(burst_start, int) or burst_start <= 0:
+            fail("burst fault proxy start is invalid")
+        if not isinstance(burst_length, int) or burst_length <= 0:
+            fail("burst fault proxy length is invalid")
+        if "dropEveryOriginalDataPacket" in proxy:
+            fail("burst fault proxy contains constant-loss configuration")
+        if burst_start + burst_length - 1 > messages:
+            fail("burst fault proxy range exceeds the interval")
+        calculated_drops = burst_length
+    else:
+        fail(f"unsupported fault proxy pattern: {pattern}")
+    if expected_drops != calculated_drops:
+        fail(
+            f"fault proxy expected drop count mismatch: "
+            f"declared {expected_drops}, calculated {calculated_drops}"
+        )
     for stage in stages:
         index = stage["sampleIndex"]
         active = first_active <= index <= last_active

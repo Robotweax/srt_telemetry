@@ -355,19 +355,31 @@
         "faultProxy": {
           "type": "object",
           "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": ["dropEveryOriginalDataPacket"]
+            },
+            {
+              "required": ["burstStartOriginalDataPacket", "burstLengthPackets"]
+            }
+          ],
           "required": [
             "classification",
             "messagesPerInterval",
             "payloadBytesPerMessage",
-            "dropEveryOriginalDataPacket",
             "expectedDropsPerActiveInterval",
             "stages"
           ],
           "properties": {
             "classification": { "type": "string", "minLength": 1 },
+            "pattern": {
+              "enum": ["constant-every-nth", "contiguous-burst"]
+            },
             "messagesPerInterval": { "type": "integer", "minimum": 1 },
             "payloadBytesPerMessage": { "type": "integer", "minimum": 1 },
             "dropEveryOriginalDataPacket": { "type": "integer", "minimum": 2 },
+            "burstStartOriginalDataPacket": { "type": "integer", "minimum": 1 },
+            "burstLengthPackets": { "type": "integer", "minimum": 1 },
             "expectedDropsPerActiveInterval": { "type": "integer", "minimum": 1 },
             "stages": {
               "type": "array",
