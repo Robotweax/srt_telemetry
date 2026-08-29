@@ -144,6 +144,8 @@ def main() -> int:
             "loss-rtt-pressure-comparison-candidate",
             "--analyzer",
             str(arguments.analyzer.resolve()),
+            "--repository-revision",
+            "fixture-revision",
             "--output-dir",
             str(packet_dir),
         ]
@@ -175,6 +177,72 @@ def main() -> int:
                 fail(f"scenario is not counterbalanced: {scenario_id}")
         if study["gateLimits"]["minimumDistinctFailureClasses"] != 5:
             fail("study does not preserve the strategy's five-failure-class gate")
+        if study.get("provenance") != {
+            "generator": "tools/operator_evaluation.py",
+            "repositoryRevision": "fixture-revision",
+        }:
+            fail("study does not retain its generator provenance")
+        if any(
+            Path(scenario["sourceManifest"]["file"]).is_absolute()
+            for scenario in study["scenarios"]
+        ):
+            fail("repository source manifests are not stored portably")
+
+        rehearsal_path = packet_dir / "rehearsal-readiness.json"
+        rehearsal = [
+            sys.executable,
+            str(arguments.tool.resolve()),
+            "rehearsal",
+            "--study",
+            str(study_path),
+            "--output",
+            str(rehearsal_path),
+        ]
+        run(rehearsal)
+        run(rehearsal, expect_success=False)
+        run(
+            [
+                sys.executable,
+                str(arguments.tool.resolve()),
+                "rehearsal",
+                "--study",
+                str(study_path),
+                "--check",
+                str(rehearsal_path),
+            ]
+        )
+        readiness = read_json(rehearsal_path)
+        if readiness.get("status") != "ready" or readiness.get("blockingIssues"):
+            fail(f"five-class rehearsal preflight is not ready: {readiness}")
+        if readiness.get("scenarioCount") != len(arguments.manifest):
+            fail("rehearsal preflight scenario accounting is incorrect")
+        if len(readiness.get("distinctFailureClasses", [])) != 5:
+            fail("rehearsal preflight does not cover five failure classes")
+        if readiness.get("runPlan", {}).get("evidenceClass") != "internal-pilot":
+            fail("rehearsal preflight has the wrong evidence classification")
+        if readiness.get("runPlan", {}).get("requiredArms") != ["arm-a", "arm-b"]:
+            fail("rehearsal preflight does not require both arms")
+        if not readiness.get("facilitatorChecklist") or not readiness.get("nonClaims"):
+            fail("rehearsal preflight lacks conduct guardrails")
+        if not all(check["passed"] for check in readiness.get("checks", [])):
+            fail("rehearsal preflight contains a failed readiness check")
+        readiness_text = rehearsal_path.read_text(encoding="utf-8")
+        tampered_readiness = json.loads(readiness_text)
+        tampered_readiness["sourceRevision"] = "tampered"
+        write_json(rehearsal_path, tampered_readiness)
+        run(
+            [
+                sys.executable,
+                str(arguments.tool.resolve()),
+                "rehearsal",
+                "--study",
+                str(study_path),
+                "--check",
+                str(rehearsal_path),
+            ],
+            expect_success=False,
+        )
+        rehearsal_path.write_text(readiness_text, encoding="utf-8")
 
         forbidden_raw_keys = {
             "analysis",

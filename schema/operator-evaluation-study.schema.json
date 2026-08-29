@@ -9,6 +9,7 @@
     "kind",
     "studyId",
     "status",
+    "provenance",
     "design",
     "arms",
     "questions",
@@ -22,6 +23,15 @@
     "kind": { "const": "robotweax-srt-operator-evaluation-study" },
     "studyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
     "status": { "const": "candidate" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generator", "repositoryRevision"],
+      "properties": {
+        "generator": { "const": "tools/operator_evaluation.py" },
+        "repositoryRevision": { "type": "string", "minLength": 1 }
+      }
+    },
     "design": {
       "type": "object",
       "additionalProperties": false,

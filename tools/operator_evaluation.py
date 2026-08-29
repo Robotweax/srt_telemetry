@@ -25,6 +25,7 @@ REFERENCE_KIND = "robotweax-srt-operator-evaluation-reference"
 RESPONSE_KIND = "robotweax-srt-operator-evaluation-response"
 SESSION_KIND = "robotweax-srt-operator-evaluation-session"
 SUMMARY_KIND = "robotweax-srt-operator-evaluation-summary"
+REHEARSAL_KIND = "robotweax-srt-operator-evaluation-rehearsal-readiness"
 
 CONDITIONS = {"raw-statistics", "incident-report"}
 EVIDENCE_CLASSES = {"synthetic-harness", "internal-pilot", "design-partner"}
@@ -130,6 +131,28 @@ MISSING_EVIDENCE_BY_TEXT = {
 
 PARTICIPANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 STUDY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+RAW_VIEW_FORBIDDEN_KEYS = {
+    "analysis",
+    "deviating",
+    "failureDomain",
+    "firstDeviationSample",
+    "hypotheses",
+    "selectedHypothesis",
+    "supportingEvidence",
+}
+RAW_INTERACTIVE_REQUIRED_FIELDS = {
+    "sender_loss_packet_delta",
+    "receiver_loss_packet_delta",
+    "retransmitted_packet_delta",
+    "sender_drop_packet_delta",
+    "receiver_drop_packet_delta",
+    "receiver_undecryptable_packet_delta",
+    "rtt_seconds",
+    "flight_size_packets",
+    "send_buffer_bytes",
+    "receive_buffer_bytes",
+    "receiver_tsbpd_delay_seconds",
+}
 
 
 def fail(message: str) -> None:
@@ -240,6 +263,14 @@ def load_incident(manifest_path: Path, analyzer) -> dict:
         "source": analyzer.load_jsonl(recording_paths),
         "analysis": retained_analysis,
     }
+
+
+def portable_source_path(path: Path) -> str:
+    repository_root = Path(__file__).resolve().parents[1]
+    try:
+        return str(path.resolve().relative_to(repository_root))
+    except ValueError:
+        return str(path.resolve())
 
 
 def build_raw_view(study_id: str, incident: dict) -> dict:
@@ -360,12 +391,19 @@ def artifact(path: Path, base: Path) -> dict:
 
 
 def prepare_study(
-    study_id: str, manifest_paths: List[Path], analyzer_path: Path, output_dir: Path
+    study_id: str,
+    manifest_paths: List[Path],
+    analyzer_path: Path,
+    output_dir: Path,
+    repository_revision: str,
 ) -> Path:
     if not STUDY_PATTERN.fullmatch(study_id):
         fail("study id must use lowercase letters, digits, and hyphens")
     if len(manifest_paths) < 2:
         fail("the crossover candidate requires at least two incident manifests")
+    if not isinstance(repository_revision, str) or not repository_revision.strip():
+        fail("repository revision must be a non-empty string")
+    repository_revision = repository_revision.strip()
     if output_dir.exists():
         fail(f"refusing to overwrite study packet: {output_dir}")
     analyzer = load_analyzer(analyzer_path.resolve())
@@ -397,7 +435,7 @@ def prepare_study(
                     "scenarioId": scenario_id,
                     "failureClass": incident["manifest"]["failureClass"],
                     "sourceManifest": {
-                        "file": str(incident["manifestPath"]),
+                        "file": portable_source_path(incident["manifestPath"]),
                         "sha256": incident["manifestSha256"],
                     },
                     "views": {
@@ -433,6 +471,10 @@ def prepare_study(
             "kind": STUDY_KIND,
             "studyId": study_id,
             "status": "candidate",
+            "provenance": {
+                "generator": "tools/operator_evaluation.py",
+                "repositoryRevision": repository_revision,
+            },
             "design": {
                 "type": "alternating-condition-counterbalanced-crossover",
                 "allocation": (
@@ -501,6 +543,14 @@ def validate_study(study_path: Path) -> Tuple[dict, Path]:
         or set(study.get("arms", {})) != {"arm-a", "arm-b"}
     ):
         fail(f"unsupported operator evaluation study: {study_path}")
+    provenance = study.get("provenance")
+    if (
+        not isinstance(provenance, dict)
+        or provenance.get("generator") != "tools/operator_evaluation.py"
+        or not isinstance(provenance.get("repositoryRevision"), str)
+        or not provenance["repositoryRevision"]
+    ):
+        fail(f"study provenance is missing or invalid: {study_path}")
     base = study_path.parent
     scenario_ids = set()
     for scenario in study.get("scenarios", []):
@@ -741,7 +791,7 @@ def render_raw_view(view: dict) -> str:
         "null/— = unavailable; 0 = observed zero",
         "",
         "sample role sent recv unique_sent unique_recv loss_s loss_r retrans "
-        "drop_s drop_r rtt_s flight send_buf recv_buf",
+        "drop_s drop_r undecrypt_r rtt_s flight send_buf recv_buf rcv_tsbpd_s",
     ]
     fields = [
         ("delta", "sent_packet_delta"),
@@ -753,10 +803,12 @@ def render_raw_view(view: dict) -> str:
         ("delta", "retransmitted_packet_delta"),
         ("delta", "sender_drop_packet_delta"),
         ("delta", "receiver_drop_packet_delta"),
+        ("delta", "receiver_undecryptable_packet_delta"),
         ("raw", "rtt_seconds"),
         ("raw", "flight_size_packets"),
         ("raw", "send_buffer_bytes"),
         ("raw", "receive_buffer_bytes"),
+        ("raw", "receiver_tsbpd_delay_seconds"),
     ]
     for row in view["rows"]:
         values = [render_number(row[source].get(field)) for source, field in fields]
@@ -796,6 +848,212 @@ def render_report_view(view: dict) -> str:
     lines.append("Non-claims:")
     lines.extend(f"- {statement}" for statement in report["nonClaims"])
     return "\n".join(lines)
+
+
+def recursive_keys(value: object) -> Iterable[str]:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield key
+            yield from recursive_keys(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from recursive_keys(child)
+
+
+def build_rehearsal_readiness(study_path: Path) -> dict:
+    study, base = validate_study(study_path)
+    checks = []
+
+    def add_check(identifier: str, passed: bool, summary: str) -> None:
+        checks.append({"id": identifier, "passed": passed, "summary": summary})
+
+    failure_classes = sorted(
+        {scenario["failureClass"] for scenario in study["scenarios"]}
+    )
+    minimum_classes = study["gateLimits"]["minimumDistinctFailureClasses"]
+    add_check(
+        "packet-integrity",
+        True,
+        "Study metadata and every hashed task/reference artifact are intact.",
+    )
+    add_check(
+        "source-revision-pinned",
+        study["provenance"]["repositoryRevision"].strip().lower()
+        not in {"unrecorded", "unknown"},
+        "The packet names the repository revision used to prepare it.",
+    )
+    source_paths = [
+        scenario["sourceManifest"]["file"] for scenario in study["scenarios"]
+    ]
+    add_check(
+        "portable-source-manifests",
+        all(not Path(path).is_absolute() for path in source_paths),
+        "All retained source-manifest labels are repository-relative.",
+    )
+    add_check(
+        "minimum-failure-class-coverage",
+        len(failure_classes) >= minimum_classes,
+        (
+            f"Packet covers {len(failure_classes)} distinct failure classes; "
+            f"the configured minimum is {minimum_classes}."
+        ),
+    )
+
+    arm_summary = {}
+    balanced_arms = True
+    for arm, assignments in study["arms"].items():
+        condition_counts = {
+            condition: sum(
+                assignment["condition"] == condition for assignment in assignments
+            )
+            for condition in sorted(CONDITIONS)
+        }
+        arm_summary[arm] = {
+            "taskCount": len(assignments),
+            "conditionCounts": condition_counts,
+        }
+        balanced_arms = balanced_arms and len(set(condition_counts.values())) == 1
+    add_check(
+        "within-arm-condition-balance",
+        balanced_arms,
+        "Each arm contains the same number of raw-statistics and report tasks.",
+    )
+    add_check(
+        "scenario-counterbalance",
+        True,
+        "Every scenario appears under opposite conditions across the two arms.",
+    )
+
+    raw_isolated = True
+    raw_surface_complete = True
+    reports_aligned = True
+    views_renderable = True
+    for scenario in study["scenarios"]:
+        raw_view = load_study_artifact(base, scenario["views"]["raw-statistics"])
+        report_view = load_study_artifact(
+            base, scenario["views"]["incident-report"]
+        )
+        reference = load_study_artifact(base, scenario["reference"])
+        raw_isolated = raw_isolated and not (
+            RAW_VIEW_FORBIDDEN_KEYS & set(recursive_keys(raw_view))
+        )
+        available_raw_fields = set()
+        for row in raw_view.get("rows", []):
+            available_raw_fields.update(row.get("raw", {}))
+            available_raw_fields.update(row.get("delta", {}))
+        rendered_raw = render_raw_view(raw_view)
+        rendered_report = render_report_view(report_view)
+        raw_surface_complete = raw_surface_complete and (
+            RAW_INTERACTIVE_REQUIRED_FIELDS <= available_raw_fields
+            and "undecrypt_r" in rendered_raw
+            and "rcv_tsbpd_s" in rendered_raw
+        )
+        views_renderable = views_renderable and (
+            len(rendered_raw.splitlines()) > 5
+            and len(rendered_report.splitlines()) > 5
+        )
+        report = report_view.get("report", {})
+        timeline = report.get("timeline", {})
+        supported = sorted(
+            hypothesis["id"]
+            for hypothesis in report.get("hypotheses", [])
+            if hypothesis.get("assessment") == "supported"
+        )
+        reports_aligned = reports_aligned and all(
+            [
+                report.get("selectedHypothesis", {}).get("assessment")
+                == "supported",
+                timeline.get("firstDeviationSample")
+                == reference.get("firstDeviationSample"),
+                timeline.get("lastDeviationSample")
+                == reference.get("lastDeviationSample"),
+                timeline.get("recoverySample") == reference.get("recoverySample"),
+                supported == reference.get("supportedHypotheses"),
+                scenario["failureClass"] == reference.get("failureClass"),
+            ]
+        )
+    add_check(
+        "raw-condition-inference-isolation",
+        raw_isolated,
+        "Raw tasks contain no analyzer deviation, domain, or hypothesis labels.",
+    )
+    add_check(
+        "interactive-raw-field-surface",
+        raw_surface_complete,
+        (
+            "Interactive raw rendering exposes every public field used by the "
+            "five diagnostic candidates, including undecryptable and TSBPD data."
+        ),
+    )
+    add_check(
+        "report-reference-alignment",
+        reports_aligned,
+        "Report timelines and supported hypotheses match their hidden references.",
+    )
+    add_check(
+        "interactive-view-rendering",
+        views_renderable,
+        "Every assigned raw and report task renders a non-empty terminal view.",
+    )
+
+    forbidden_privacy = set(study.get("privacy", {}).get("forbidden", []))
+    required_privacy = {
+        "customer telemetry",
+        "names or email addresses",
+        "stream identifiers",
+    }
+    add_check(
+        "privacy-guardrails",
+        required_privacy <= forbidden_privacy,
+        "Packet forbids identifying, customer, and real stream data.",
+    )
+    blocking = [check["id"] for check in checks if not check["passed"]]
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "kind": REHEARSAL_KIND,
+        "status": "ready" if not blocking else "blocked",
+        "studyId": study["studyId"],
+        "sourceRevision": study["provenance"]["repositoryRevision"],
+        "study": {"file": study_path.name, "sha256": sha256_file(study_path)},
+        "scenarioCount": len(study["scenarios"]),
+        "distinctFailureClasses": failure_classes,
+        "arms": arm_summary,
+        "checks": checks,
+        "runPlan": {
+            "evidenceClass": "internal-pilot",
+            "minimumSessions": 2,
+            "requiredArms": ["arm-a", "arm-b"],
+            "collectionMode": "interactive",
+            "sessionOutputPattern": "session-internal-<pseudonymous-id>.json",
+        },
+        "facilitatorChecklist": [
+            "Use only pseudonymous participant identifiers created for this study.",
+            "Assign the first two internal sessions explicitly to arm-a and arm-b.",
+            "Keep scenario reference files inaccessible to the participant.",
+            "Reveal one task at a time through the interactive run command.",
+            "Do not coach diagnostic answers or allow backtracking to prior tasks.",
+            "Record protocol deviations separately from timed participant answers.",
+            "Review optional notes for forbidden or identifying data before retention.",
+            "Retain session files unchanged and verify packet hashes before summary.",
+            "Classify all rehearsal sessions as internal-pilot, never design-partner.",
+        ],
+        "blockingIssues": blocking,
+        "nonClaims": [
+            "This readiness artifact contains no participant answers or timings.",
+            "A ready rehearsal packet is not internal-pilot or design-partner evidence.",
+            "Only genuinely conducted interactive sessions may be classified as internal-pilot.",
+            "An internal rehearsal cannot establish the diagnostic-value product claim.",
+        ],
+    }
+
+
+def verify_rehearsal_readiness(study_path: Path, readiness_path: Path) -> None:
+    retained = read_json(readiness_path.resolve())
+    reproduced = build_rehearsal_readiness(study_path)
+    if retained != reproduced:
+        fail(f"retained rehearsal readiness is stale or invalid: {readiness_path}")
+    if retained.get("status") != "ready":
+        fail(f"retained rehearsal readiness is blocked: {readiness_path}")
 
 
 def parse_first_deviation(value: str) -> Optional[int]:
@@ -1187,7 +1445,16 @@ def parse_arguments() -> argparse.Namespace:
         type=Path,
         default=Path(__file__).resolve().with_name("analyze_incident.py"),
     )
+    prepare.add_argument("--repository-revision", default="unrecorded")
     prepare.add_argument("--output-dir", type=Path, required=True)
+
+    rehearsal = subparsers.add_parser(
+        "rehearsal", help="create or verify an internal facilitation preflight"
+    )
+    rehearsal.add_argument("--study", type=Path, required=True)
+    rehearsal_mode = rehearsal.add_mutually_exclusive_group(required=True)
+    rehearsal_mode.add_argument("--output", type=Path)
+    rehearsal_mode.add_argument("--check", type=Path)
 
     run = subparsers.add_parser("run", help="collect and score one interactive session")
     run.add_argument("--study", type=Path, required=True)
@@ -1218,9 +1485,19 @@ def main() -> int:
             arguments.manifest,
             arguments.analyzer,
             arguments.output_dir,
+            arguments.repository_revision,
         )
         print(f"operator evaluation study written: {result}")
         return 0
+    if arguments.command == "rehearsal":
+        if arguments.check is not None:
+            verify_rehearsal_readiness(arguments.study, arguments.check)
+            print(f"operator evaluation rehearsal valid: {arguments.check}")
+            return 0
+        readiness = build_rehearsal_readiness(arguments.study)
+        write_new_json(arguments.output, readiness)
+        print(f"operator evaluation rehearsal written: {arguments.output}")
+        return 0 if readiness["status"] == "ready" else 1
     if arguments.command == "run":
         if arguments.output.exists():
             fail(f"refusing to overwrite session: {arguments.output}")

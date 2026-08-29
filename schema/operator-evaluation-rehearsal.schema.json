@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/operator-evaluation-rehearsal-v1alpha1.json",
+  "title": "Robotweax SRT operator evaluation rehearsal readiness",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "studyId",
+    "sourceRevision",
+    "study",
+    "scenarioCount",
+    "distinctFailureClasses",
+    "arms",
+    "checks",
+    "runPlan",
+    "facilitatorChecklist",
+    "blockingIssues",
+    "nonClaims"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1alpha1" },
+    "kind": {
+      "const": "robotweax-srt-operator-evaluation-rehearsal-readiness"
+    },
+    "status": { "enum": ["ready", "blocked"] },
+    "studyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+    "sourceRevision": { "type": "string", "minLength": 1 },
+    "study": { "$ref": "#/$defs/artifact" },
+    "scenarioCount": { "type": "integer", "minimum": 2 },
+    "distinctFailureClasses": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm-a", "arm-b"],
+      "properties": {
+        "arm-a": { "$ref": "#/$defs/arm" },
+        "arm-b": { "$ref": "#/$defs/arm" }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/check" }
+    },
+    "runPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceClass",
+        "minimumSessions",
+        "requiredArms",
+        "collectionMode",
+        "sessionOutputPattern"
+      ],
+      "properties": {
+        "evidenceClass": { "const": "internal-pilot" },
+        "minimumSessions": { "const": 2 },
+        "requiredArms": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["arm-a", "arm-b"] }
+        },
+        "collectionMode": { "const": "interactive" },
+        "sessionOutputPattern": { "type": "string", "minLength": 1 }
+      }
+    },
+    "facilitatorChecklist": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "blockingIssues": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" }
+    },
+    "nonClaims": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "conditionCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["incident-report", "raw-statistics"],
+      "properties": {
+        "incident-report": { "type": "integer", "minimum": 0 },
+        "raw-statistics": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "arm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskCount", "conditionCounts"],
+      "properties": {
+        "taskCount": { "type": "integer", "minimum": 2 },
+        "conditionCounts": { "$ref": "#/$defs/conditionCounts" }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "passed", "summary"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "passed": { "type": "boolean" },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
