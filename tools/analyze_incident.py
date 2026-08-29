@@ -369,7 +369,7 @@ def build_analysis(source: dict) -> dict:
     sender_buffer_threshold = pressure_step_threshold(sender_buffer_baseline, 65_536)
     sender_flight_threshold = pressure_step_threshold(sender_flight_baseline, 8)
     receiver_buffer_threshold = pressure_step_threshold(
-        receiver_buffer_baseline, 65_536
+        receiver_buffer_baseline, 1_048_576
     )
     observations = []
     deviation_indexes = []
@@ -431,8 +431,16 @@ def build_analysis(source: dict) -> dict:
             at_or_above(signals["senderRttSeconds"], sender_rtt_threshold)
             or at_or_above(signals["receiverRttSeconds"], receiver_rtt_threshold)
         )
-        pressure_deviating = index >= 3 and at_or_above(
-            signals["receiverReceiveBufferBytes"], receiver_buffer_threshold
+        pressure_deviating = index >= 3 and (
+            at_or_above(
+                signals["senderSendBufferBytes"], sender_buffer_threshold
+            )
+            or at_or_above(
+                signals["senderFlightSizePackets"], sender_flight_threshold
+            )
+            or at_or_above(
+                signals["receiverReceiveBufferBytes"], receiver_buffer_threshold
+            )
         )
         deviating = counter_deviating or rtt_deviating or pressure_deviating
         if deviating:
@@ -628,6 +636,7 @@ def build_analysis(source: dict) -> dict:
     )
 
     sender_support = []
+    sender_contradictions = []
     sender_missing = []
     if sender_drop_total > 0:
         sender_support.append(
@@ -649,7 +658,111 @@ def build_analysis(source: dict) -> dict:
         sample["raw"].get("flight_size_packets") is None for sample in sender_samples
     ):
         sender_missing.append("Sender flight-size evidence is unavailable.")
+    sender_buffer_indexes = [
+        sample["sampleIndex"]
+        for sample in sender_samples
+        if sample["sampleIndex"] >= 3
+        and at_or_above(
+            sample["raw"].get("send_buffer_bytes"), sender_buffer_threshold
+        )
+    ]
+    sender_flight_indexes = [
+        sample["sampleIndex"]
+        for sample in sender_samples
+        if sample["sampleIndex"] >= 3
+        and at_or_above(
+            sample["raw"].get("flight_size_packets"), sender_flight_threshold
+        )
+    ]
+    sender_overlap_indexes = sorted(
+        set(sender_buffer_indexes) & set(sender_flight_indexes)
+    )
+    receiver_normal_indexes = [
+        sample["sampleIndex"]
+        for sample in receiver_samples
+        if sample["sampleIndex"] in sender_overlap_indexes
+        and numeric(sample["raw"].get("receive_buffer_bytes")) is not None
+        and receiver_buffer_threshold is not None
+        and numeric(sample["raw"].get("receive_buffer_bytes"))
+        < receiver_buffer_threshold
+    ]
+    sender_pressure_recovery_sample = None
+    if sender_buffer_indexes:
+        for sender, receiver in zip(
+            sender_samples[sender_buffer_indexes[-1] + 1 :],
+            receiver_samples[sender_buffer_indexes[-1] + 1 :],
+        ):
+            sender_buffer = numeric(sender["raw"].get("send_buffer_bytes"))
+            sender_flight = numeric(sender["raw"].get("flight_size_packets"))
+            receiver_buffer = numeric(receiver["raw"].get("receive_buffer_bytes"))
+            if (
+                sender_buffer is not None
+                and sender_buffer_threshold is not None
+                and sender_buffer < sender_buffer_threshold
+                and sender_flight is not None
+                and sender_flight_threshold is not None
+                and sender_flight < sender_flight_threshold
+                and receiver_buffer is not None
+                and receiver_buffer_threshold is not None
+                and receiver_buffer < receiver_buffer_threshold
+            ):
+                sender_pressure_recovery_sample = sender["sampleIndex"]
+                break
+        sender_support.append(
+            evidence(
+                "sender-buffer-growth",
+                "Sender buffer occupancy exceeds its warm candidate threshold.",
+                sender_buffer_indexes,
+            )
+        )
+    if sender_overlap_indexes:
+        sender_support.append(
+            evidence(
+                "sender-flight-growth",
+                "Sender flight size rises together with sender buffer occupancy.",
+                sender_overlap_indexes,
+            )
+        )
+    if receiver_normal_indexes:
+        sender_support.append(
+            evidence(
+                "receiver-buffer-remains-below-pressure-threshold",
+                (
+                    "Receiver buffer occupancy remains below its conservative "
+                    "pressure threshold during the sender buffer/flight overlap."
+                ),
+                receiver_normal_indexes,
+            )
+        )
+    if sender_pressure_recovery_sample is not None:
+        sender_support.append(
+            evidence(
+                "sender-pressure-recovery",
+                "Sender buffer and flight size return below their thresholds.",
+                [sender_pressure_recovery_sample],
+            )
+        )
+    if sender_buffer_baseline is not None and not sender_buffer_indexes:
+        sender_missing.append(
+            "Sender buffer occupancy does not cross the candidate threshold."
+        )
+    if sender_flight_baseline is not None and not sender_flight_indexes:
+        sender_missing.append(
+            "Sender flight size does not cross the candidate threshold."
+        )
+    if sender_buffer_indexes and sender_pressure_recovery_sample is None:
+        sender_missing.append("Sender pressure recovery is not observed.")
     sender_missing.append("Sender application scheduling is unavailable.")
+    sender_missing.append(
+        "Offered application rate and the exact egress capacity restriction are unavailable."
+    )
+    sender_pressure_supported = (
+        len(sender_buffer_indexes) >= 2
+        and bool(sender_overlap_indexes)
+        and receiver_normal_indexes == sender_overlap_indexes
+        and sender_pressure_recovery_sample is not None
+    )
+    sender_hypothesis_supported = sender_drop_total > 0 or sender_pressure_supported
 
     receiver_support = []
     receiver_contradictions = []
@@ -756,8 +869,17 @@ def build_analysis(source: dict) -> dict:
         receiver_drop_total > 0 or receiver_pressure_supported
     )
     if receiver_pressure_supported:
+        sender_contradictions.append(
+            "Receiver buffer pressure provides a competing endpoint explanation."
+        )
+        sender_hypothesis_supported = sender_drop_total > 0
         rtt_contradictions.append(
             "Receiver buffer pressure provides a competing endpoint explanation."
+        )
+        rtt_supported = False
+    if sender_pressure_supported:
+        rtt_contradictions.append(
+            "Sender egress pressure provides a competing endpoint explanation."
         )
         rtt_supported = False
 
@@ -790,12 +912,16 @@ def build_analysis(source: dict) -> dict:
         {
             "id": "sender-side-pressure",
             "failureDomain": "sender endpoint",
-            "assessment": "supported" if sender_support else "insufficient-evidence",
+            "assessment": (
+                "supported"
+                if sender_hypothesis_supported
+                else "insufficient-evidence"
+            ),
             "summary": (
                 "Sender pressure requires drop, queue, or flight-window evidence."
             ),
             "supportingEvidence": sender_support,
-            "contradictoryEvidence": [],
+            "contradictoryEvidence": sender_contradictions,
             "missingEvidence": sender_missing,
         },
         {
@@ -814,7 +940,11 @@ def build_analysis(source: dict) -> dict:
             "missingEvidence": receiver_missing,
         },
     ]
-    if path_supported and not sender_support and not receiver_hypothesis_supported:
+    if (
+        path_supported
+        and not sender_hypothesis_supported
+        and not receiver_hypothesis_supported
+    ):
         selected = {
             "id": "transmission-path-loss-with-recovery",
             "assessment": "supported",
@@ -824,7 +954,11 @@ def build_analysis(source: dict) -> dict:
                 "endpoint-pressure evidence."
             ),
         }
-    elif rtt_supported and not sender_support and not receiver_hypothesis_supported:
+    elif (
+        rtt_supported
+        and not sender_hypothesis_supported
+        and not receiver_hypothesis_supported
+    ):
         selected = {
             "id": "transmission-path-rtt-step-with-recovery",
             "assessment": "supported",
@@ -833,7 +967,25 @@ def build_analysis(source: dict) -> dict:
                 "thresholds and recover without loss or endpoint-pressure evidence."
             ),
         }
-    elif receiver_pressure_supported and not path_supported and not sender_support:
+    elif (
+        sender_pressure_supported
+        and not path_supported
+        and not receiver_hypothesis_supported
+    ):
+        selected = {
+            "id": "sender-side-pressure",
+            "assessment": "supported",
+            "rationale": (
+                "Sender buffer growth overlaps elevated flight size while the "
+                "receiver buffer remains below its pressure threshold, then "
+                "recovers without supported path-loss evidence."
+            ),
+        }
+    elif (
+        receiver_pressure_supported
+        and not path_supported
+        and not sender_hypothesis_supported
+    ):
         selected = {
             "id": "receiver-side-pressure",
             "assessment": "supported",
@@ -883,6 +1035,10 @@ def build_analysis(source: dict) -> dict:
                 "scheduling or consumption timing."
             ),
             (
+                "Public SRT statistics do not expose the offered application "
+                "rate or identify an exact egress capacity restriction."
+            ),
+            (
                 "The analysis does not infer unavailable endpoint-pressure metrics "
                 "as zero."
             ),
@@ -920,8 +1076,10 @@ def build_analysis(source: dict) -> dict:
                 "receiverReceiveBufferBytes": receiver_buffer_baseline,
                 "receiverReceiveBufferStepThreshold": receiver_buffer_threshold,
                 "rule": (
-                    "maximum warm sample 1/2 baseline; byte threshold=max(2x, "
-                    "baseline+65536); packet threshold=max(2x, baseline+8)"
+                    "maximum warm sample 1/2 baseline; sender byte "
+                    "threshold=max(2x, baseline+65536); receiver byte "
+                    "threshold=max(2x, baseline+1048576); packet "
+                    "threshold=max(2x, baseline+8)"
                 ),
             },
         },

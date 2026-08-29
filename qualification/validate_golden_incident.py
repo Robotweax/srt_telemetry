@@ -190,13 +190,19 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
     fault_proxy = capture.get("faultProxy")
     delay_proxy = capture.get("delayProxy")
     application_pause = capture.get("applicationPause")
+    bandwidth_proxy = capture.get("bandwidthProxy")
     if sum(
         candidate is not None
-        for candidate in [fault_proxy, delay_proxy, application_pause]
+        for candidate in [
+            fault_proxy,
+            delay_proxy,
+            application_pause,
+            bandwidth_proxy,
+        ]
     ) != 1:
         fail(
             "capture must contain exactly one fault proxy, delay proxy, "
-            "or application pause"
+            "application pause, or bandwidth proxy"
         )
     first_active = manifest["faultPlan"]["firstActiveSample"]
     last_active = manifest["faultPlan"]["lastActiveSample"]
@@ -221,7 +227,13 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
         if not isinstance(measured_pause, int) or measured_pause < elapsed[-1]:
             fail("capture application-pause duration is inconsistent")
         return
-    proxy = fault_proxy if fault_proxy is not None else delay_proxy
+    proxy = (
+        fault_proxy
+        if fault_proxy is not None
+        else delay_proxy
+        if delay_proxy is not None
+        else bandwidth_proxy
+    )
     if not isinstance(proxy, dict) or not isinstance(proxy.get("stages"), list):
         fail("capture proxy observations are missing")
     stages = proxy["stages"]
@@ -229,6 +241,61 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
     expected_indexes = list(range(1, max(index for _, index in by_key) + 1))
     if indexes != expected_indexes:
         fail(f"capture fault stages are not contiguous: {indexes}")
+    if bandwidth_proxy is not None:
+        if capture.get("environment", {}).get("transport") != (
+            "ipv4-loopback-udp-proxy"
+        ):
+            fail("bandwidth capture must use the IPv4 loopback UDP proxy")
+        active_rate = proxy.get("activeDataPacketsPerSecond")
+        recovery_rate = proxy.get("recoveryDataPacketsPerSecond")
+        active_messages = proxy.get("activeTransferMessages")
+        steady_messages = proxy.get("steadyMessagesPerInterval")
+        if not isinstance(active_rate, int) or active_rate <= 0:
+            fail("bandwidth proxy active data-packet rate is invalid")
+        if not isinstance(recovery_rate, int) or recovery_rate <= active_rate:
+            fail("bandwidth proxy recovery rate must exceed its active rate")
+        if not isinstance(active_messages, int) or active_messages <= 0:
+            fail("bandwidth proxy active transfer size is invalid")
+        if not isinstance(steady_messages, int) or steady_messages <= 0:
+            fail("bandwidth proxy steady transfer size is invalid")
+        for stage in stages:
+            index = stage["sampleIndex"]
+            active = first_active <= index <= last_active
+            if stage.get("active") != active:
+                fail(f"bandwidth proxy active state mismatch at sample {index}")
+            for field in [
+                "queueAtStart",
+                "downstreamDataPackets",
+                "queuedDataPackets",
+                "forwardedDataPackets",
+                "maximumQueuedPackets",
+                "queueAtEnd",
+            ]:
+                value = stage.get(field)
+                if not isinstance(value, int) or value < 0:
+                    fail(
+                        f"bandwidth proxy {field} is invalid at sample {index}: "
+                        f"{value}"
+                    )
+        active_stages = [stage for stage in stages if stage["active"]]
+        if not active_stages:
+            fail("bandwidth proxy has no active stages")
+        if active_stages[0]["downstreamDataPackets"] < active_messages:
+            fail("bandwidth proxy did not observe the offered active transfer")
+        if active_stages[0]["queueAtEnd"] <= 0:
+            fail("bandwidth proxy queue did not grow in the first active stage")
+        if active_stages[-1]["queueAtEnd"] <= 0:
+            fail("bandwidth proxy queue drained before the active restriction ended")
+        if max(stage["maximumQueuedPackets"] for stage in active_stages) <= 0:
+            fail("bandwidth proxy did not record queued data packets")
+        recovery_stages = [
+            stage for stage in stages if stage["sampleIndex"] > last_active
+        ]
+        if not recovery_stages or recovery_stages[0]["queueAtStart"] <= 0:
+            fail("bandwidth proxy recovery did not begin with a retained queue")
+        if recovery_stages[0]["queueAtEnd"] != 0:
+            fail("bandwidth proxy queue did not drain in the first recovery stage")
+        return
     if delay_proxy is not None:
         messages = proxy.get("messagesPerInterval")
         delay_millis = proxy.get("oneWayDelayMillis")

@@ -144,7 +144,9 @@
         "paired-rtt-step-threshold",
         "one-way-delay",
         "sender-application-scheduling",
-        "receiver-application-consumption"
+        "receiver-application-consumption",
+        "offered-application-rate",
+        "exact-egress-capacity"
       ]
     },
     "assignment": {

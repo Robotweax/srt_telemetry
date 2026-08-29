@@ -165,6 +165,55 @@ def validate_receiver_pressure_result(result: dict, expected_format: str) -> Non
         fail(f"retained receiver-pressure baseline is invalid: {baseline}")
 
 
+def validate_sender_pressure_result(result: dict, expected_format: str) -> None:
+    validate_common_result(result, expected_format)
+    timeline = result["timeline"]
+    expected_timeline = {
+        "sampleCount": 9,
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 6,
+        "recoverySample": 7,
+    }
+    for field, expected in expected_timeline.items():
+        if timeline[field] != expected:
+            fail(
+                f"sender-pressure timeline {field} expected {expected}, "
+                f"got {timeline[field]}"
+            )
+    if result["selectedHypothesis"] != {
+        "id": "sender-side-pressure",
+        "assessment": "supported",
+        "rationale": (
+            "Sender buffer growth overlaps elevated flight size while the "
+            "receiver buffer remains below its pressure threshold, then "
+            "recovers without supported path-loss evidence."
+        ),
+    }:
+        fail(
+            "unexpected sender-pressure selected hypothesis: "
+            f"{result['selectedHypothesis']}"
+        )
+    sender_hypothesis = next(
+        item for item in result["hypotheses"] if item["id"] == "sender-side-pressure"
+    )
+    support_ids = {item["id"] for item in sender_hypothesis["supportingEvidence"]}
+    if sender_hypothesis["assessment"] != "supported" or not {
+        "sender-buffer-growth",
+        "sender-flight-growth",
+        "receiver-buffer-remains-below-pressure-threshold",
+        "sender-pressure-recovery",
+    }.issubset(support_ids):
+        fail(f"retained sender-pressure evidence is incomplete: {sender_hypothesis}")
+    totals = result["totals"]
+    if (
+        totals["senderLossPackets"] != 0
+        or totals["receiverLossPackets"] != 0
+        or totals["uniqueSentPackets"] != 2_400
+        or totals["uniqueReceivedPackets"] != 2_400
+    ):
+        fail(f"retained sender-pressure delivery totals are invalid: {totals}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Test the local incident analyzer")
     parser.add_argument("--analyzer", type=Path, required=True)
@@ -184,6 +233,7 @@ def main() -> int:
             "burst-packet-loss": validate_loss_result,
             "round-trip-time-step": validate_rtt_result,
             "receiver-application-pause": validate_receiver_pressure_result,
+            "bandwidth-reduction-with-queue-growth": validate_sender_pressure_result,
         }
         failure_class = manifest_document["failureClass"]
         if failure_class not in validators:
@@ -371,6 +421,71 @@ def main() -> int:
         "receiver-buffer-recovery",
     }:
         fail(f"receiver-pressure evidence is incomplete: {receiver_hypothesis}")
+
+    sender_pressure_source = copy.deepcopy(jsonl_source)
+    for role, stream in sender_pressure_source["streams"].items():
+        for sample in stream["samples"]:
+            index = sample["sampleIndex"]
+            for field in [
+                "sender_loss_packet_delta",
+                "receiver_loss_packet_delta",
+                "retransmitted_packet_delta",
+                "sender_drop_packet_delta",
+                "receiver_drop_packet_delta",
+                "receiver_undecryptable_packet_delta",
+            ]:
+                if index > 0 and field in sample["delta"]:
+                    sample["delta"][field] = 0
+            sample["raw"]["rtt_seconds"] = 0.010
+            sample["raw"]["flight_size_packets"] = (
+                1_000 if role == "sender" and 3 <= index <= 6 else 0
+            )
+            sample["raw"]["send_buffer_bytes"] = (
+                2_000_000 if role == "sender" and 3 <= index <= 6 else 0
+            )
+            sample["raw"]["send_buffer_seconds"] = 0.0
+            sample["raw"]["receive_buffer_bytes"] = (
+                10_000 if role == "receiver" and 3 <= index <= 6 else 0
+            )
+            sample["raw"]["receive_buffer_seconds"] = 0.0
+    sender_pressure = analyzer.build_analysis(sender_pressure_source)
+    expected_sender_timeline = {
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 6,
+        "recoverySample": 7,
+    }
+    for field, expected in expected_sender_timeline.items():
+        if sender_pressure["timeline"][field] != expected:
+            fail(
+                f"sender pressure {field} expected {expected}: "
+                f"{sender_pressure['timeline']}"
+            )
+    expected_sender_selection = {
+        "id": "sender-side-pressure",
+        "assessment": "supported",
+        "rationale": (
+            "Sender buffer growth overlaps elevated flight size while the "
+            "receiver buffer remains below its pressure threshold, then "
+            "recovers without supported path-loss evidence."
+        ),
+    }
+    if sender_pressure["selectedHypothesis"] != expected_sender_selection:
+        fail(
+            f"unexpected sender-pressure hypothesis: "
+            f"{sender_pressure['selectedHypothesis']}"
+        )
+    sender_hypothesis = next(
+        item
+        for item in sender_pressure["hypotheses"]
+        if item["id"] == "sender-side-pressure"
+    )
+    if {item["id"] for item in sender_hypothesis["supportingEvidence"]} != {
+        "sender-buffer-growth",
+        "sender-flight-growth",
+        "receiver-buffer-remains-below-pressure-threshold",
+        "sender-pressure-recovery",
+    }:
+        fail(f"sender-pressure evidence is incomplete: {sender_hypothesis}")
     print(
         f"incident analyzer valid: {len(arguments.manifest)} golden incidents, "
         f"{retained_recording_count} retained recordings, and generated JSONL path"

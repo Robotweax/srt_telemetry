@@ -273,7 +273,11 @@ def pressure_threshold(baseline: float, absolute_step: float) -> float:
 def pressure_evidence(samples: list, pause_messages: int, steady_messages: int) -> dict:
     by_key = {(sample["role"], sample["sampleIndex"]): sample for sample in samples}
     field_rules = {
-        "receiverReceiveBufferBytes": ("receiver", "receive_buffer_bytes", 65_536),
+        "receiverReceiveBufferBytes": (
+            "receiver",
+            "receive_buffer_bytes",
+            1_048_576,
+        ),
         "senderSendBufferBytes": ("sender", "send_buffer_bytes", 65_536),
         "senderFlightSizePackets": ("sender", "flight_size_packets", 8),
     }

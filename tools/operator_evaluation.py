@@ -53,6 +53,8 @@ MISSING_EVIDENCE_OPTIONS = {
     "one-way-delay",
     "sender-application-scheduling",
     "receiver-application-consumption",
+    "offered-application-rate",
+    "exact-egress-capacity",
 }
 
 DOMAIN_BY_ANALYSIS = {
@@ -87,6 +89,10 @@ MISSING_EVIDENCE_BY_TEXT = {
         "exact-failing-hop",
     },
     "Sender application scheduling is unavailable.": {"sender-application-scheduling"},
+    (
+        "Offered application rate and the exact egress capacity restriction "
+        "are unavailable."
+    ): {"offered-application-rate", "exact-egress-capacity"},
     (
         "Receiver application-consumption timing is unavailable from public "
         "SRT statistics."

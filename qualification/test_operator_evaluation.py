@@ -83,7 +83,9 @@ def build_response(study: dict, packet_dir: Path, participant: str, arm: str) ->
         else:
             first = reference["firstDeviationSample"]
             domain = reference["failureDomain"]
-            hypotheses = reference["supportedHypotheses"] + ["sender-side-pressure"]
+            hypotheses = sorted(
+                set(reference["supportedHypotheses"] + ["sender-side-pressure"])
+            )
             missing = ["exact-failing-hop"]
             timing = {
                 "timeToFirstDeviationMillis": 90_000,
