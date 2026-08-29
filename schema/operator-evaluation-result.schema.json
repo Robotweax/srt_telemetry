@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/operator-evaluation-result-v1alpha1.json",
+  "title": "Robotweax SRT operator evaluation session or summary",
+  "oneOf": [
+    { "$ref": "#/$defs/session" },
+    { "$ref": "#/$defs/summary" }
+  ],
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeToFirstDeviationMillis",
+        "timeToFailureDomainMillis",
+        "completionMillis"
+      ],
+      "properties": {
+        "timeToFirstDeviationMillis": { "type": "integer", "minimum": 0 },
+        "timeToFailureDomainMillis": { "type": "integer", "minimum": 0 },
+        "completionMillis": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "firstDeviationSample",
+        "failureDomain",
+        "supportedHypotheses",
+        "missingEvidence",
+        "confidence",
+        "notes"
+      ],
+      "properties": {
+        "firstDeviationSample": { "type": ["integer", "null"], "minimum": 0 },
+        "failureDomain": {
+          "enum": [
+            "transmission-path",
+            "sender-endpoint",
+            "receiver-endpoint",
+            "exact-network-hop",
+            "insufficient-evidence"
+          ]
+        },
+        "supportedHypotheses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "transmission-path-loss-with-recovery",
+              "sender-side-pressure",
+              "receiver-side-pressure"
+            ]
+          }
+        },
+        "missingEvidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "confidence": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "notes": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "firstDeviationCorrect",
+        "failureDomainCorrect",
+        "unsupportedHypotheses",
+        "missedSupportedHypotheses",
+        "missingEvidencePrecision",
+        "missingEvidenceRecall"
+      ],
+      "properties": {
+        "firstDeviationCorrect": { "type": "boolean" },
+        "failureDomainCorrect": { "type": "boolean" },
+        "unsupportedHypotheses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "missedSupportedHypotheses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "missingEvidencePrecision": { "type": "number", "minimum": 0, "maximum": 1 },
+        "missingEvidenceRecall": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "scenarioId",
+        "failureClass",
+        "condition",
+        "timing",
+        "answer",
+        "score",
+        "reference"
+      ],
+      "properties": {
+        "position": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "scenarioId": { "type": "string", "minLength": 1 },
+        "failureClass": { "type": "string", "minLength": 1 },
+        "condition": { "enum": ["raw-statistics", "incident-report"] },
+        "timing": { "$ref": "#/$defs/timing" },
+        "answer": { "$ref": "#/$defs/answer" },
+        "score": { "$ref": "#/$defs/score" },
+        "reference": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "status",
+        "studyId",
+        "study",
+        "participantId",
+        "evidenceClass",
+        "arm",
+        "collectionMode",
+        "tasks"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1alpha1" },
+        "kind": { "const": "robotweax-srt-operator-evaluation-session" },
+        "status": { "const": "complete" },
+        "studyId": { "type": "string", "minLength": 1 },
+        "study": { "$ref": "#/$defs/artifact" },
+        "participantId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "evidenceClass": {
+          "enum": ["synthetic-harness", "internal-pilot", "design-partner"]
+        },
+        "arm": { "enum": ["arm-a", "arm-b"] },
+        "collectionMode": { "type": "string", "minLength": 1 },
+        "tasks": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/task" }
+        }
+      }
+    },
+    "conditionStatistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskCount",
+        "medianTimeToFirstDeviationMillis",
+        "medianTimeToFailureDomainMillis",
+        "firstDeviationAccuracy",
+        "failureDomainAccuracy",
+        "meanUnsupportedHypothesisCount",
+        "meanMissingEvidencePrecision",
+        "meanMissingEvidenceRecall",
+        "meanConfidence"
+      ],
+      "properties": {
+        "taskCount": { "type": "integer", "minimum": 1 },
+        "medianTimeToFirstDeviationMillis": { "type": "number", "minimum": 0 },
+        "medianTimeToFailureDomainMillis": { "type": "number", "minimum": 0 },
+        "firstDeviationAccuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "failureDomainAccuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "meanUnsupportedHypothesisCount": { "type": "number", "minimum": 0 },
+        "meanMissingEvidencePrecision": { "type": "number", "minimum": 0, "maximum": 1 },
+        "meanMissingEvidenceRecall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "meanConfidence": { "type": "number", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "status",
+        "studyId",
+        "study",
+        "participantCount",
+        "evidenceClassCounts",
+        "distinctFailureClasses",
+        "statistics",
+        "comparison",
+        "claimAssessment",
+        "pairedResults"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1alpha1" },
+        "kind": { "const": "robotweax-srt-operator-evaluation-summary" },
+        "status": { "const": "pass" },
+        "studyId": { "type": "string", "minLength": 1 },
+        "study": { "$ref": "#/$defs/artifact" },
+        "participantCount": { "type": "integer", "minimum": 1 },
+        "evidenceClassCounts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["synthetic-harness", "internal-pilot", "design-partner"],
+          "properties": {
+            "synthetic-harness": { "type": "integer", "minimum": 0 },
+            "internal-pilot": { "type": "integer", "minimum": 0 },
+            "design-partner": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "distinctFailureClasses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "statistics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["raw-statistics", "incident-report"],
+          "properties": {
+            "raw-statistics": { "$ref": "#/$defs/conditionStatistics" },
+            "incident-report": { "$ref": "#/$defs/conditionStatistics" }
+          }
+        },
+        "comparison": { "type": "object" },
+        "claimAssessment": { "type": "object" },
+        "pairedResults": { "type": "array", "items": { "type": "object" } }
+      }
+    }
+  }
+}

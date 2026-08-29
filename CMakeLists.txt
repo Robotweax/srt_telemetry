@@ -321,6 +321,20 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
                 DEPENDS robotweax_srt_telemetry_jsonl_incident_fixture_test
                 ENVIRONMENT
                     "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
+        add_test(NAME robotweax_srt_telemetry_operator_evaluation_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_operator_evaluation.py"
+                --tool "${CMAKE_CURRENT_SOURCE_DIR}/tools/operator_evaluation.py"
+                --analyzer "${CMAKE_CURRENT_SOURCE_DIR}/tools/analyze_incident.py"
+                --manifest
+                "${ROBOTWEAX_SRT_TELEMETRY_JSONL_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --manifest
+                "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_JSONL_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --work-dir "${CMAKE_CURRENT_BINARY_DIR}/operator-evaluation-fixtures")
+        set_tests_properties(robotweax_srt_telemetry_operator_evaluation_test
+            PROPERTIES
+                ENVIRONMENT
+                    "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
     endif()
 endif()
 

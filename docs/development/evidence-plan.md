@@ -112,3 +112,14 @@ in both directions. This does not close the product claim. A design-partner
 comparison must still measure the operator outcomes above, and real
 cross-endpoint correlation must declare clock-synchronization quality before
 wall-clock ordering is used as RCA evidence.
+
+The first executable comparison harness now prepares hash-verified,
+counterbalanced raw-statistics and incident-report tasks from retained
+recordings, captures the two timing milestones and bounded operator answers,
+and emits paired aggregate statistics. Its automated end-to-end test uses only
+`synthetic-harness` responses and cannot satisfy this gate. Incidents 006 and
+007 also share the same constant-loss failure class, while strategy Gate B
+requires at least five real or representative failure classes. The next
+evidence step is an internal facilitation rehearsal followed by controlled
+design-partner sessions; neither should use cross-host wall-clock ordering
+until clock quality is declared.

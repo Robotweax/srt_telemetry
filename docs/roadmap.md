@@ -38,7 +38,9 @@
 - synthetic correlation plus direct provider-linked recorder-to-analyzer
   candidates complete in both cross-provider sender directions; real
   cross-endpoint clock-quality contract open; and
-- design-partner comparison with raw statistics.
+- versioned, counterbalanced raw-statistics versus incident-report evaluation
+  harness complete; internal rehearsal, design-partner observations, and
+  coverage of at least five real or representative failure classes open.
 
 ## Phase 3: pipeline pilot
 

@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/operator-evaluation-study-v1alpha1.json",
+  "title": "Robotweax SRT operator evaluation study packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "studyId",
+    "status",
+    "design",
+    "arms",
+    "questions",
+    "metrics",
+    "gateLimits",
+    "privacy",
+    "scenarios"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1alpha1" },
+    "kind": { "const": "robotweax-srt-operator-evaluation-study" },
+    "studyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+    "status": { "const": "candidate" },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "allocation", "rationale"],
+      "properties": {
+        "type": { "const": "two-scenario-counterbalanced-crossover" },
+        "allocation": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm-a", "arm-b"],
+      "properties": {
+        "arm-a": { "$ref": "#/$defs/assignments" },
+        "arm-b": { "$ref": "#/$defs/assignments" }
+      }
+    },
+    "questions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "failureDomains",
+        "hypotheses",
+        "missingEvidence",
+        "confidenceScale"
+      ],
+      "properties": {
+        "failureDomains": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/failureDomain" }
+        },
+        "hypotheses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/hypothesis" }
+        },
+        "missingEvidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/missingEvidence" }
+        },
+        "confidenceScale": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum", "maximum"],
+          "properties": {
+            "minimum": { "const": 1 },
+            "maximum": { "const": 5 }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 7,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "gateLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumDistinctFailureClasses", "automaticProductClaim", "note"],
+      "properties": {
+        "minimumDistinctFailureClasses": { "const": 5 },
+        "automaticProductClaim": { "const": false },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["participantId", "forbidden"],
+      "properties": {
+        "participantId": { "type": "string", "minLength": 1 },
+        "forbidden": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/scenario" }
+    }
+  },
+  "$defs": {
+    "condition": { "enum": ["raw-statistics", "incident-report"] },
+    "failureDomain": {
+      "enum": [
+        "transmission-path",
+        "sender-endpoint",
+        "receiver-endpoint",
+        "exact-network-hop",
+        "insufficient-evidence"
+      ]
+    },
+    "hypothesis": {
+      "enum": [
+        "transmission-path-loss-with-recovery",
+        "sender-side-pressure",
+        "receiver-side-pressure"
+      ]
+    },
+    "missingEvidence": {
+      "enum": [
+        "packet-sequence-adjacency",
+        "exact-failing-hop",
+        "sender-buffer-occupancy",
+        "sender-flight-size",
+        "receiver-buffer-occupancy",
+        "paired-loss-alignment",
+        "sender-retransmission-deltas"
+      ]
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenarioId", "condition"],
+      "properties": {
+        "scenarioId": { "type": "string", "minLength": 1 },
+        "condition": { "$ref": "#/$defs/condition" }
+      }
+    },
+    "assignments": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/assignment" }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "sourceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "views": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw-statistics", "incident-report"],
+      "properties": {
+        "raw-statistics": { "$ref": "#/$defs/artifact" },
+        "incident-report": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "failureClass",
+        "sourceManifest",
+        "views",
+        "reference"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "pattern": "^incident-[0-9]{3,}-[a-z0-9-]+$"
+        },
+        "failureClass": { "type": "string", "minLength": 1 },
+        "sourceManifest": { "$ref": "#/$defs/sourceArtifact" },
+        "views": { "$ref": "#/$defs/views" },
+        "reference": { "$ref": "#/$defs/artifact" }
+      }
+    }
+  }
+}

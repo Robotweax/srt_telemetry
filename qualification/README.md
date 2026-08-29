@@ -169,3 +169,18 @@ Retained captures:
 - [2026-08-29 Haivision sender to Robotweax receiver burst loss](../testdata/golden-incidents/incident-005-captured-burst-loss-haivision-robotweax/manifest.json)
 - [2026-08-29 Robotweax sender to Haivision receiver direct JSONL analysis](../testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json)
 - [2026-08-29 Haivision sender to Robotweax receiver direct JSONL analysis](../testdata/golden-incidents/incident-007-jsonl-constant-loss-haivision-robotweax/manifest.json)
+
+## Operator comparison
+
+`tools/operator_evaluation.py` prepares and runs the counterbalanced comparison
+between normalized public SRT statistics and the deterministic incident
+report. It measures time to first deviation, time to a useful failure domain,
+accuracy, unsupported hypotheses, missing-evidence recognition, and operator
+confidence. See the [operator evaluation protocol](../docs/qualification/operator-evaluation.md)
+for the immutable packet, privacy rules, evidence classifications, commands,
+and claim limits.
+
+`qualification/test_operator_evaluation.py` exercises packet creation, both
+arms, scoring, aggregation, overwrite refusal, inference isolation in the raw
+condition, and tamper detection. Its responses are synthetic test fixtures and
+do not count as operator or design-partner evidence.
