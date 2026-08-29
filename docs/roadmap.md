@@ -12,7 +12,8 @@
 
 ## Phase 1: recorder and provider qualification — current
 
-- bounded in-memory recorder complete; callback and JSONL/protobuf export open;
+- bounded in-memory recorder and versioned stable-snapshot JSONL callback export
+  complete; streaming callbacks and protobuf export open;
 - public SRT API adapter using the host-selected library complete;
 - Robotweax SRT header/signature and bidirectional self-loopback candidate
   profile complete, full profile open;
@@ -29,12 +30,13 @@
   both sender directions; flight-tail/profile coverage and the remaining
   initial corpus open.
 
-## Phase 2: diagnostic proof
+## Phase 2: diagnostic proof — current
 
-- local incident timeline;
-- three explainable hypotheses;
-- explicit insufficient-evidence outcome;
-- paired sender/receiver correlation experiment; and
+- deterministic local incident timeline candidate complete;
+- three explainable hypothesis candidates complete;
+- explicit insufficient-evidence outcome complete;
+- synthetic and captured paired sender/receiver correlation candidate complete;
+  real cross-endpoint clock-quality contract open; and
 - design-partner comparison with raw statistics.
 
 ## Phase 3: pipeline pilot

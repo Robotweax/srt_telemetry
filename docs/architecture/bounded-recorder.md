@@ -12,9 +12,30 @@ unbounded allocations.
 
 The C and C++ APIs synchronize individual operations. A sequence of size and
 read calls is not a transaction: concurrent writers may change the oldest
-record between calls. Consumers that require a stable incident snapshot must
-stop writes or add an external synchronization boundary before exporting it.
+record between calls. The versioned JSONL exporter is the stable-snapshot
+boundary. It copies the complete logical ring under the recorder lock and then
+serializes and invokes the sink after releasing the lock. Concurrent pushes can
+therefore continue while a fixed snapshot is exported.
 
-This component is deliberately not yet a persistent recorder. JSONL/protobuf
-serialization, callbacks, trigger windows, disk spooling, and data-loss
-accounting remain Phase 1 work.
+## JSONL snapshot export
+
+`robotweax_srt_telemetry_recorder_export_jsonl` emits one recording header and
+then one oldest-first sample per callback. Every callback receives exactly one
+newline-terminated UTF-8 JSON document. A non-zero sink result stops the export
+with `ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE`.
+
+The header retains the stream and shared flow identities, endpoint role, exact
+provider build provenance, telemetry version, record count, capacity, and
+overwrite count. Sample documents retain raw and delta availability masks,
+quality boundaries, and every v1 value. Unavailable values are JSON `null`;
+an observed zero remains numeric `0`. The corresponding line schema is
+[`telemetry-jsonl-line.schema.json`](../../schema/telemetry-jsonl-line.schema.json).
+
+Export is an incident/control-path operation, not a sampling hot-path
+operation. It allocates a snapshot plus serialized lines. The caller owns
+persistence, retry, and sink backpressure behavior; a failed callback may have
+already accepted earlier complete lines. No disk spool is implied.
+
+The recorder is still not a persistent recorder. Streaming sample callbacks,
+protobuf export, trigger windows, a bounded disk spool, and persistent data-loss
+accounting remain open.

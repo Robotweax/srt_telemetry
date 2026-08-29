@@ -34,7 +34,8 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT = 1,
         ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH = 2,
         ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE = 3,
-        ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE = 4
+        ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE = 4,
+        ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE = 5
     } robotweax_srt_telemetry_error;
 
     typedef enum robotweax_srt_telemetry_provider
@@ -175,6 +176,36 @@ extern "C"
         robotweax_srt_telemetry_delta_v1 delta;
     } robotweax_srt_telemetry_record_v1;
 
+    typedef enum robotweax_srt_telemetry_endpoint_role
+    {
+        ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN = 0,
+        ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER = 1,
+        ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER = 2
+    } robotweax_srt_telemetry_endpoint_role;
+
+    /* JSONL export takes a stable snapshot of the recorder and sends one
+     * complete UTF-8 JSON line per callback invocation. Metadata strings are
+     * required printable ASCII and are copied into the snapshot output. */
+    typedef struct robotweax_srt_telemetry_jsonl_export_config_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        const char *stream_id;
+        const char *flow_id;
+        const char *provider_version;
+        const char *provider_revision;
+        const char *build_profile;
+        robotweax_srt_telemetry_endpoint_role role;
+        robotweax_srt_telemetry_provider configured_provider;
+        uint64_t reserved;
+    } robotweax_srt_telemetry_jsonl_export_config_v1;
+
+    /* Return zero to accept a line. A non-zero result stops export and is
+     * reported as ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE. The line includes its
+     * trailing newline and is not null-terminated for the callback contract. */
+    typedef int (*robotweax_srt_telemetry_jsonl_sink)(void *user_data, const char *line,
+                                                      size_t line_size);
+
     typedef struct robotweax_srt_telemetry_delta_engine robotweax_srt_telemetry_delta_engine;
     typedef struct robotweax_srt_telemetry_recorder robotweax_srt_telemetry_recorder;
 
@@ -226,6 +257,12 @@ extern "C"
 
     ROBOTWEAX_SRT_TELEMETRY_API void
     robotweax_srt_telemetry_recorder_clear(robotweax_srt_telemetry_recorder *recorder);
+
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_recorder_export_jsonl(
+        const robotweax_srt_telemetry_recorder *recorder,
+        const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+        robotweax_srt_telemetry_jsonl_sink sink, void *user_data);
 
 #ifdef __cplusplus
 }

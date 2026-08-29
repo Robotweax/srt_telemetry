@@ -1,8 +1,10 @@
 #include <robotweax/srt_telemetry.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <string>
 #include <string_view>
 
 namespace
@@ -151,6 +153,51 @@ void test_bounded_recorder_overwrite_order()
     check(recorder.overwritten_count() == 0, "clear resets overwrite accounting");
 }
 
+void test_jsonl_snapshot_export()
+{
+    robotweax::srt::telemetry::DeltaEngine engine;
+    robotweax::srt::telemetry::BoundedRecorder recorder(2);
+    for (std::uint64_t index = 1; index <= 3; ++index)
+    {
+        auto raw = sample_at(index * 1'000'000'000ULL);
+        raw.available_fields = ROBOTWEAX_SRT_TELEMETRY_FIELD_SENT_PACKET_TOTAL |
+                               ROBOTWEAX_SRT_TELEMETRY_FIELD_RTT_SECONDS;
+        raw.sent_packet_total = index * 10;
+        raw.rtt_seconds = 0.01 * static_cast<double>(index);
+        recorder.push(raw, engine.update(raw));
+    }
+
+    robotweax::srt::telemetry::JsonlExportMetadata metadata;
+    metadata.stream_id = "sender-\"primary\\edge";
+    metadata.flow_id = "flow-constant-loss";
+    metadata.provider_version = "0.2.0-test";
+    metadata.provider_revision = "0123456789abcdef";
+    metadata.build_profile = "release-test";
+    metadata.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    metadata.configured_provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT;
+    const auto jsonl = recorder.export_jsonl(metadata);
+
+    check(std::count(jsonl.begin(), jsonl.end(), '\n') == 3,
+          "JSONL contains one header and two retained samples");
+    check(jsonl.find("\"kind\":\"robotweax-srt-telemetry-recording\"") != std::string::npos,
+          "JSONL starts with a versioned recording header");
+    check(jsonl.find("\"streamId\":\"sender-\\\"primary\\\\edge\"") != std::string::npos,
+          "JSONL escapes metadata strings");
+    check(jsonl.find("\"flowId\":\"flow-constant-loss\"") != std::string::npos,
+          "JSONL carries paired-flow correlation identity");
+    check(jsonl.find("\"recordCount\":2,\"capacity\":2,\"overwrittenCount\":1") !=
+              std::string::npos,
+          "JSONL preserves snapshot loss accounting");
+    check(jsonl.find("\"sampleIndex\":0,\"raw\":{\"provider\":\"robotweax-srt\"") !=
+              std::string::npos,
+          "JSONL samples are indexed oldest first");
+    check(jsonl.find("\"sent_packet_total\":20") != std::string::npos &&
+              jsonl.find("\"sent_packet_total\":30") != std::string::npos,
+          "JSONL preserves retained raw counter values");
+    check(jsonl.find("\"received_packet_total\":null") != std::string::npos,
+          "JSONL preserves unavailable fields as null");
+}
+
 } // namespace
 
 int main()
@@ -160,6 +207,7 @@ int main()
     test_counter_reset_is_field_local();
     test_clock_and_provider_discontinuities();
     test_bounded_recorder_overwrite_order();
+    test_jsonl_snapshot_export();
     if (failures != 0)
     {
         std::cerr << failures << " test checks failed\n";

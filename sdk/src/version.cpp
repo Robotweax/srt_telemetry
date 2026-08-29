@@ -20,6 +20,8 @@ robotweax_srt_telemetry_error_string(const robotweax_srt_telemetry_error error)
         return "allocation failure";
     case ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE:
         return "provider sample failure";
+    case ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE:
+        return "telemetry sink failure";
     }
     return "unknown telemetry error";
 }

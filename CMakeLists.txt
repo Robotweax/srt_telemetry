@@ -217,6 +217,24 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
         COMMAND robotweax_srt_telemetry_golden_incident_test
             "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/samples.csv")
 
+    add_executable(robotweax_srt_telemetry_generate_jsonl_incident
+        sdk/tests/generate_jsonl_incident.cpp)
+    target_link_libraries(robotweax_srt_telemetry_generate_jsonl_incident
+        PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_generate_jsonl_incident
+        PRIVATE cxx_std_20)
+    set(ROBOTWEAX_SRT_TELEMETRY_JSONL_FIXTURE_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/incident-analysis-fixtures")
+    file(MAKE_DIRECTORY "${ROBOTWEAX_SRT_TELEMETRY_JSONL_FIXTURE_DIR}")
+    set(ROBOTWEAX_SRT_TELEMETRY_SENDER_JSONL_FIXTURE
+        "${ROBOTWEAX_SRT_TELEMETRY_JSONL_FIXTURE_DIR}/sender.jsonl")
+    set(ROBOTWEAX_SRT_TELEMETRY_RECEIVER_JSONL_FIXTURE
+        "${ROBOTWEAX_SRT_TELEMETRY_JSONL_FIXTURE_DIR}/receiver.jsonl")
+    add_test(NAME robotweax_srt_telemetry_jsonl_incident_fixture_test
+        COMMAND robotweax_srt_telemetry_generate_jsonl_incident
+            "${ROBOTWEAX_SRT_TELEMETRY_SENDER_JSONL_FIXTURE}"
+            "${ROBOTWEAX_SRT_TELEMETRY_RECEIVER_JSONL_FIXTURE}")
+
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
         add_test(NAME robotweax_srt_telemetry_golden_incident_manifest_test
@@ -249,6 +267,25 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/results/2026-08-29-macos-arm64-loss-shape-observability.json"
                 --runtime-qualification
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json")
+        add_test(NAME robotweax_srt_telemetry_incident_analysis_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_incident_analysis.py"
+                --analyzer "${CMAKE_CURRENT_SOURCE_DIR}/tools/analyze_incident.py"
+                --jsonl
+                "${ROBOTWEAX_SRT_TELEMETRY_SENDER_JSONL_FIXTURE}"
+                "${ROBOTWEAX_SRT_TELEMETRY_RECEIVER_JSONL_FIXTURE}"
+                --manifest "${ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --manifest "${ROBOTWEAX_SRT_TELEMETRY_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --manifest "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --manifest "${ROBOTWEAX_SRT_TELEMETRY_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --manifest "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --expected-analysis
+                "${ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR}/analysis.json")
+        set_tests_properties(robotweax_srt_telemetry_incident_analysis_test
+            PROPERTIES
+                DEPENDS robotweax_srt_telemetry_jsonl_incident_fixture_test
+                ENVIRONMENT
+                    "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
     endif()
 endif()
 

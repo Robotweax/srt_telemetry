@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/incident-analysis-result-v1alpha1.json",
+  "title": "Robotweax local incident analysis result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "source",
+    "timeline",
+    "totals",
+    "hypotheses",
+    "selectedHypothesis",
+    "nonClaims"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1alpha1" },
+    "kind": { "const": "robotweax-srt-local-incident-analysis" },
+    "status": { "const": "pass" },
+    "source": { "$ref": "#/$defs/source" },
+    "timeline": { "$ref": "#/$defs/timeline" },
+    "totals": { "$ref": "#/$defs/totals" },
+    "hypotheses": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/hypothesis" }
+    },
+    "selectedHypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "assessment", "rationale"],
+      "properties": {
+        "id": {
+          "type": ["string", "null"],
+          "enum": ["transmission-path-loss-with-recovery", null]
+        },
+        "assessment": { "enum": ["supported", "insufficient-evidence"] },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "nonClaims": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "nullableString": { "type": ["string", "null"] },
+    "nullableUnsigned": { "type": ["number", "null"], "minimum": 0 },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "streamId",
+        "provider",
+        "providerVersion",
+        "providerRevision",
+        "buildProfile",
+        "recordCount",
+        "overwrittenCount"
+      ],
+      "properties": {
+        "role": { "enum": ["sender", "receiver"] },
+        "streamId": { "type": "string", "minLength": 1 },
+        "provider": { "enum": ["haivision-srt", "robotweax-srt"] },
+        "providerVersion": { "type": "string", "minLength": 1 },
+        "providerRevision": { "type": "string", "minLength": 1 },
+        "buildProfile": { "type": "string", "minLength": 1 },
+        "recordCount": { "type": "integer", "minimum": 1 },
+        "overwrittenCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "incidentId",
+        "declaredFailureClass",
+        "flowId",
+        "artifacts",
+        "streams"
+      ],
+      "properties": {
+        "format": {
+          "enum": [
+            "robotweax-srt-telemetry-csv-v1",
+            "robotweax-srt-telemetry-jsonl-v1"
+          ]
+        },
+        "incidentId": { "$ref": "#/$defs/nullableString" },
+        "declaredFailureClass": { "$ref": "#/$defs/nullableString" },
+        "flowId": { "type": "string", "minLength": 1 },
+        "artifacts": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/artifact" }
+        },
+        "streams": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/stream" }
+        }
+      }
+    },
+    "qualityBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sampleIndex", "role", "flags"],
+      "properties": {
+        "sampleIndex": { "type": "integer", "minimum": 0 },
+        "role": { "enum": ["sender", "receiver"] },
+        "flags": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "first-sample",
+              "monotonic-clock-regression",
+              "provider-changed",
+              "counter-reset"
+            ]
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "senderLossPackets",
+        "receiverLossPackets",
+        "retransmittedPackets",
+        "senderDropPackets",
+        "receiverDropPackets",
+        "receiverUndecryptablePackets",
+        "physicalSentPackets",
+        "uniqueSentPackets",
+        "uniqueReceivedPackets"
+      ],
+      "properties": {
+        "senderLossPackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "receiverLossPackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "retransmittedPackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "senderDropPackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "receiverDropPackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "receiverUndecryptablePackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "physicalSentPackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "uniqueSentPackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "uniqueReceivedPackets": { "$ref": "#/$defs/nullableUnsigned" }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sampleIndex",
+        "observedAtUnixNano",
+        "deviating",
+        "signals",
+        "qualityBoundaries"
+      ],
+      "properties": {
+        "sampleIndex": { "type": "integer", "minimum": 0 },
+        "observedAtUnixNano": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sender", "receiver"],
+          "properties": {
+            "sender": { "type": "integer", "minimum": 0 },
+            "receiver": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "deviating": { "type": "boolean" },
+        "signals": { "$ref": "#/$defs/signals" },
+        "qualityBoundaries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "flags"],
+            "properties": {
+              "role": { "enum": ["sender", "receiver"] },
+              "flags": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "timeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sampleCount",
+        "firstDeviationSample",
+        "lastDeviationSample",
+        "recoverySample",
+        "qualityBoundaries",
+        "observations"
+      ],
+      "properties": {
+        "sampleCount": { "type": "integer", "minimum": 1 },
+        "firstDeviationSample": { "type": ["integer", "null"], "minimum": 0 },
+        "lastDeviationSample": { "type": ["integer", "null"], "minimum": 0 },
+        "recoverySample": { "type": ["integer", "null"], "minimum": 0 },
+        "qualityBoundaries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/qualityBoundary" }
+        },
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/observation" }
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "senderLossPackets",
+        "receiverLossPackets",
+        "retransmittedPackets",
+        "physicalSentPackets",
+        "uniqueSentPackets",
+        "uniqueReceivedPackets"
+      ],
+      "properties": {
+        "senderLossPackets": { "type": "number", "minimum": 0 },
+        "receiverLossPackets": { "type": "number", "minimum": 0 },
+        "retransmittedPackets": { "type": "number", "minimum": 0 },
+        "physicalSentPackets": { "type": "number", "minimum": 0 },
+        "uniqueSentPackets": { "type": "number", "minimum": 0 },
+        "uniqueReceivedPackets": { "type": "number", "minimum": 0 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "samples"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "samples": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "failureDomain",
+        "assessment",
+        "summary",
+        "supportingEvidence",
+        "contradictoryEvidence",
+        "missingEvidence"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "transmission-path-loss-with-recovery",
+            "sender-side-pressure",
+            "receiver-side-pressure"
+          ]
+        },
+        "failureDomain": { "type": "string", "minLength": 1 },
+        "assessment": { "enum": ["supported", "insufficient-evidence"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "supportingEvidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "contradictoryEvidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "missingEvidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

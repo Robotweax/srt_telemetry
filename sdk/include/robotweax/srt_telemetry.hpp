@@ -5,11 +5,24 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <new>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace robotweax::srt::telemetry
 {
+
+struct JsonlExportMetadata final
+{
+    std::string stream_id;
+    std::string flow_id;
+    std::string provider_version;
+    std::string provider_revision;
+    std::string build_profile;
+    robotweax_srt_telemetry_endpoint_role role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN;
+    robotweax_srt_telemetry_provider configured_provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_UNKNOWN;
+};
 
 class DeltaEngine final
 {
@@ -142,6 +155,50 @@ class BoundedRecorder final
     void clear() noexcept
     {
         robotweax_srt_telemetry_recorder_clear(recorder_);
+    }
+
+    [[nodiscard]] std::string export_jsonl(const JsonlExportMetadata &metadata) const
+    {
+        struct SinkState final
+        {
+            std::string value;
+            bool allocation_failed = false;
+        } state;
+        const auto sink = [](void *user_data, const char *line, const std::size_t line_size) -> int
+        {
+            auto &destination = *static_cast<SinkState *>(user_data);
+            try
+            {
+                destination.value.append(line, line_size);
+                return 0;
+            }
+            catch (const std::bad_alloc &)
+            {
+                destination.allocation_failed = true;
+                return 1;
+            }
+        };
+        robotweax_srt_telemetry_jsonl_export_config_v1 config{};
+        config.struct_size = sizeof(config);
+        config.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        config.stream_id = metadata.stream_id.c_str();
+        config.flow_id = metadata.flow_id.c_str();
+        config.provider_version = metadata.provider_version.c_str();
+        config.provider_revision = metadata.provider_revision.c_str();
+        config.build_profile = metadata.build_profile.c_str();
+        config.role = metadata.role;
+        config.configured_provider = metadata.configured_provider;
+        const auto error =
+            robotweax_srt_telemetry_recorder_export_jsonl(recorder_, &config, sink, &state);
+        if (state.allocation_failed)
+        {
+            throw std::bad_alloc();
+        }
+        if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            throw std::runtime_error(robotweax_srt_telemetry_error_string(error));
+        }
+        return state.value;
     }
 
   private:

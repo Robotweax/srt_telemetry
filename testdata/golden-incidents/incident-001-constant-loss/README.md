@@ -32,8 +32,12 @@ real impairment. Those claims require a captured provider run.
 python3 testdata/golden-incidents/incident-001-constant-loss/generate.py --check
 python3 qualification/validate_golden_incident.py \
   testdata/golden-incidents/incident-001-constant-loss/manifest.json
+python3 tools/analyze_incident.py \
+  --manifest testdata/golden-incidents/incident-001-constant-loss/manifest.json
 ```
 
 The CTest suite additionally feeds `samples.csv` through the production delta
 engine and checks every declared delta, rate, availability bit, and quality
-flag.
+flag. It also reproduces [`analysis.json`](analysis.json), which records the
+first deviation at sample 3, the recovery at sample 7, three explainable
+hypotheses, and the analysis non-claims.

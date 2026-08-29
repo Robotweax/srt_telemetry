@@ -28,6 +28,10 @@ Each incident directory contains:
 - a generator or capture runner; and
 - a short incident-specific explanation.
 
+An incident may additionally retain `analysis.json`, a deterministic output of
+the local incident analyzer. It is derived evidence, not a replacement for the
+manifest or raw dataset.
+
 CSV rows contain raw lifetime observations followed by `expected_*` delta and
 rate columns. An empty cell means unavailable. A numeric zero is an explicitly
 available zero. The first sample for each role establishes a baseline and must
@@ -48,7 +52,10 @@ Validation has independent layers:
 3. a synthetic generator's `--check` mode proves byte-for-byte reproducibility
    from its declared model. Captured runs instead retain exact binary hashes,
    fault-proxy observations, and semantic expectations; runtime gauges such as
-   RTT need not be byte-identical across reproductions.
+   RTT need not be byte-identical across reproductions; and
+4. the incident-analyzer acceptance test evaluates all retained incidents,
+   exercises the versioned JSONL path, and compares retained analysis output
+   byte-semantically with a fresh result.
 
 A passing synthetic incident proves deterministic SDK behavior only. Provider
 qualification still requires a captured run with exact artifacts and a real

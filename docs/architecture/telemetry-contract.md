@@ -66,9 +66,10 @@ The v1 C ABI reports:
 - per-counter reset; and
 - per-field and per-rate availability.
 
-Future recorder and OTLP exporters must preserve these states. They must not
-drop a quality flag merely because the destination backend has no native
-equivalent.
+The versioned JSONL recorder exporter preserves these states, including the
+difference between unavailable and observed zero. Future exporters, including
+OTLP, must do the same and must not drop a quality flag merely because the
+destination backend has no native equivalent.
 
 ## ABI evolution
 

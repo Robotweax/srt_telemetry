@@ -9,8 +9,9 @@ extensions to expose additional diagnostic evidence.
 
 **Pre-alpha / evidence foundation.** The repository currently contains the
 telemetry contract, provider model, versioned C ABI, a non-destructive delta
-engine, a bounded in-memory recorder, an injected public SRT API adapter,
-initial schemas, and the validation plan. The adapter has deterministic
+engine, a bounded in-memory recorder with versioned JSONL snapshot export, a
+local explainable incident-analysis candidate, an injected public SRT API
+adapter, schemas, and the validation plan. The adapter has deterministic
 header/signature coverage and live bidirectional self-loopback coverage for
 Robotweax SRT and Haivision SRT v1.5.5. Robotweax-to-Haivision interoperability
 also passes in both caller/listener role combinations for the common nine-field
@@ -18,8 +19,11 @@ Live/Message IPv4 loopback subset. An initial macOS arm64 candidate also covers
 sampling overhead and the required session-destroy-before-socket-close
 lifecycle for both providers. Full field, controlled performance, and
 deployment-profile qualification remain open. The project intentionally does
-not yet contain a production agent, backend, dashboard, alert engine, or RCA
-engine. The first deterministic constant-loss incident fixture now preserves
+not yet contain a production agent, backend, dashboard, alert engine, or
+production RCA engine. The local analyzer turns paired evidence into a
+deterministic timeline, three bounded hypotheses, and an explicit
+insufficient-evidence outcome. The first deterministic constant-loss incident
+fixture preserves
 paired sender/receiver evidence and explicit non-claims for future diagnostic
 work. Captured constant- and burst-loss runs in both cross-provider sender
 directions additionally retain exact public loss, retransmission, and recovery
@@ -63,8 +67,10 @@ Host-selected SRT implementation
              Delta engine
                   |
           Bounded recorder
-                  |
-          OTLP agent (after evidence gate)
+             /          \
+  Versioned JSONL     OTLP agent
+          |        (after evidence gate)
+  Local incident analyzer
 ```
 
 The SDK never brings a second SRT library into a host process. Adapters consume
@@ -77,6 +83,8 @@ the SRT implementation already selected by the host.
 - Sender and receiver loss remain separate observations.
 - Physical, unique, and retransmitted traffic remain distinguishable.
 - Missing provider capabilities are unavailable, never synthetic zeroes.
+- Diagnostic hypotheses expose missing and contradictory evidence; unavailable
+  signals cannot silently become supporting zeroes.
 - Monotonic clock regressions, provider changes, and counter resets form
   explicit data-quality boundaries.
 - The common contract uses OpenTelemetry-compatible base units.
@@ -135,12 +143,14 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Public SRT API adapter](docs/architecture/public-srt-adapter.md)
 - [Loss-shape observability decision](docs/architecture/loss-shape-observability.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
+- [Local incident analysis](docs/architecture/incident-analysis.md)
 - [Golden incident datasets](docs/architecture/golden-incidents.md)
 - [Provider qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
 - [Retained cross-provider evidence](qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
 - [Retained sampling and lifecycle evidence](qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
 - [Retained 20 Hz loss-shape evidence](qualification/results/2026-08-29-macos-arm64-loss-shape-observability.json)
 - [Constant-loss golden incident](testdata/golden-incidents/incident-001-constant-loss/README.md)
+- [Retained constant-loss analysis](testdata/golden-incidents/incident-001-constant-loss/analysis.json)
 - [Captured Robotweax-to-Haivision constant-loss incident](testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/README.md)
 - [Captured Haivision-to-Robotweax constant-loss incident](testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/README.md)
 - [Captured Robotweax-to-Haivision burst-loss incident](testdata/golden-incidents/incident-004-captured-burst-loss-robotweax-haivision/README.md)
