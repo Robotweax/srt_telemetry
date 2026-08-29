@@ -14,7 +14,9 @@ def fail(message: str) -> None:
 
 
 def load_analyzer(path: Path):
-    specification = importlib.util.spec_from_file_location("robotweax_incident_analyzer", path)
+    specification = importlib.util.spec_from_file_location(
+        "robotweax_incident_analyzer", path
+    )
     if specification is None or specification.loader is None:
         fail(f"cannot load analyzer: {path}")
     module = importlib.util.module_from_spec(specification)
@@ -38,12 +40,13 @@ def validate_loss_result(result: dict, expected_format: str) -> None:
         if timeline[field] != expected:
             fail(f"timeline {field} expected {expected}, got {timeline[field]}")
     hypotheses = result["hypotheses"]
-    if len(hypotheses) != 3 or {item["id"] for item in hypotheses} != {
+    if len(hypotheses) != 4 or {item["id"] for item in hypotheses} != {
         "transmission-path-loss-with-recovery",
+        "transmission-path-rtt-step-with-recovery",
         "sender-side-pressure",
         "receiver-side-pressure",
     }:
-        fail("analysis does not contain the three required hypotheses")
+        fail("analysis does not contain the four required hypotheses")
     if result["selectedHypothesis"] != {
         "id": "transmission-path-loss-with-recovery",
         "assessment": "supported",
@@ -130,7 +133,9 @@ def main() -> int:
                     sample["delta"][field] = None
     insufficient = analyzer.build_analysis(insufficient_source)
     if insufficient["selectedHypothesis"]["assessment"] != "insufficient-evidence":
-        fail("missing paired loss evidence must produce an insufficient-evidence result")
+        fail(
+            "missing paired loss evidence must produce an insufficient-evidence result"
+        )
 
     misaligned_source = copy.deepcopy(jsonl_source)
     receiver_samples = misaligned_source["streams"]["receiver"]["samples"]
@@ -139,7 +144,51 @@ def main() -> int:
     receiver_samples[7]["delta"]["receiver_loss_packet_delta"] = 20
     misaligned = analyzer.build_analysis(misaligned_source)
     if misaligned["selectedHypothesis"]["assessment"] != "insufficient-evidence":
-        fail("non-overlapping sender and receiver loss must not count as paired evidence")
+        fail(
+            "non-overlapping sender and receiver loss must not count as paired evidence"
+        )
+
+    rtt_source = copy.deepcopy(jsonl_source)
+    for stream in rtt_source["streams"].values():
+        for sample in stream["samples"]:
+            index = sample["sampleIndex"]
+            for field in [
+                "sender_loss_packet_delta",
+                "receiver_loss_packet_delta",
+                "retransmitted_packet_delta",
+                "sender_drop_packet_delta",
+                "receiver_drop_packet_delta",
+                "receiver_undecryptable_packet_delta",
+            ]:
+                if index > 0 and field in sample["delta"]:
+                    sample["delta"][field] = 0
+            sample["raw"]["rtt_seconds"] = 0.100 if 3 <= index <= 6 else 0.010
+    rtt = analyzer.build_analysis(rtt_source)
+    if rtt["timeline"]["firstDeviationSample"] != 3:
+        fail(f"RTT step first deviation is incorrect: {rtt['timeline']}")
+    if rtt["timeline"]["lastDeviationSample"] != 6:
+        fail(f"RTT step last deviation is incorrect: {rtt['timeline']}")
+    if rtt["timeline"]["recoverySample"] != 7:
+        fail(f"RTT step recovery is incorrect: {rtt['timeline']}")
+    if rtt["selectedHypothesis"] != {
+        "id": "transmission-path-rtt-step-with-recovery",
+        "assessment": "supported",
+        "rationale": (
+            "Paired sender and receiver RTT cross conservative warm-baseline "
+            "thresholds and recover without loss or endpoint-pressure evidence."
+        ),
+    }:
+        fail(f"unexpected RTT-step hypothesis: {rtt['selectedHypothesis']}")
+    rtt_hypothesis = next(
+        item
+        for item in rtt["hypotheses"]
+        if item["id"] == "transmission-path-rtt-step-with-recovery"
+    )
+    if (
+        rtt_hypothesis["assessment"] != "supported"
+        or not rtt_hypothesis["supportingEvidence"]
+    ):
+        fail(f"RTT-step evidence is incomplete: {rtt_hypothesis}")
     print(
         f"incident analyzer valid: {len(arguments.manifest)} golden incidents, "
         f"{retained_recording_count} retained recordings, and generated JSONL path"

@@ -58,6 +58,7 @@
           "items": {
             "enum": [
               "transmission-path-loss-with-recovery",
+              "transmission-path-rtt-step-with-recovery",
               "sender-side-pressure",
               "receiver-side-pressure"
             ]

@@ -33,7 +33,8 @@
 ## Phase 2: diagnostic proof — current
 
 - deterministic local incident timeline candidate complete;
-- three explainable hypothesis candidates complete;
+- four explainable hypothesis candidates complete, including a public-API RTT
+  step with warm-baseline thresholds and observed recovery;
 - explicit insufficient-evidence outcome complete;
 - synthetic correlation plus direct provider-linked recorder-to-analyzer
   candidates complete in both cross-provider sender directions; real

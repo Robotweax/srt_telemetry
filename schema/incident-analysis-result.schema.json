@@ -10,6 +10,7 @@
     "status",
     "source",
     "timeline",
+    "baselines",
     "totals",
     "hypotheses",
     "selectedHypothesis",
@@ -21,11 +22,36 @@
     "status": { "const": "pass" },
     "source": { "$ref": "#/$defs/source" },
     "timeline": { "$ref": "#/$defs/timeline" },
+    "baselines": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rttSeconds"],
+      "properties": {
+        "rttSeconds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sender",
+            "receiver",
+            "senderStepThreshold",
+            "receiverStepThreshold",
+            "rule"
+          ],
+          "properties": {
+            "sender": { "$ref": "#/$defs/nullableUnsigned" },
+            "receiver": { "$ref": "#/$defs/nullableUnsigned" },
+            "senderStepThreshold": { "$ref": "#/$defs/nullableUnsigned" },
+            "receiverStepThreshold": { "$ref": "#/$defs/nullableUnsigned" },
+            "rule": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
     "totals": { "$ref": "#/$defs/totals" },
     "hypotheses": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 4,
+      "maxItems": 4,
       "items": { "$ref": "#/$defs/hypothesis" }
     },
     "selectedHypothesis": {
@@ -35,7 +61,11 @@
       "properties": {
         "id": {
           "type": ["string", "null"],
-          "enum": ["transmission-path-loss-with-recovery", null]
+          "enum": [
+            "transmission-path-loss-with-recovery",
+            "transmission-path-rtt-step-with-recovery",
+            null
+          ]
         },
         "assessment": { "enum": ["supported", "insufficient-evidence"] },
         "rationale": { "type": "string", "minLength": 1 }
@@ -151,7 +181,9 @@
         "receiverUndecryptablePackets",
         "physicalSentPackets",
         "uniqueSentPackets",
-        "uniqueReceivedPackets"
+        "uniqueReceivedPackets",
+        "senderRttSeconds",
+        "receiverRttSeconds"
       ],
       "properties": {
         "senderLossPackets": { "$ref": "#/$defs/nullableUnsigned" },
@@ -162,7 +194,9 @@
         "receiverUndecryptablePackets": { "$ref": "#/$defs/nullableUnsigned" },
         "physicalSentPackets": { "$ref": "#/$defs/nullableUnsigned" },
         "uniqueSentPackets": { "$ref": "#/$defs/nullableUnsigned" },
-        "uniqueReceivedPackets": { "$ref": "#/$defs/nullableUnsigned" }
+        "uniqueReceivedPackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "senderRttSeconds": { "$ref": "#/$defs/nullableUnsigned" },
+        "receiverRttSeconds": { "$ref": "#/$defs/nullableUnsigned" }
       }
     },
     "observation": {
@@ -279,6 +313,7 @@
         "id": {
           "enum": [
             "transmission-path-loss-with-recovery",
+            "transmission-path-rtt-step-with-recovery",
             "sender-side-pressure",
             "receiver-side-pressure"
           ]

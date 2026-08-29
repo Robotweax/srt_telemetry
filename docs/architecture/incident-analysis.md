@@ -2,17 +2,23 @@
 
 `tools/analyze_incident.py` is the first deterministic diagnostic proof for the
 SDK. It correlates paired sender and receiver evidence into a machine-readable
-timeline and evaluates three bounded hypotheses:
+timeline and evaluates four bounded hypotheses:
 
 - recoverable sender-to-receiver transmission-path loss;
+- a recoverable transmission-path RTT step;
 - sender-side pressure; and
 - receiver-side pressure.
 
 Each hypothesis reports supporting, contradictory, and missing evidence. The
 analyzer selects path loss only when aligned sender loss, receiver loss, and
-retransmission evidence support it without endpoint-drop contradictions.
-Otherwise the selection is `insufficient-evidence`. Unavailable values are
-never interpreted as observed zero.
+retransmission evidence support it without endpoint-drop contradictions. It
+selects an RTT step only when both endpoints cross conservative warm-baseline
+thresholds for at least two samples and later recover without public loss or
+endpoint-drop contradictions. Warm RTT baselines exclude sample zero because
+the SRT estimators can still expose their bootstrap value there; the threshold
+is the larger of twice the baseline and baseline plus 20 ms. Otherwise the
+selection is `insufficient-evidence`. Unavailable values are never interpreted
+as observed zero.
 
 ## Inputs and correlation contract
 
@@ -49,12 +55,15 @@ contract is [`incident-analysis-result.schema.json`](../../schema/incident-analy
 ## Diagnostic boundary
 
 The timeline identifies the first and last sample with a relevant positive
-delta, the first fully observed zero-loss recovery sample, data-quality
-boundaries, and evidence totals. Source artifact hashes and exact provider
-provenance remain attached to the result.
+loss/drop delta or paired RTT-threshold deviation, the first subsequent
+non-deviating recovery sample, data-quality boundaries, and evidence totals.
+An RTT estimator needs later traffic observations to converge after a delay
+step; elapsed wall time alone is not treated as recovery evidence. Source
+artifact hashes and exact provider provenance remain attached to the result.
 
 This is a local, rule-based candidate rather than a production RCA engine. It
-does not identify an exact failing network hop, infer missing endpoint metrics,
-resolve sequence adjacency inside a sample window, or establish the product's
+does not identify an exact failing network hop, infer one-way delay or its
+direction from round-trip measurements, infer missing endpoint metrics, resolve
+sequence adjacency inside a sample window, or establish the product's
 operator-value claim. Those limits are emitted as non-claims or missing
 evidence rather than hidden behind a generic score.

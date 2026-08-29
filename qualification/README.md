@@ -170,6 +170,39 @@ Retained captures:
 - [2026-08-29 Robotweax sender to Haivision receiver direct JSONL analysis](../testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json)
 - [2026-08-29 Haivision sender to Robotweax receiver direct JSONL analysis](../testdata/golden-incidents/incident-007-jsonl-constant-loss-haivision-robotweax/manifest.json)
 
+## RTT-step capture runner
+
+`qualification/run_rtt_step_capture.py` uses the same exact provider-linked
+incident peers and recorder path, but inserts an equal deterministic one-way
+UDP proxy delay in both directions for samples 3 through 6. The default 25 ms
+per direction produces an approximately 50 ms path RTT step. Samples 7 through
+12 send recovery traffic because SRT's RTT estimator converges on later packet
+observations rather than elapsed wall time alone.
+
+```sh
+python3 qualification/run_rtt_step_capture.py \
+  --direction robotweax-to-haivision \
+  --robotweax-peer /path/to/robotweax/incident-peer \
+  --robotweax-library /path/to/robotweax/libsrt \
+  --robotweax-version VERSION \
+  --robotweax-revision REVISION \
+  --robotweax-build-profile PROFILE \
+  --haivision-peer /path/to/haivision/incident-peer \
+  --haivision-library /path/to/haivision/libsrt \
+  --haivision-version VERSION \
+  --haivision-revision REVISION \
+  --haivision-build-profile PROFILE \
+  --telemetry-revision REVISION \
+  --record-jsonl \
+  --output-dir /new/incident-directory
+```
+
+The capture requires complete application delivery, exact no-drop proxy stage
+counts, paired sender/receiver RTT threshold crossings, and later recovery.
+The common public SRT RTT fields answer this round-trip operator question for
+both providers; they do not identify one-way delay, its direction, or a failing
+hop. No Robotweax-only extension is required for this candidate.
+
 ## Operator comparison
 
 `tools/operator_evaluation.py` prepares and runs the counterbalanced comparison

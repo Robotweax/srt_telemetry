@@ -84,7 +84,10 @@ def validate_timeline(manifest: dict, rows: list) -> dict:
         if indexes != list(range(len(role_rows))):
             fail(f"non-contiguous sample indexes for {role}: {indexes}")
         monotonic = [int(row["sample_monotonic_nano"]) for row in role_rows]
-        if any(current - previous != interval for previous, current in zip(monotonic, monotonic[1:])):
+        if any(
+            current - previous != interval
+            for previous, current in zip(monotonic, monotonic[1:])
+        ):
             fail(f"unexpected monotonic interval for {role}")
     lengths = {len(role_rows) for role_rows in by_role.values()}
     if len(lengths) != 1:
@@ -107,7 +110,12 @@ def validate_expectations(manifest: dict, fieldnames: list, by_key: dict) -> Non
             fail(f"duplicate machine expectation id: {identifier}")
         identifiers.add(identifier)
         role = expectation["role"]
-        field = f"expected_{expectation['field']}"
+        source = expectation.get("source", "delta")
+        field = (
+            expectation["field"]
+            if source == "raw"
+            else f"expected_{expectation['field']}"
+        )
         if field not in fieldnames:
             fail(f"{identifier} references missing field {field}")
         first = int(expectation["sampleRange"]["first"])
@@ -122,18 +130,31 @@ def validate_expectations(manifest: dict, fieldnames: list, by_key: dict) -> Non
             operator = expectation["operator"]
             if operator == "unavailable":
                 if actual_text != "":
-                    fail(f"{identifier} expected {field} to be unavailable at {sample_index}")
+                    fail(
+                        f"{identifier} expected {field} to be unavailable at "
+                        f"{sample_index}"
+                    )
                 continue
             if actual_text == "":
                 fail(f"{identifier} expected {field} to be available at {sample_index}")
             actual = parse_number(actual_text, field)
             expected = Decimal(str(expectation["value"]))
             if operator == "equals" and actual != expected:
-                fail(f"{identifier} expected {expected}, got {actual} at {sample_index}")
+                fail(
+                    f"{identifier} expected {expected}, got {actual} at {sample_index}"
+                )
             if operator == "greater-than":
                 if actual <= expected:
                     fail(
-                        f"{identifier} expected greater than {expected}, got {actual} at {sample_index}"
+                        f"{identifier} expected greater than {expected}, got "
+                        f"{actual} at {sample_index}"
+                    )
+                continue
+            if operator == "less-than":
+                if actual >= expected:
+                    fail(
+                        f"{identifier} expected less than {expected}, got {actual} "
+                        f"at {sample_index}"
                     )
                 continue
             if operator == "equals-field-plus":
@@ -143,7 +164,8 @@ def validate_expectations(manifest: dict, fieldnames: list, by_key: dict) -> Non
                 comparison_value = parse_number(row[comparison], comparison)
                 if actual != comparison_value + expected:
                     fail(
-                        f"{identifier} expected {comparison} + {expected}, got {actual} at {sample_index}"
+                        f"{identifier} expected {comparison} + {expected}, got "
+                        f"{actual} at {sample_index}"
                     )
                 continue
             if operator != "equals":
@@ -165,9 +187,13 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
     artifact_roles = {artifact.get("role") for artifact in artifacts}
     if artifact_roles != set(manifest["dataset"]["roles"]):
         fail(f"capture artifact roles do not match dataset roles: {artifact_roles}")
-    proxy = capture.get("faultProxy")
+    fault_proxy = capture.get("faultProxy")
+    delay_proxy = capture.get("delayProxy")
+    if (fault_proxy is None) == (delay_proxy is None):
+        fail("capture must contain exactly one fault or delay proxy")
+    proxy = fault_proxy if fault_proxy is not None else delay_proxy
     if not isinstance(proxy, dict) or not isinstance(proxy.get("stages"), list):
-        fail("capture fault proxy observations are missing")
+        fail("capture proxy observations are missing")
     stages = proxy["stages"]
     indexes = [stage.get("sampleIndex") for stage in stages]
     expected_indexes = list(range(1, max(index for _, index in by_key) + 1))
@@ -175,6 +201,31 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
         fail(f"capture fault stages are not contiguous: {indexes}")
     first_active = manifest["faultPlan"]["firstActiveSample"]
     last_active = manifest["faultPlan"]["lastActiveSample"]
+    if delay_proxy is not None:
+        messages = proxy.get("messagesPerInterval")
+        delay_millis = proxy.get("oneWayDelayMillis")
+        if not isinstance(messages, int) or messages <= 0:
+            fail("delay proxy message count is invalid")
+        if not isinstance(delay_millis, int) or delay_millis <= 0:
+            fail("delay proxy one-way delay is invalid")
+        for stage in stages:
+            index = stage["sampleIndex"]
+            active = first_active <= index <= last_active
+            if stage.get("active") != active:
+                fail(f"delay proxy active state mismatch at sample {index}")
+            if stage.get("downstreamPackets", 0) < messages:
+                fail(
+                    f"delay proxy downstream packet count is invalid at sample {index}"
+                )
+            delayed = stage.get("delayedDownstreamPackets", 0) + stage.get(
+                "delayedReversePackets", 0
+            )
+            if active and delayed <= 0:
+                fail(f"delay proxy did not delay packets at sample {index}")
+            if not active and delayed != 0:
+                fail(f"delay proxy delayed packets outside the fault at sample {index}")
+        return
+
     expected_drops = proxy.get("expectedDropsPerActiveInterval")
     messages = proxy.get("messagesPerInterval")
     if not isinstance(messages, int) or messages <= 0:
@@ -188,7 +239,10 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
         drop_every = proxy.get("dropEveryOriginalDataPacket")
         if not isinstance(drop_every, int) or drop_every <= 1:
             fail("constant fault proxy drop interval is invalid")
-        if any(key in proxy for key in ["burstStartOriginalDataPacket", "burstLengthPackets"]):
+        if any(
+            key in proxy
+            for key in ["burstStartOriginalDataPacket", "burstLengthPackets"]
+        ):
             fail("constant fault proxy contains burst configuration")
         calculated_drops = messages // drop_every
     elif pattern == "contiguous-burst":
@@ -221,7 +275,9 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
         if drops != (expected_drops if active else 0):
             fail(f"fault proxy drop count mismatch at sample {index}: {drops}")
         if active and stage.get("repeatedDataPackets", 0) < expected_drops:
-            fail(f"fault proxy did not observe retransmission attempts at sample {index}")
+            fail(
+                f"fault proxy did not observe retransmission attempts at sample {index}"
+            )
 
 
 def validate_recordings(manifest_path: Path, manifest: dict) -> None:
@@ -241,7 +297,9 @@ def validate_recordings(manifest_path: Path, manifest: dict) -> None:
         fail("unsupported retained recording format")
     if recordings["flowId"] != manifest["incidentId"]:
         fail("retained recording flow id does not match the incident id")
-    providers = {provider["role"]: provider["provider"] for provider in manifest["providers"]}
+    providers = {
+        provider["role"]: provider["provider"] for provider in manifest["providers"]
+    }
     expected_records = manifest["dataset"]["rows"] // len(manifest["dataset"]["roles"])
     artifact_hashes = {}
     for role in ["sender", "receiver"]:
@@ -254,7 +312,10 @@ def validate_recordings(manifest_path: Path, manifest: dict) -> None:
         if digest != metadata["sha256"]:
             fail(f"retained {role} recording digest mismatch")
         lines = contents.decode("utf-8").splitlines()
-        if len(lines) != expected_records + 1 or metadata["records"] != expected_records:
+        if (
+            len(lines) != expected_records + 1
+            or metadata["records"] != expected_records
+        ):
             fail(f"retained {role} recording count mismatch")
         header = json.loads(lines[0])
         expected_header = {
@@ -287,7 +348,8 @@ def validate_recordings(manifest_path: Path, manifest: dict) -> None:
     ):
         fail("retained recording analysis source mismatch")
     analysis_artifacts = {
-        artifact.get("path"): artifact.get("sha256") for artifact in source.get("artifacts", [])
+        artifact.get("path"): artifact.get("sha256")
+        for artifact in source.get("artifacts", [])
     }
     if analysis_artifacts != artifact_hashes:
         fail("retained recording analysis artifact hashes do not match the JSONL files")
@@ -320,7 +382,10 @@ def validate_manifest(manifest_path: Path) -> None:
     if not INCIDENT_PATTERN.fullmatch(manifest["incidentId"]):
         fail(f"invalid incident id: {manifest['incidentId']}")
     provenance = manifest["provenance"]
-    if provenance["kind"] == "synthetic-contract-fixture" and provenance["capturedFromProvider"]:
+    if (
+        provenance["kind"] == "synthetic-contract-fixture"
+        and provenance["capturedFromProvider"]
+    ):
         fail("synthetic fixture cannot claim provider capture")
     dataset = manifest["dataset"]
     if dataset["format"] != "robotweax-srt-telemetry-csv-v1":

@@ -21,7 +21,7 @@ lifecycle for both providers. Full field, controlled performance, and
 deployment-profile qualification remain open. The project intentionally does
 not yet contain a production agent, backend, dashboard, alert engine, or
 production RCA engine. The local analyzer turns paired evidence into a
-deterministic timeline, three bounded hypotheses, and an explicit
+deterministic timeline, four bounded hypotheses, and an explicit
 insufficient-evidence outcome. Exact provider-linked peers now record real
 adapter samples directly through the bounded recorder and JSONL exporter; two
 retained captures complete that path through the analyzer in both

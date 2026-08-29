@@ -68,7 +68,9 @@ def parse_optional_number(value: Optional[str], name: str) -> Optional[float]:
 
 def validate_streams(streams: Dict[str, dict]) -> None:
     if set(streams) != {"sender", "receiver"}:
-        fail(f"analysis requires exactly sender and receiver streams: {sorted(streams)}")
+        fail(
+            f"analysis requires exactly sender and receiver streams: {sorted(streams)}"
+        )
     indexes_by_role = {}
     for role, stream in streams.items():
         samples = stream["samples"]
@@ -87,10 +89,16 @@ def load_manifest(manifest_path: Path) -> dict:
     if not isinstance(manifest, dict) or manifest.get("schemaVersion") != "1alpha1":
         fail("unsupported golden-incident manifest")
     dataset = manifest.get("dataset")
-    if not isinstance(dataset, dict) or dataset.get("format") != "robotweax-srt-telemetry-csv-v1":
+    if (
+        not isinstance(dataset, dict)
+        or dataset.get("format") != "robotweax-srt-telemetry-csv-v1"
+    ):
         fail("manifest does not reference the supported telemetry CSV format")
     samples_path = (manifest_path.parent / dataset["samplesFile"]).resolve()
-    if samples_path.parent != manifest_path.parent.resolve() or not samples_path.is_file():
+    if (
+        samples_path.parent != manifest_path.parent.resolve()
+        or not samples_path.is_file()
+    ):
         fail("manifest sample dataset is outside the incident directory or missing")
     if sha256_file(samples_path) != dataset["sha256"]:
         fail("golden-incident sample digest mismatch")
@@ -127,7 +135,9 @@ def load_manifest(manifest_path: Path) -> dict:
                 "sample_monotonic_nano": int(row["sample_monotonic_nano"]),
             }
             for field in RAW_FIELDS:
-                raw[field] = parse_optional_number(row.get(field), f"row {row_number}.{field}")
+                raw[field] = parse_optional_number(
+                    row.get(field), f"row {row_number}.{field}"
+                )
             delta = {
                 "quality_flags": int(row["expected_quality_flags"]),
                 "interval_nano": int(row["expected_interval_nano"]),
@@ -169,8 +179,13 @@ def load_jsonl_file(path: Path) -> Tuple[dict, List[dict]]:
             try:
                 document = json.loads(line)
             except json.JSONDecodeError as error:
-                raise RuntimeError(f"invalid JSONL at {path}:{line_number}: {error}") from error
-            if not isinstance(document, dict) or document.get("schemaVersion") != "1alpha1":
+                raise RuntimeError(
+                    f"invalid JSONL at {path}:{line_number}: {error}"
+                ) from error
+            if (
+                not isinstance(document, dict)
+                or document.get("schemaVersion") != "1alpha1"
+            ):
                 fail(f"unsupported JSONL document at {path}:{line_number}")
             documents.append(document)
     if not documents:
@@ -215,7 +230,9 @@ def load_jsonl_file(path: Path) -> Tuple[dict, List[dict]]:
             fail(f"JSONL stream identity changed at sample {index}: {path}")
         if sample.get("sampleIndex") != index:
             fail(f"JSONL sample indexes are not contiguous: {path}")
-        if not isinstance(sample.get("raw"), dict) or not isinstance(sample.get("delta"), dict):
+        if not isinstance(sample.get("raw"), dict) or not isinstance(
+            sample.get("delta"), dict
+        ):
             fail(f"JSONL sample is missing raw or delta data: {path}:{index + 2}")
         if sample["raw"].get("provider") not in {
             "unknown",
@@ -257,7 +274,8 @@ def load_jsonl(paths: List[Path]) -> dict:
             fail(f"invalid JSONL overwrite accounting: {path}")
         if overwritten > 0:
             non_claims.append(
-                f"{role} recorder overwrote {overwritten} pre-trigger samples before export."
+                f"{role} recorder overwrote {overwritten} pre-trigger samples "
+                "before export."
             )
         streams[role] = {"header": header, "samples": samples}
         artifacts.append({"path": path.name, "sha256": sha256_file(path)})
@@ -292,6 +310,27 @@ def sum_available(samples: List[dict], field: str) -> Tuple[float, int]:
     return sum(available), len(available)
 
 
+def rtt_baseline(samples: List[dict]) -> Optional[float]:
+    warm_values = [
+        numeric(sample["raw"].get("rtt_seconds"))
+        for sample in samples
+        if sample["sampleIndex"] in {1, 2}
+    ]
+    available = [value for value in warm_values if value is not None]
+    return min(available) if available else None
+
+
+def rtt_step_threshold(baseline: Optional[float]) -> Optional[float]:
+    if baseline is None:
+        return None
+    return max(baseline * 2.0, baseline + 0.020)
+
+
+def at_or_above(value: object, threshold: Optional[float]) -> bool:
+    number = numeric(value)
+    return number is not None and threshold is not None and number >= threshold
+
+
 def evidence(id_value: str, summary: str, samples: List[int]) -> dict:
     return {"id": id_value, "summary": summary, "samples": samples}
 
@@ -300,6 +339,10 @@ def build_analysis(source: dict) -> dict:
     streams = source["streams"]
     sender_samples = streams["sender"]["samples"]
     receiver_samples = streams["receiver"]["samples"]
+    sender_rtt_baseline = rtt_baseline(sender_samples)
+    receiver_rtt_baseline = rtt_baseline(receiver_samples)
+    sender_rtt_threshold = rtt_step_threshold(sender_rtt_baseline)
+    receiver_rtt_threshold = rtt_step_threshold(receiver_rtt_baseline)
     observations = []
     deviation_indexes = []
     quality_boundaries = []
@@ -309,10 +352,16 @@ def build_analysis(source: dict) -> dict:
         receiver_delta = receiver["delta"]
         signals = {
             "senderLossPackets": numeric(sender_delta.get("sender_loss_packet_delta")),
-            "receiverLossPackets": numeric(receiver_delta.get("receiver_loss_packet_delta")),
-            "retransmittedPackets": numeric(sender_delta.get("retransmitted_packet_delta")),
+            "receiverLossPackets": numeric(
+                receiver_delta.get("receiver_loss_packet_delta")
+            ),
+            "retransmittedPackets": numeric(
+                sender_delta.get("retransmitted_packet_delta")
+            ),
             "senderDropPackets": numeric(sender_delta.get("sender_drop_packet_delta")),
-            "receiverDropPackets": numeric(receiver_delta.get("receiver_drop_packet_delta")),
+            "receiverDropPackets": numeric(
+                receiver_delta.get("receiver_drop_packet_delta")
+            ),
             "receiverUndecryptablePackets": numeric(
                 receiver_delta.get("receiver_undecryptable_packet_delta")
             ),
@@ -321,8 +370,10 @@ def build_analysis(source: dict) -> dict:
             "uniqueReceivedPackets": numeric(
                 receiver_delta.get("unique_received_packet_delta")
             ),
+            "senderRttSeconds": numeric(sender["raw"].get("rtt_seconds")),
+            "receiverRttSeconds": numeric(receiver["raw"].get("rtt_seconds")),
         }
-        deviating = any(
+        counter_deviating = any(
             positive(signals[field])
             for field in [
                 "senderLossPackets",
@@ -333,6 +384,11 @@ def build_analysis(source: dict) -> dict:
                 "receiverUndecryptablePackets",
             ]
         )
+        rtt_deviating = index >= 3 and (
+            at_or_above(signals["senderRttSeconds"], sender_rtt_threshold)
+            or at_or_above(signals["receiverRttSeconds"], receiver_rtt_threshold)
+        )
+        deviating = counter_deviating or rtt_deviating
         if deviating:
             deviation_indexes.append(index)
         boundaries = []
@@ -364,12 +420,7 @@ def build_analysis(source: dict) -> dict:
     recovery_sample = None
     if last_deviation is not None:
         for observation in observations[last_deviation + 1 :]:
-            recovery_fields = [
-                observation["signals"]["senderLossPackets"],
-                observation["signals"]["receiverLossPackets"],
-                observation["signals"]["retransmittedPackets"],
-            ]
-            if all(value is not None and value == 0 for value in recovery_fields):
+            if not observation["deviating"]:
                 recovery_sample = observation["sampleIndex"]
                 break
 
@@ -410,7 +461,10 @@ def build_analysis(source: dict) -> dict:
         path_support.append(
             evidence(
                 "paired-loss",
-                "Sender-learned and receiver-observed loss are positive in aligned samples.",
+                (
+                    "Sender-learned and receiver-observed loss are positive in "
+                    "aligned samples."
+                ),
                 paired_loss_indexes,
             )
         )
@@ -431,23 +485,100 @@ def build_analysis(source: dict) -> dict:
             )
         )
     if sender_drop_total > 0:
-        path_contradictions.append("Sender drop counters are positive during the incident.")
+        path_contradictions.append(
+            "Sender drop counters are positive during the incident."
+        )
     if receiver_drop_total > 0:
-        path_contradictions.append("Receiver drop counters are positive during the incident.")
+        path_contradictions.append(
+            "Receiver drop counters are positive during the incident."
+        )
     if undecryptable_total > 0:
         path_contradictions.append("Receiver undecryptable counters are positive.")
     if sender_loss_available == 0 or receiver_loss_available == 0:
-        path_missing.append("Paired sender and receiver loss deltas are not both available.")
+        path_missing.append(
+            "Paired sender and receiver loss deltas are not both available."
+        )
     elif sender_loss_total > 0 and receiver_loss_total > 0 and not paired_loss_indexes:
-        path_missing.append("Positive sender and receiver loss do not overlap in aligned samples.")
+        path_missing.append(
+            "Positive sender and receiver loss do not overlap in aligned samples."
+        )
     if retransmission_available == 0:
         path_missing.append("Sender retransmission deltas are unavailable.")
-    path_missing.append("Packet sequence adjacency and the exact failing network hop are unavailable.")
+    path_missing.append(
+        "Packet sequence adjacency and the exact failing network hop are unavailable."
+    )
     path_supported = (
         len(path_support) >= 2
         and bool(paired_loss_indexes)
         and retransmission_total > 0
         and not path_contradictions
+    )
+
+    paired_rtt_indexes = [
+        sender["sampleIndex"]
+        for sender, receiver in zip(sender_samples, receiver_samples)
+        if sender["sampleIndex"] >= 3
+        and at_or_above(sender["raw"].get("rtt_seconds"), sender_rtt_threshold)
+        and at_or_above(receiver["raw"].get("rtt_seconds"), receiver_rtt_threshold)
+    ]
+    rtt_support = []
+    rtt_contradictions = []
+    rtt_missing = []
+    if paired_rtt_indexes:
+        rtt_support.append(
+            evidence(
+                "paired-rtt-step",
+                (
+                    "Sender and receiver RTT exceed their warm candidate baselines "
+                    "by both the relative and absolute step thresholds."
+                ),
+                paired_rtt_indexes,
+            )
+        )
+    if recovery_sample is not None and paired_rtt_indexes:
+        rtt_support.append(
+            evidence(
+                "rtt-recovery-boundary",
+                "Paired RTT returns below the candidate step thresholds.",
+                [recovery_sample],
+            )
+        )
+    if sender_loss_total > 0 or receiver_loss_total > 0:
+        rtt_contradictions.append(
+            "Sender-learned or receiver-observed loss counters are positive."
+        )
+    if retransmission_total > 0 and sender_loss_total == 0 and receiver_loss_total == 0:
+        rtt_support.append(
+            evidence(
+                "retransmission-without-observed-loss",
+                (
+                    "Sender retransmissions occur without paired sender-learned or "
+                    "receiver-observed loss."
+                ),
+                [
+                    sample["sampleIndex"]
+                    for sample in sender_samples
+                    if positive(sample["delta"].get("retransmitted_packet_delta"))
+                ],
+            )
+        )
+    if sender_drop_total > 0 or receiver_drop_total > 0 or undecryptable_total > 0:
+        rtt_contradictions.append(
+            "Endpoint drop or undecryptable counters are positive during the incident."
+        )
+    if sender_rtt_baseline is None or receiver_rtt_baseline is None:
+        rtt_missing.append(
+            "Paired warm sender and receiver RTT baselines are unavailable."
+        )
+    elif not paired_rtt_indexes:
+        rtt_missing.append("Paired RTT does not cross the candidate step thresholds.")
+    rtt_missing.append(
+        "One-way delay and the exact failing network hop are unavailable."
+    )
+    rtt_supported = (
+        len(paired_rtt_indexes) >= 2
+        and recovery_sample is not None
+        and not rtt_contradictions
     )
 
     sender_support = []
@@ -468,7 +599,9 @@ def build_analysis(source: dict) -> dict:
         sender_missing.append("Sender drop deltas are unavailable.")
     if all(sample["raw"].get("send_buffer_bytes") is None for sample in sender_samples):
         sender_missing.append("Sender buffer occupancy is unavailable.")
-    if all(sample["raw"].get("flight_size_packets") is None for sample in sender_samples):
+    if all(
+        sample["raw"].get("flight_size_packets") is None for sample in sender_samples
+    ):
         sender_missing.append("Sender flight-size evidence is unavailable.")
 
     receiver_support = []
@@ -487,7 +620,9 @@ def build_analysis(source: dict) -> dict:
         )
     if receiver_drop_available == 0:
         receiver_missing.append("Receiver drop deltas are unavailable.")
-    if all(sample["raw"].get("receive_buffer_bytes") is None for sample in receiver_samples):
+    if all(
+        sample["raw"].get("receive_buffer_bytes") is None for sample in receiver_samples
+    ):
         receiver_missing.append("Receiver buffer occupancy is unavailable.")
     if undecryptable_available == 0:
         receiver_missing.append("Receiver undecryptable deltas are unavailable.")
@@ -498,18 +633,33 @@ def build_analysis(source: dict) -> dict:
             "failureDomain": "sender-to-receiver transmission path",
             "assessment": "supported" if path_supported else "insufficient-evidence",
             "summary": (
-                "Paired loss and retransmission evidence localizes the deviation to the "
-                "transmission path and shows recovery, but not the exact failing hop."
+                "Paired loss and retransmission evidence localizes the deviation "
+                "to the transmission path and shows recovery, but not the exact "
+                "failing hop."
             ),
             "supportingEvidence": path_support,
             "contradictoryEvidence": path_contradictions,
             "missingEvidence": path_missing,
         },
         {
+            "id": "transmission-path-rtt-step-with-recovery",
+            "failureDomain": "sender-to-receiver transmission path",
+            "assessment": "supported" if rtt_supported else "insufficient-evidence",
+            "summary": (
+                "Paired RTT step and recovery evidence localizes added round-trip "
+                "delay to the transmission path, but not to one direction or hop."
+            ),
+            "supportingEvidence": rtt_support,
+            "contradictoryEvidence": rtt_contradictions,
+            "missingEvidence": rtt_missing,
+        },
+        {
             "id": "sender-side-pressure",
             "failureDomain": "sender endpoint",
             "assessment": "supported" if sender_support else "insufficient-evidence",
-            "summary": "Sender pressure requires drop, queue, or flight-window evidence.",
+            "summary": (
+                "Sender pressure requires drop, queue, or flight-window evidence."
+            ),
             "supportingEvidence": sender_support,
             "contradictoryEvidence": [],
             "missingEvidence": sender_missing,
@@ -518,7 +668,9 @@ def build_analysis(source: dict) -> dict:
             "id": "receiver-side-pressure",
             "failureDomain": "receiver endpoint",
             "assessment": "supported" if receiver_support else "insufficient-evidence",
-            "summary": "Receiver pressure requires drop, buffer, or backpressure evidence.",
+            "summary": (
+                "Receiver pressure requires drop, buffer, or backpressure evidence."
+            ),
             "supportingEvidence": receiver_support,
             "contradictoryEvidence": [],
             "missingEvidence": receiver_missing,
@@ -529,8 +681,18 @@ def build_analysis(source: dict) -> dict:
             "id": "transmission-path-loss-with-recovery",
             "assessment": "supported",
             "rationale": (
-                "Aligned sender loss, receiver loss, and retransmission deltas identify "
-                "recoverable path loss without sufficient endpoint-pressure evidence."
+                "Aligned sender loss, receiver loss, and retransmission deltas "
+                "identify recoverable path loss without sufficient "
+                "endpoint-pressure evidence."
+            ),
+        }
+    elif rtt_supported and not sender_support and not receiver_support:
+        selected = {
+            "id": "transmission-path-rtt-step-with-recovery",
+            "assessment": "supported",
+            "rationale": (
+                "Paired sender and receiver RTT cross conservative warm-baseline "
+                "thresholds and recover without loss or endpoint-pressure evidence."
             ),
         }
     else:
@@ -567,7 +729,11 @@ def build_analysis(source: dict) -> dict:
     non_claims.extend(
         [
             "The analysis does not identify the exact failing network hop.",
-            "The analysis does not infer unavailable endpoint-pressure metrics as zero.",
+            "RTT evidence does not isolate one-way delay or its direction.",
+            (
+                "The analysis does not infer unavailable endpoint-pressure metrics "
+                "as zero."
+            ),
         ]
     )
     return {
@@ -582,6 +748,18 @@ def build_analysis(source: dict) -> dict:
             "recoverySample": recovery_sample,
             "qualityBoundaries": quality_boundaries,
             "observations": observations,
+        },
+        "baselines": {
+            "rttSeconds": {
+                "sender": sender_rtt_baseline,
+                "receiver": receiver_rtt_baseline,
+                "senderStepThreshold": sender_rtt_threshold,
+                "receiverStepThreshold": receiver_rtt_threshold,
+                "rule": (
+                    "minimum warm sample 1/2 baseline; "
+                    "threshold=max(2x, baseline+0.020s)"
+                ),
+            }
         },
         "totals": {
             "senderLossPackets": sender_loss_total,
@@ -599,7 +777,10 @@ def build_analysis(source: dict) -> dict:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Correlate paired SRT telemetry and produce an explainable incident analysis"
+        description=(
+            "Correlate paired SRT telemetry and produce an explainable incident "
+            "analysis"
+        )
     )
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--manifest", type=Path)

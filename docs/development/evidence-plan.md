@@ -32,7 +32,9 @@ IPv6, FEC, group, remaining-field, and multi-platform gates.
 2. burst loss — captured 20-packet gap-loss candidates complete in both
    provider directions; public interval counters quantify magnitude and
    recovery but do not independently identify within-interval adjacency;
-3. RTT step and RTT ramp;
+3. RTT step — deterministic public-API capture and diagnostic candidate
+   complete in both cross-provider directions; retained evidence pending; RTT
+   ramp open;
 4. bandwidth reduction with queue growth;
 5. receiver pause/backpressure;
 6. hard path outage;
@@ -104,7 +106,7 @@ with raw SRT statistics for real or representative incidents. Measure:
 - operator confidence in the explanation.
 
 The first local analyzer candidate now establishes the machine-testable side of
-this gate: a paired timeline, three explicit hypotheses, supporting,
+this gate: a paired timeline, four explicit hypotheses, supporting,
 contradictory, and missing evidence, plus an insufficient-evidence outcome. It
 passes the synthetic and captured loss incidents. Two retained cross-provider
 runs now also prove the real public-adapter → recorder → JSONL → analyzer path
@@ -117,9 +119,10 @@ The first executable comparison harness now prepares hash-verified,
 counterbalanced raw-statistics and incident-report tasks from retained
 recordings, captures the two timing milestones and bounded operator answers,
 and emits paired aggregate statistics. Its automated end-to-end test uses only
-`synthetic-harness` responses and cannot satisfy this gate. Incidents 006 and
-007 also share the same constant-loss failure class, while strategy Gate B
-requires at least five real or representative failure classes. The next
-evidence step is an internal facilitation rehearsal followed by controlled
-design-partner sessions; neither should use cross-host wall-clock ordering
-until clock quality is declared.
+`synthetic-harness` responses and cannot satisfy this gate. The current retained
+operator packet still contains one constant-loss failure class, while strategy
+Gate B requires at least five real or representative failure classes. The next
+evidence step is to retain the calibrated RTT-step captures, add that distinct
+class to the harness, and then conduct an internal facilitation rehearsal
+followed by controlled design-partner sessions. None should use cross-host
+wall-clock ordering until clock quality is declared.

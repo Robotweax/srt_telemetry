@@ -37,6 +37,7 @@ FAILURE_DOMAINS = {
 }
 HYPOTHESIS_OPTIONS = {
     "transmission-path-loss-with-recovery",
+    "transmission-path-rtt-step-with-recovery",
     "sender-side-pressure",
     "receiver-side-pressure",
 }
@@ -48,6 +49,8 @@ MISSING_EVIDENCE_OPTIONS = {
     "receiver-buffer-occupancy",
     "paired-loss-alignment",
     "sender-retransmission-deltas",
+    "paired-rtt-step-threshold",
+    "one-way-delay",
 }
 
 DOMAIN_BY_ANALYSIS = {
@@ -71,6 +74,16 @@ MISSING_EVIDENCE_BY_TEXT = {
         "paired-loss-alignment"
     },
     "Sender retransmission deltas are unavailable.": {"sender-retransmission-deltas"},
+    "Paired warm sender and receiver RTT baselines are unavailable.": {
+        "paired-rtt-step-threshold"
+    },
+    "Paired RTT does not cross the candidate step thresholds.": {
+        "paired-rtt-step-threshold"
+    },
+    "One-way delay and the exact failing network hop are unavailable.": {
+        "one-way-delay",
+        "exact-failing-hop",
+    },
 }
 
 PARTICIPANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
