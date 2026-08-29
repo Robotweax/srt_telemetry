@@ -45,6 +45,20 @@ COUNTER_FIELDS = [
 
 RTT_FIELD = 1 << 15
 
+GAUGE_FIELDS = [
+    ("flight_size_packets", 1 << 16),
+    ("flow_window_packets", 1 << 17),
+    ("congestion_window_packets", 1 << 18),
+    ("available_send_buffer_bytes", 1 << 19),
+    ("available_receive_buffer_bytes", 1 << 20),
+    ("send_buffer_bytes", 1 << 21),
+    ("send_buffer_seconds", 1 << 22),
+    ("receive_buffer_bytes", 1 << 23),
+    ("receive_buffer_seconds", 1 << 24),
+    ("sender_tsbpd_delay_seconds", 1 << 25),
+    ("receiver_tsbpd_delay_seconds", 1 << 26),
+]
+
 RATE_FIELDS = [
     ("sent_wire_bits_per_second", 1 << 0),
     ("received_wire_bits_per_second", 1 << 1),
@@ -60,6 +74,7 @@ CSV_COLUMNS = [
     "sample_monotonic_nano",
     *[raw for raw, _, _ in COUNTER_FIELDS],
     "rtt_seconds",
+    *[name for name, _ in GAUGE_FIELDS],
     "expected_quality_flags",
     "expected_interval_nano",
     *[f"expected_{delta}" for _, delta, _ in COUNTER_FIELDS],
@@ -548,6 +563,9 @@ def samples_csv(samples: list) -> bytes:
                 row[f"expected_{delta_name}"] = sample["delta"][delta_name]
         if sample["availableFields"] & RTT_FIELD:
             row["rtt_seconds"] = sample["raw"]["rtt_seconds"]
+        for gauge_name, field in GAUGE_FIELDS:
+            if sample["availableFields"] & field:
+                row[gauge_name] = sample["raw"][gauge_name]
         for rate_name, field in RATE_FIELDS:
             if sample["availableRates"] & field:
                 row[f"expected_{rate_name}"] = sample["delta"][rate_name]

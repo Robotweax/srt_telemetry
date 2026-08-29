@@ -51,6 +51,8 @@ MISSING_EVIDENCE_OPTIONS = {
     "sender-retransmission-deltas",
     "paired-rtt-step-threshold",
     "one-way-delay",
+    "sender-application-scheduling",
+    "receiver-application-consumption",
 }
 
 DOMAIN_BY_ANALYSIS = {
@@ -84,6 +86,13 @@ MISSING_EVIDENCE_BY_TEXT = {
         "one-way-delay",
         "exact-failing-hop",
     },
+    "Sender application scheduling is unavailable.": {
+        "sender-application-scheduling"
+    },
+    (
+        "Receiver application-consumption timing is unavailable from public "
+        "SRT statistics."
+    ): {"receiver-application-consumption"},
 }
 
 PARTICIPANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")

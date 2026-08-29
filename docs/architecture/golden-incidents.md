@@ -52,8 +52,9 @@ Validation has independent layers:
    and compares quality flags, availability, counter deltas, and rates; and
 3. a synthetic generator's `--check` mode proves byte-for-byte reproducibility
    from its declared model. Captured runs instead retain exact binary hashes,
-   fault-proxy observations, and semantic expectations; runtime gauges such as
-   RTT need not be byte-identical across reproductions; and
+   fault-boundary or application-pause observations, and semantic expectations;
+   runtime gauges such as RTT and buffer occupancy need not be byte-identical
+   across reproductions; and
 4. the incident-analyzer acceptance test evaluates all retained incidents,
    exercises the versioned JSONL path, and compares retained analysis output
    byte-semantically with a fresh result.

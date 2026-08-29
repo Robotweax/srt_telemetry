@@ -208,6 +208,38 @@ Retained captures:
 - [2026-08-29 Robotweax sender to Haivision receiver RTT step](../testdata/golden-incidents/incident-008-rtt-step-robotweax-haivision/manifest.json)
 - [2026-08-29 Haivision sender to Robotweax receiver RTT step](../testdata/golden-incidents/incident-009-rtt-step-haivision-robotweax/manifest.json)
 
+## Receiver-pause capture runner
+
+`qualification/run_receiver_pause_capture.py` directly connects the exact
+provider-linked peers over IPv4 loopback, starts a bounded sender transfer, and
+withholds receiver application reads during samples 3 through 6. The receiver
+then drains the transfer and both endpoints send recovery traffic.
+
+```sh
+python3 qualification/run_receiver_pause_capture.py \
+  --direction robotweax-to-haivision \
+  --robotweax-peer /path/to/robotweax/incident-peer \
+  --robotweax-library /path/to/robotweax/libsrt \
+  --robotweax-version VERSION \
+  --robotweax-revision REVISION \
+  --robotweax-build-profile PROFILE \
+  --haivision-peer /path/to/haivision/incident-peer \
+  --haivision-library /path/to/haivision/libsrt \
+  --haivision-version VERSION \
+  --haivision-revision REVISION \
+  --haivision-build-profile PROFILE \
+  --telemetry-revision REVISION \
+  --record-jsonl \
+  --output-dir /new/incident-directory
+```
+
+The default candidate sends 7,000 messages while reads are paused and requires
+receiver-buffer growth, overlapping sender-buffer or flight growth, complete
+lossless delivery, and receiver-buffer recovery. These gauges already exist in
+the common public SRT statistics profile for both providers. They localize
+receiver-side pressure but do not reveal exact application-consumption timing;
+no Robotweax-only protocol extension is required for this candidate.
+
 ## Operator comparison
 
 `tools/operator_evaluation.py` prepares and runs the counterbalanced comparison

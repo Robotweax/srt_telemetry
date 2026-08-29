@@ -25,7 +25,7 @@
     "baselines": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rttSeconds"],
+      "required": ["rttSeconds", "pressure"],
       "properties": {
         "rttSeconds": {
           "type": "object",
@@ -42,6 +42,28 @@
             "receiver": { "$ref": "#/$defs/nullableUnsigned" },
             "senderStepThreshold": { "$ref": "#/$defs/nullableUnsigned" },
             "receiverStepThreshold": { "$ref": "#/$defs/nullableUnsigned" },
+            "rule": { "type": "string", "minLength": 1 }
+          }
+        },
+        "pressure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "senderSendBufferBytes",
+            "senderSendBufferStepThreshold",
+            "senderFlightSizePackets",
+            "senderFlightStepThreshold",
+            "receiverReceiveBufferBytes",
+            "receiverReceiveBufferStepThreshold",
+            "rule"
+          ],
+          "properties": {
+            "senderSendBufferBytes": { "$ref": "#/$defs/nullableUnsigned" },
+            "senderSendBufferStepThreshold": { "$ref": "#/$defs/nullableUnsigned" },
+            "senderFlightSizePackets": { "$ref": "#/$defs/nullableUnsigned" },
+            "senderFlightStepThreshold": { "$ref": "#/$defs/nullableUnsigned" },
+            "receiverReceiveBufferBytes": { "$ref": "#/$defs/nullableUnsigned" },
+            "receiverReceiveBufferStepThreshold": { "$ref": "#/$defs/nullableUnsigned" },
             "rule": { "type": "string", "minLength": 1 }
           }
         }
@@ -64,6 +86,7 @@
           "enum": [
             "transmission-path-loss-with-recovery",
             "transmission-path-rtt-step-with-recovery",
+            "receiver-side-pressure",
             null
           ]
         },
@@ -183,7 +206,12 @@
         "uniqueSentPackets",
         "uniqueReceivedPackets",
         "senderRttSeconds",
-        "receiverRttSeconds"
+        "receiverRttSeconds",
+        "senderFlightSizePackets",
+        "senderSendBufferBytes",
+        "senderSendBufferSeconds",
+        "receiverReceiveBufferBytes",
+        "receiverReceiveBufferSeconds"
       ],
       "properties": {
         "senderLossPackets": { "$ref": "#/$defs/nullableUnsigned" },
@@ -196,7 +224,12 @@
         "uniqueSentPackets": { "$ref": "#/$defs/nullableUnsigned" },
         "uniqueReceivedPackets": { "$ref": "#/$defs/nullableUnsigned" },
         "senderRttSeconds": { "$ref": "#/$defs/nullableUnsigned" },
-        "receiverRttSeconds": { "$ref": "#/$defs/nullableUnsigned" }
+        "receiverRttSeconds": { "$ref": "#/$defs/nullableUnsigned" },
+        "senderFlightSizePackets": { "$ref": "#/$defs/nullableUnsigned" },
+        "senderSendBufferBytes": { "$ref": "#/$defs/nullableUnsigned" },
+        "senderSendBufferSeconds": { "$ref": "#/$defs/nullableUnsigned" },
+        "receiverReceiveBufferBytes": { "$ref": "#/$defs/nullableUnsigned" },
+        "receiverReceiveBufferSeconds": { "$ref": "#/$defs/nullableUnsigned" }
       }
     },
     "observation": {

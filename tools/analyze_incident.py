@@ -326,6 +326,24 @@ def rtt_step_threshold(baseline: Optional[float]) -> Optional[float]:
     return max(baseline * 2.0, baseline + 0.020)
 
 
+def warm_max_baseline(samples: List[dict], field: str) -> Optional[float]:
+    warm_values = [
+        numeric(sample["raw"].get(field))
+        for sample in samples
+        if sample["sampleIndex"] in {1, 2}
+    ]
+    available = [value for value in warm_values if value is not None]
+    return max(available) if available else None
+
+
+def pressure_step_threshold(
+    baseline: Optional[float], absolute_step: float
+) -> Optional[float]:
+    if baseline is None:
+        return None
+    return max(baseline * 2.0, baseline + absolute_step)
+
+
 def at_or_above(value: object, threshold: Optional[float]) -> bool:
     number = numeric(value)
     return number is not None and threshold is not None and number >= threshold
@@ -343,6 +361,16 @@ def build_analysis(source: dict) -> dict:
     receiver_rtt_baseline = rtt_baseline(receiver_samples)
     sender_rtt_threshold = rtt_step_threshold(sender_rtt_baseline)
     receiver_rtt_threshold = rtt_step_threshold(receiver_rtt_baseline)
+    sender_buffer_baseline = warm_max_baseline(sender_samples, "send_buffer_bytes")
+    sender_flight_baseline = warm_max_baseline(sender_samples, "flight_size_packets")
+    receiver_buffer_baseline = warm_max_baseline(
+        receiver_samples, "receive_buffer_bytes"
+    )
+    sender_buffer_threshold = pressure_step_threshold(sender_buffer_baseline, 65_536)
+    sender_flight_threshold = pressure_step_threshold(sender_flight_baseline, 8)
+    receiver_buffer_threshold = pressure_step_threshold(
+        receiver_buffer_baseline, 65_536
+    )
     observations = []
     deviation_indexes = []
     quality_boundaries = []
@@ -372,6 +400,21 @@ def build_analysis(source: dict) -> dict:
             ),
             "senderRttSeconds": numeric(sender["raw"].get("rtt_seconds")),
             "receiverRttSeconds": numeric(receiver["raw"].get("rtt_seconds")),
+            "senderFlightSizePackets": numeric(
+                sender["raw"].get("flight_size_packets")
+            ),
+            "senderSendBufferBytes": numeric(
+                sender["raw"].get("send_buffer_bytes")
+            ),
+            "senderSendBufferSeconds": numeric(
+                sender["raw"].get("send_buffer_seconds")
+            ),
+            "receiverReceiveBufferBytes": numeric(
+                receiver["raw"].get("receive_buffer_bytes")
+            ),
+            "receiverReceiveBufferSeconds": numeric(
+                receiver["raw"].get("receive_buffer_seconds")
+            ),
         }
         counter_deviating = any(
             positive(signals[field])
@@ -388,7 +431,10 @@ def build_analysis(source: dict) -> dict:
             at_or_above(signals["senderRttSeconds"], sender_rtt_threshold)
             or at_or_above(signals["receiverRttSeconds"], receiver_rtt_threshold)
         )
-        deviating = counter_deviating or rtt_deviating
+        pressure_deviating = index >= 3 and at_or_above(
+            signals["receiverReceiveBufferBytes"], receiver_buffer_threshold
+        )
+        deviating = counter_deviating or rtt_deviating or pressure_deviating
         if deviating:
             deviation_indexes.append(index)
         boundaries = []
@@ -603,8 +649,10 @@ def build_analysis(source: dict) -> dict:
         sample["raw"].get("flight_size_packets") is None for sample in sender_samples
     ):
         sender_missing.append("Sender flight-size evidence is unavailable.")
+    sender_missing.append("Sender application scheduling is unavailable.")
 
     receiver_support = []
+    receiver_contradictions = []
     receiver_missing = []
     if receiver_drop_total > 0:
         receiver_support.append(
@@ -620,12 +668,98 @@ def build_analysis(source: dict) -> dict:
         )
     if receiver_drop_available == 0:
         receiver_missing.append("Receiver drop deltas are unavailable.")
-    if all(
-        sample["raw"].get("receive_buffer_bytes") is None for sample in receiver_samples
-    ):
+    receiver_buffer_indexes = [
+        sample["sampleIndex"]
+        for sample in receiver_samples
+        if sample["sampleIndex"] >= 3
+        and at_or_above(
+            sample["raw"].get("receive_buffer_bytes"), receiver_buffer_threshold
+        )
+    ]
+    upstream_pressure_indexes = sorted(
+        {
+            sample["sampleIndex"]
+            for sample in sender_samples
+            if sample["sampleIndex"] >= 3
+            and (
+                at_or_above(
+                    sample["raw"].get("send_buffer_bytes"), sender_buffer_threshold
+                )
+                or at_or_above(
+                    sample["raw"].get("flight_size_packets"), sender_flight_threshold
+                )
+            )
+        }
+    )
+    pressure_recovery_sample = None
+    if receiver_buffer_indexes:
+        for sample in receiver_samples[receiver_buffer_indexes[-1] + 1 :]:
+            value = numeric(sample["raw"].get("receive_buffer_bytes"))
+            if (
+                value is not None
+                and receiver_buffer_threshold is not None
+                and value < receiver_buffer_threshold
+            ):
+                pressure_recovery_sample = sample["sampleIndex"]
+                break
+        receiver_support.append(
+            evidence(
+                "receiver-buffer-growth",
+                (
+                    "Receiver buffer occupancy exceeds its warm candidate "
+                    "baseline threshold."
+                ),
+                receiver_buffer_indexes,
+            )
+        )
+    overlap_indexes = sorted(
+        set(receiver_buffer_indexes) & set(upstream_pressure_indexes)
+    )
+    if overlap_indexes:
+        receiver_support.append(
+            evidence(
+                "upstream-backpressure",
+                (
+                    "Sender buffer or flight growth overlaps elevated receiver "
+                    "buffer occupancy."
+                ),
+                overlap_indexes,
+            )
+        )
+    if pressure_recovery_sample is not None:
+        receiver_support.append(
+            evidence(
+                "receiver-buffer-recovery",
+                "Receiver buffer occupancy returns below its candidate threshold.",
+                [pressure_recovery_sample],
+            )
+        )
+    if receiver_buffer_baseline is None:
         receiver_missing.append("Receiver buffer occupancy is unavailable.")
+    elif not receiver_buffer_indexes:
+        receiver_missing.append(
+            "Receiver buffer occupancy does not cross the candidate threshold."
+        )
+    elif pressure_recovery_sample is None:
+        receiver_missing.append("Receiver buffer recovery is not observed.")
     if undecryptable_available == 0:
         receiver_missing.append("Receiver undecryptable deltas are unavailable.")
+    receiver_missing.append(
+        "Receiver application-consumption timing is unavailable from public SRT statistics."
+    )
+    receiver_pressure_supported = (
+        len(receiver_buffer_indexes) >= 2
+        and bool(overlap_indexes)
+        and pressure_recovery_sample is not None
+    )
+    receiver_hypothesis_supported = (
+        receiver_drop_total > 0 or receiver_pressure_supported
+    )
+    if receiver_pressure_supported:
+        rtt_contradictions.append(
+            "Receiver buffer pressure provides a competing endpoint explanation."
+        )
+        rtt_supported = False
 
     hypotheses = [
         {
@@ -667,16 +801,20 @@ def build_analysis(source: dict) -> dict:
         {
             "id": "receiver-side-pressure",
             "failureDomain": "receiver endpoint",
-            "assessment": "supported" if receiver_support else "insufficient-evidence",
+            "assessment": (
+                "supported"
+                if receiver_hypothesis_supported
+                else "insufficient-evidence"
+            ),
             "summary": (
                 "Receiver pressure requires drop, buffer, or backpressure evidence."
             ),
             "supportingEvidence": receiver_support,
-            "contradictoryEvidence": [],
+            "contradictoryEvidence": receiver_contradictions,
             "missingEvidence": receiver_missing,
         },
     ]
-    if path_supported and not sender_support and not receiver_support:
+    if path_supported and not sender_support and not receiver_hypothesis_supported:
         selected = {
             "id": "transmission-path-loss-with-recovery",
             "assessment": "supported",
@@ -686,13 +824,23 @@ def build_analysis(source: dict) -> dict:
                 "endpoint-pressure evidence."
             ),
         }
-    elif rtt_supported and not sender_support and not receiver_support:
+    elif rtt_supported and not sender_support and not receiver_hypothesis_supported:
         selected = {
             "id": "transmission-path-rtt-step-with-recovery",
             "assessment": "supported",
             "rationale": (
                 "Paired sender and receiver RTT cross conservative warm-baseline "
                 "thresholds and recover without loss or endpoint-pressure evidence."
+            ),
+        }
+    elif receiver_pressure_supported and not path_supported and not sender_support:
+        selected = {
+            "id": "receiver-side-pressure",
+            "assessment": "supported",
+            "rationale": (
+                "Receiver buffer growth overlaps upstream sender pressure and "
+                "recovers after the deviation without a supported path-loss "
+                "explanation."
             ),
         }
     else:
@@ -731,6 +879,10 @@ def build_analysis(source: dict) -> dict:
             "The analysis does not identify the exact failing network hop.",
             "RTT evidence does not isolate one-way delay or its direction.",
             (
+                "Public SRT buffer gauges do not expose exact application "
+                "scheduling or consumption timing."
+            ),
+            (
                 "The analysis does not infer unavailable endpoint-pressure metrics "
                 "as zero."
             ),
@@ -759,7 +911,19 @@ def build_analysis(source: dict) -> dict:
                     "minimum warm sample 1/2 baseline; "
                     "threshold=max(2x, baseline+0.020s)"
                 ),
-            }
+            },
+            "pressure": {
+                "senderSendBufferBytes": sender_buffer_baseline,
+                "senderSendBufferStepThreshold": sender_buffer_threshold,
+                "senderFlightSizePackets": sender_flight_baseline,
+                "senderFlightStepThreshold": sender_flight_threshold,
+                "receiverReceiveBufferBytes": receiver_buffer_baseline,
+                "receiverReceiveBufferStepThreshold": receiver_buffer_threshold,
+                "rule": (
+                    "maximum warm sample 1/2 baseline; byte threshold=max(2x, "
+                    "baseline+65536); packet threshold=max(2x, baseline+8)"
+                ),
+            },
         },
         "totals": {
             "senderLossPackets": sender_loss_total,

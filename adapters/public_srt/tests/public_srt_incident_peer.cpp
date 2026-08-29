@@ -45,22 +45,7 @@ constexpr std::string_view runtime_provider_name = "haivision-srt";
 #endif
 
 constexpr std::uint64_t incident_fields =
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_SENT_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVED_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_LOSS_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_LOSS_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_RETRANSMITTED_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_DROP_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_DROP_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_UNDECRYPTABLE_PACKET_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_SENT_WIRE_BYTE_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVED_WIRE_BYTE_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_WIRE_BYTE_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_WIRE_BYTE_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_RETRANSMITTED_WIRE_BYTE_TOTAL |
-    ROBOTWEAX_SRT_TELEMETRY_FIELD_RTT_SECONDS;
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_V1_5_5_CANDIDATE_FIELDS;
 
 struct RecordingConfig final
 {
@@ -370,6 +355,18 @@ void emit_sample(const std::string_view role, const std::uint64_t sample_index,
               << ",\"unique_received_wire_byte_total\":" << raw.unique_received_wire_byte_total
               << ",\"retransmitted_wire_byte_total\":" << raw.retransmitted_wire_byte_total
               << ",\"rtt_seconds\":" << raw.rtt_seconds
+              << ",\"flight_size_packets\":" << raw.flight_size_packets
+              << ",\"flow_window_packets\":" << raw.flow_window_packets
+              << ",\"congestion_window_packets\":" << raw.congestion_window_packets
+              << ",\"available_send_buffer_bytes\":" << raw.available_send_buffer_bytes
+              << ",\"available_receive_buffer_bytes\":"
+              << raw.available_receive_buffer_bytes
+              << ",\"send_buffer_bytes\":" << raw.send_buffer_bytes
+              << ",\"send_buffer_seconds\":" << raw.send_buffer_seconds
+              << ",\"receive_buffer_bytes\":" << raw.receive_buffer_bytes
+              << ",\"receive_buffer_seconds\":" << raw.receive_buffer_seconds
+              << ",\"sender_tsbpd_delay_seconds\":" << raw.sender_tsbpd_delay_seconds
+              << ",\"receiver_tsbpd_delay_seconds\":" << raw.receiver_tsbpd_delay_seconds
               << "},\"delta\":{\"sent_packet_delta\":" << delta.sent_packet_delta
               << ",\"received_packet_delta\":" << delta.received_packet_delta
               << ",\"unique_sent_packet_delta\":" << delta.unique_sent_packet_delta

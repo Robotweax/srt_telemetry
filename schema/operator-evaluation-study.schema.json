@@ -143,7 +143,9 @@
         "paired-loss-alignment",
         "sender-retransmission-deltas",
         "paired-rtt-step-threshold",
-        "one-way-delay"
+        "one-way-delay",
+        "sender-application-scheduling",
+        "receiver-application-consumption"
       ]
     },
     "assignment": {

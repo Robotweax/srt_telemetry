@@ -1,5 +1,14 @@
 {
   "baselines": {
+    "pressure": {
+      "receiverReceiveBufferBytes": null,
+      "receiverReceiveBufferStepThreshold": null,
+      "rule": "maximum warm sample 1/2 baseline; byte threshold=max(2x, baseline+65536); packet threshold=max(2x, baseline+8)",
+      "senderFlightSizePackets": null,
+      "senderFlightStepThreshold": null,
+      "senderSendBufferBytes": null,
+      "senderSendBufferStepThreshold": null
+    },
     "rttSeconds": {
       "receiver": 0.02,
       "receiverStepThreshold": 0.04,
@@ -70,7 +79,8 @@
       "missingEvidence": [
         "Sender drop deltas are unavailable.",
         "Sender buffer occupancy is unavailable.",
-        "Sender flight-size evidence is unavailable."
+        "Sender flight-size evidence is unavailable.",
+        "Sender application scheduling is unavailable."
       ],
       "summary": "Sender pressure requires drop, queue, or flight-window evidence.",
       "supportingEvidence": []
@@ -83,7 +93,8 @@
       "missingEvidence": [
         "Receiver drop deltas are unavailable.",
         "Receiver buffer occupancy is unavailable.",
-        "Receiver undecryptable deltas are unavailable."
+        "Receiver undecryptable deltas are unavailable.",
+        "Receiver application-consumption timing is unavailable from public SRT statistics."
       ],
       "summary": "Receiver pressure requires drop, buffer, or backpressure evidence.",
       "supportingEvidence": []
@@ -96,6 +107,7 @@
     "Synthetic wall-clock alignment does not qualify real endpoint clock synchronization.",
     "The analysis does not identify the exact failing network hop.",
     "RTT evidence does not isolate one-way delay or its direction.",
+    "Public SRT buffer gauges do not expose exact application scheduling or consumption timing.",
     "The analysis does not infer unavailable endpoint-pressure metrics as zero."
   ],
   "schemaVersion": "1alpha1",
@@ -172,12 +184,17 @@
           "physicalSentPackets": null,
           "receiverDropPackets": null,
           "receiverLossPackets": null,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.02,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": null,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": null,
           "senderRttSeconds": 0.02,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": null,
           "uniqueSentPackets": null
         }
@@ -194,12 +211,17 @@
           "physicalSentPackets": 100,
           "receiverDropPackets": null,
           "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.02,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": 0,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": 0,
           "senderRttSeconds": 0.02,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": 100,
           "uniqueSentPackets": 100
         }
@@ -216,12 +238,17 @@
           "physicalSentPackets": 100,
           "receiverDropPackets": null,
           "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.02,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": 0,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": 0,
           "senderRttSeconds": 0.02,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": 100,
           "uniqueSentPackets": 100
         }
@@ -238,12 +265,17 @@
           "physicalSentPackets": 105,
           "receiverDropPackets": null,
           "receiverLossPackets": 5,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.03,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": 5,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": 5,
           "senderRttSeconds": 0.03,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": 100,
           "uniqueSentPackets": 100
         }
@@ -260,12 +292,17 @@
           "physicalSentPackets": 105,
           "receiverDropPackets": null,
           "receiverLossPackets": 5,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.03,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": 5,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": 5,
           "senderRttSeconds": 0.03,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": 100,
           "uniqueSentPackets": 100
         }
@@ -282,12 +319,17 @@
           "physicalSentPackets": 105,
           "receiverDropPackets": null,
           "receiverLossPackets": 5,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.03,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": 5,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": 5,
           "senderRttSeconds": 0.03,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": 100,
           "uniqueSentPackets": 100
         }
@@ -304,12 +346,17 @@
           "physicalSentPackets": 105,
           "receiverDropPackets": null,
           "receiverLossPackets": 5,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.03,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": 5,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": 5,
           "senderRttSeconds": 0.03,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": 100,
           "uniqueSentPackets": 100
         }
@@ -326,12 +373,17 @@
           "physicalSentPackets": 100,
           "receiverDropPackets": null,
           "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.02,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": 0,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": 0,
           "senderRttSeconds": 0.02,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": 100,
           "uniqueSentPackets": 100
         }
@@ -348,12 +400,17 @@
           "physicalSentPackets": 100,
           "receiverDropPackets": null,
           "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": null,
+          "receiverReceiveBufferSeconds": null,
           "receiverRttSeconds": 0.02,
           "receiverUndecryptablePackets": null,
           "retransmittedPackets": 0,
           "senderDropPackets": null,
+          "senderFlightSizePackets": null,
           "senderLossPackets": 0,
           "senderRttSeconds": 0.02,
+          "senderSendBufferBytes": null,
+          "senderSendBufferSeconds": null,
           "uniqueReceivedPackets": 100,
           "uniqueSentPackets": 100
         }

@@ -367,7 +367,8 @@
       ],
       "oneOf": [
         { "required": ["faultProxy"] },
-        { "required": ["delayProxy"] }
+        { "required": ["delayProxy"] },
+        { "required": ["applicationPause"] }
       ],
       "properties": {
         "generatedAt": {
@@ -392,7 +393,9 @@
             "platform": { "type": "string", "minLength": 1 },
             "machine": { "type": "string", "minLength": 1 },
             "pythonVersion": { "type": "string", "minLength": 1 },
-            "transport": { "const": "ipv4-loopback-udp-proxy" },
+            "transport": {
+              "enum": ["ipv4-loopback-udp-proxy", "ipv4-loopback-direct"]
+            },
             "timingSource": { "const": "orchestrator-logical-one-second" }
           }
         },
@@ -517,6 +520,46 @@
                   "delayedDownstreamPackets": { "type": "integer", "minimum": 0 },
                   "delayedReversePackets": { "type": "integer", "minimum": 0 },
                   "maximumQueuedPackets": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          }
+        },
+        "applicationPause": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "clock",
+            "pausedRole",
+            "transferId",
+            "pausedTransferMessages",
+            "steadyMessagesPerInterval",
+            "payloadBytesPerMessage",
+            "pauseSampleIntervalMillis",
+            "settleMillis",
+            "measuredPauseNano",
+            "samples"
+          ],
+          "properties": {
+            "clock": { "const": "time.monotonic_ns" },
+            "pausedRole": { "const": "receiver" },
+            "transferId": { "type": "integer", "minimum": 1 },
+            "pausedTransferMessages": { "type": "integer", "minimum": 1 },
+            "steadyMessagesPerInterval": { "type": "integer", "minimum": 1 },
+            "payloadBytesPerMessage": { "type": "integer", "minimum": 1 },
+            "pauseSampleIntervalMillis": { "type": "integer", "minimum": 1 },
+            "settleMillis": { "type": "integer", "minimum": 1 },
+            "measuredPauseNano": { "type": "integer", "minimum": 1 },
+            "samples": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["sampleIndex", "elapsedMonotonicNano"],
+                "properties": {
+                  "sampleIndex": { "type": "integer", "minimum": 0 },
+                  "elapsedMonotonicNano": { "type": "integer", "minimum": 1 }
                 }
               }
             }

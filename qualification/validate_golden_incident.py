@@ -189,8 +189,38 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
         fail(f"capture artifact roles do not match dataset roles: {artifact_roles}")
     fault_proxy = capture.get("faultProxy")
     delay_proxy = capture.get("delayProxy")
-    if (fault_proxy is None) == (delay_proxy is None):
-        fail("capture must contain exactly one fault or delay proxy")
+    application_pause = capture.get("applicationPause")
+    if sum(
+        candidate is not None
+        for candidate in [fault_proxy, delay_proxy, application_pause]
+    ) != 1:
+        fail(
+            "capture must contain exactly one fault proxy, delay proxy, "
+            "or application pause"
+        )
+    first_active = manifest["faultPlan"]["firstActiveSample"]
+    last_active = manifest["faultPlan"]["lastActiveSample"]
+    if application_pause is not None:
+        if not isinstance(application_pause, dict):
+            fail("capture application-pause observations are invalid")
+        if capture.get("environment", {}).get("transport") != "ipv4-loopback-direct":
+            fail("application-pause capture must use direct IPv4 loopback")
+        samples = application_pause.get("samples")
+        if not isinstance(samples, list):
+            fail("capture application-pause samples are missing")
+        indexes = [sample.get("sampleIndex") for sample in samples]
+        expected_indexes = list(range(first_active, last_active + 1))
+        if indexes != expected_indexes:
+            fail(f"capture application-pause samples are not contiguous: {indexes}")
+        elapsed = [sample.get("elapsedMonotonicNano") for sample in samples]
+        if any(not isinstance(value, int) or value <= 0 for value in elapsed):
+            fail("capture application-pause elapsed times are invalid")
+        if any(current <= previous for previous, current in zip(elapsed, elapsed[1:])):
+            fail("capture application-pause elapsed times are not increasing")
+        measured_pause = application_pause.get("measuredPauseNano")
+        if not isinstance(measured_pause, int) or measured_pause < elapsed[-1]:
+            fail("capture application-pause duration is inconsistent")
+        return
     proxy = fault_proxy if fault_proxy is not None else delay_proxy
     if not isinstance(proxy, dict) or not isinstance(proxy.get("stages"), list):
         fail("capture proxy observations are missing")
@@ -199,8 +229,6 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
     expected_indexes = list(range(1, max(index for _, index in by_key) + 1))
     if indexes != expected_indexes:
         fail(f"capture fault stages are not contiguous: {indexes}")
-    first_active = manifest["faultPlan"]["firstActiveSample"]
-    last_active = manifest["faultPlan"]["lastActiveSample"]
     if delay_proxy is not None:
         messages = proxy.get("messagesPerInterval")
         delay_millis = proxy.get("oneWayDelayMillis")
