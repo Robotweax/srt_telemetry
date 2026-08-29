@@ -38,9 +38,12 @@ IPv6, FEC, group, remaining-field, and multi-platform gates.
 5. receiver pause/backpressure — public receiver-buffer plus upstream sender
    flight/send-buffer diagnostic candidates retained in both provider
    directions; physical-network and production-scheduler profiles open;
-6. hard path outage;
-7. reconnect loop; and
-8. key-management or decrypt failure where the provider exposes evidence.
+6. receiver recovery/playout margin exhaustion — public loss, retransmission,
+   configured TSBPD delay, receiver-drop, and delivery-gap candidates retained
+   in both provider directions; a larger-latency counterfactual remains open;
+7. hard path outage;
+8. reconnect loop; and
+9. key-management or decrypt failure where the provider exposes evidence.
 
 Every retained incident must name exact revisions, roles, directions, mode,
 address family, encryption, FEC, fault plan, timing source, payload digest, and
@@ -83,6 +86,14 @@ remain unavailable, but the proxy retains those facts as experiment ground
 truth. That precision is not required for the current endpoint-localization
 question, so no Robotweax extension is selected for this failure class.
 
+The sequence-hold captures provide a fourth extension-gate decision. Common
+public loss, retransmission, configured TSBPD-delay, receiver-drop, and unique
+delivery counters support a bounded exhausted-recovery-margin diagnosis in
+both provider directions. Belated-arrival counters and the counterfactual under
+a larger latency are unavailable, so the analyzer explicitly does not prescribe
+that remediation. Those missing fields are not required for the current
+failure-boundary question; no Robotweax extension is selected.
+
 Use this request template when coordination with the Robotweax SRT coding agent
 is necessary:
 
@@ -122,11 +133,11 @@ with raw SRT statistics for real or representative incidents. Measure:
 - operator confidence in the explanation.
 
 The first local analyzer candidate now establishes the machine-testable side of
-this gate: a paired timeline, four explicit hypotheses, supporting,
+this gate: a paired timeline, five explicit hypotheses, supporting,
 contradictory, and missing evidence, plus an insufficient-evidence outcome. It
-passes the synthetic and captured loss incidents. Eight retained cross-provider
+passes the synthetic and captured loss incidents. Ten retained cross-provider
 runs now also prove the real public-adapter → recorder → JSONL → analyzer path
-for four failure classes in both directions. This does not close the product
+for five failure classes in both directions. This does not close the product
 claim. A design-partner
 comparison must still measure the operator outcomes above, and real
 cross-endpoint correlation must declare clock-synchronization quality before
@@ -138,9 +149,10 @@ recordings, captures the two timing milestones and bounded operator answers,
 and emits paired aggregate statistics. Its automated end-to-end test uses only
 `synthetic-harness` responses and cannot satisfy this gate. The updated
 automated packet contains constant loss, an RTT step, receiver
-pause/backpressure, and bandwidth reduction with sender queue growth in both
-provider directions, so the harness now exercises four of the five real or
-representative failure classes required by strategy
-Gate B. The next evidence step is an internal facilitation rehearsal followed
-by controlled design-partner sessions and additional fault classes.
+pause/backpressure, bandwidth reduction with sender queue growth, and receiver
+recovery-margin exhaustion in both provider directions. The harness therefore
+exercises all five real or representative failure classes required by strategy
+Gate B. This closes only the automated coverage prerequisite. The next evidence
+step is an internal facilitation rehearsal followed by controlled design-partner
+sessions.
 None should use cross-host wall-clock ordering until clock quality is declared.

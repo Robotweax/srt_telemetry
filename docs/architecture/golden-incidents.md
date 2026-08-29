@@ -121,3 +121,12 @@ All 2,400 messages arrive without public loss, drop, or retransmission. This
 localizes sender-/egress-side pressure through common public fields. The proxy
 restriction is capture ground truth: public statistics alone do not expose the
 offered application rate or exact egress capacity.
+
+Incidents 014 and 015 retain the first 100 original DATA sequences and all
+observed repeats until receiver delivery has completed. Both directions expose
+paired loss, sender retransmission, exactly 100 receiver drops, a positive
+configured receiver TSBPD delay, and a final unique delivery gap of 100. The
+analyzer therefore supports an exhausted receiver recovery/playout margin.
+The proxy's sequence hold is capture ground truth; public statistics do not
+expose belated-arrival counts, the delay distribution, or the outcome under a
+different configured latency.

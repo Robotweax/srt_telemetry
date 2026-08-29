@@ -1,0 +1,354 @@
+{
+  "capture": {
+    "artifacts": [
+      {
+        "peerExecutableSha256": "e1064fdf4feaf1060faa463058bce760ce48b256fc1a99347f1cd4715f6db9e4",
+        "providerLibrarySha256": "1377a61d159856f7785bcc6c6fd9af74d1f11e78804c8e6db7b8bc6cb8e95f6a",
+        "role": "sender"
+      },
+      {
+        "peerExecutableSha256": "ca6c624cdcf91acda7b767eb7e130fe9a4396c985ebe69c4592fd02dd799e07a",
+        "providerLibrarySha256": "f5db9ca66be4d681c3271664c6f25ae269a7ad62ae75c815e0fb521f991cff04",
+        "role": "receiver"
+      }
+    ],
+    "environment": {
+      "machine": "arm64",
+      "platform": "macOS-26.5.2-arm64-arm-64bit",
+      "pythonVersion": "3.9.6",
+      "timingSource": "orchestrator-logical-one-second",
+      "transport": "ipv4-loopback-udp-proxy"
+    },
+    "generatedAt": "2026-08-29T14:03:56.731060+00:00",
+    "sequenceHoldProxy": {
+      "clock": "time.monotonic_ns",
+      "heldOriginalDataPackets": 100,
+      "measuredHoldNano": 519359292,
+      "payloadBytesPerMessage": 1316,
+      "receiverMessages": 1000,
+      "sampleIntervalMillis": 120,
+      "senderMessages": 1100,
+      "settleMillis": 120,
+      "stages": [
+        {
+          "active": false,
+          "forwardedControlPackets": 2,
+          "forwardedDataPackets": 100,
+          "heldDataPackets": 0,
+          "maximumQueuedPackets": 0,
+          "originalDataPackets": 0,
+          "queueAtEnd": 0,
+          "queueAtStart": 0,
+          "releasedHeldPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 3,
+          "sampleIndex": 1
+        },
+        {
+          "active": false,
+          "forwardedControlPackets": 1,
+          "forwardedDataPackets": 100,
+          "heldDataPackets": 0,
+          "maximumQueuedPackets": 0,
+          "originalDataPackets": 0,
+          "queueAtEnd": 0,
+          "queueAtStart": 0,
+          "releasedHeldPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 2,
+          "sampleIndex": 2
+        },
+        {
+          "active": true,
+          "forwardedControlPackets": 1,
+          "forwardedDataPackets": 2671,
+          "heldDataPackets": 400,
+          "maximumQueuedPackets": 400,
+          "originalDataPackets": 1100,
+          "queueAtEnd": 400,
+          "queueAtStart": 0,
+          "releasedHeldPackets": 0,
+          "repeatedDataPackets": 1971,
+          "reversePackets": 3,
+          "sampleIndex": 3
+        },
+        {
+          "active": true,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "heldDataPackets": 0,
+          "maximumQueuedPackets": 400,
+          "originalDataPackets": 0,
+          "queueAtEnd": 400,
+          "queueAtStart": 400,
+          "releasedHeldPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 4
+        },
+        {
+          "active": true,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "heldDataPackets": 0,
+          "maximumQueuedPackets": 400,
+          "originalDataPackets": 0,
+          "queueAtEnd": 400,
+          "queueAtStart": 400,
+          "releasedHeldPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 5
+        },
+        {
+          "active": true,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "heldDataPackets": 0,
+          "maximumQueuedPackets": 400,
+          "originalDataPackets": 0,
+          "queueAtEnd": 400,
+          "queueAtStart": 400,
+          "releasedHeldPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 6
+        },
+        {
+          "active": false,
+          "forwardedControlPackets": 1,
+          "forwardedDataPackets": 100,
+          "heldDataPackets": 0,
+          "maximumQueuedPackets": 400,
+          "originalDataPackets": 0,
+          "queueAtEnd": 0,
+          "queueAtStart": 400,
+          "releasedHeldPackets": 400,
+          "repeatedDataPackets": 0,
+          "reversePackets": 2,
+          "sampleIndex": 7
+        },
+        {
+          "active": false,
+          "forwardedControlPackets": 2,
+          "forwardedDataPackets": 100,
+          "heldDataPackets": 0,
+          "maximumQueuedPackets": 0,
+          "originalDataPackets": 0,
+          "queueAtEnd": 0,
+          "queueAtStart": 0,
+          "releasedHeldPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 3,
+          "sampleIndex": 8
+        }
+      ],
+      "steadyMessagesPerInterval": 100
+    },
+    "telemetryRevision": "a8dc79bf506f4bedf86b2884e29af22fc6542a1a"
+  },
+  "contradictions": [
+    "Receiver drops plus a configured TSBPD delay support a recovery-margin diagnosis, but do not prove that a larger latency setting would prevent the incident.",
+    "Public non-destructive statistics do not expose packet belated-arrival counters or the packet delay distribution.",
+    "The proxy proves which sequences were retained, but public SRT statistics alone do not identify an exact failing network hop.",
+    "Logical sample timestamps make rate columns deterministic but do not measure wall-clock throughput.",
+    "IPv4 loopback does not qualify physical network devices, wide-area paths, encryption, FEC, groups, or other profiles."
+  ],
+  "dataset": {
+    "format": "robotweax-srt-telemetry-csv-v1",
+    "roles": [
+      "sender",
+      "receiver"
+    ],
+    "rows": 18,
+    "sampleIntervalNano": 1000000000,
+    "samplesFile": "samples.csv",
+    "sha256": "8aa85a34a1d101fd6397f60f1a8a8b13b4b02f29049039d01967f7ef9e7cfa48"
+  },
+  "direction": "sender-to-receiver",
+  "expectedEvidence": [
+    "paired sender-learned and receiver-observed loss with retransmission",
+    "receiver drops exactly account for the unique packet delivery gap",
+    "a positive configured receiver TSBPD delay is publicly observable",
+    "loss, retransmission, and drop deltas recover after the deviation",
+    "proxy ground truth retains selected sequences beyond receiver delivery"
+  ],
+  "failureClass": "receiver-recovery-margin-exhaustion",
+  "faultPlan": {
+    "description": "Hold the first 100 original DATA packet sequences and all observed repeats during samples 3 through 6; send 1100 messages while the receiver expects 1000, then release the retained packets after receiver delivery completes.",
+    "firstActiveSample": 3,
+    "lastActiveSample": 6,
+    "seed": 0
+  },
+  "incidentId": "incident-014-recovery-margin-robotweax-haivision",
+  "machineExpectations": [
+    {
+      "field": "sender_loss_packet_delta",
+      "id": "paired-sender-loss-positive",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 3
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_loss_packet_delta",
+      "id": "paired-receiver-loss-positive",
+      "operator": "greater-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 3,
+        "last": 3
+      },
+      "value": 0
+    },
+    {
+      "field": "retransmitted_packet_delta",
+      "id": "sender-retransmission-positive",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 3
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_drop_packet_delta",
+      "id": "receiver-drop-positive",
+      "operator": "greater-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 3,
+        "last": 3
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_tsbpd_delay_seconds",
+      "id": "receiver-tsbpd-delay-available",
+      "operator": "greater-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "source": "raw",
+      "value": 0
+    },
+    {
+      "field": "unique_sent_packet_total",
+      "id": "sender-unique-total",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 8,
+        "last": 8
+      },
+      "source": "raw",
+      "value": 1500
+    },
+    {
+      "field": "unique_received_packet_total",
+      "id": "receiver-unique-total",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 8,
+        "last": 8
+      },
+      "source": "raw",
+      "value": 1400
+    },
+    {
+      "field": "receiver_drop_packet_total",
+      "id": "receiver-drop-total",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 8,
+        "last": 8
+      },
+      "source": "raw",
+      "value": 100
+    },
+    {
+      "field": "sender_drop_packet_delta",
+      "id": "sender-drop-zero",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_undecryptable_packet_delta",
+      "id": "receiver-undecryptable-zero",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    }
+  ],
+  "payloadDigest": "99ec9b1a20d350ce9e3364a7f6d2e6451aac7029b1a1fffff6c8038b7e28e40b",
+  "provenance": {
+    "capturedFromProvider": true,
+    "description": "Public srt_bistats loss, retransmission, receiver-drop, delivery, and configured TSBPD fields captured from exact provider-linked peers across a controlled sequence-hold boundary.",
+    "generator": "qualification/run_recovery_margin_capture.py",
+    "kind": "captured-provider-run",
+    "telemetryVersion": "0.1.0-alpha.0"
+  },
+  "providers": [
+    {
+      "buildProfile": "clean-release-shared-openssl",
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "role": "sender",
+      "version": "0.2.0-4-g271f832"
+    },
+    {
+      "buildProfile": "release-shared-openssl-generated-install",
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "role": "receiver",
+      "version": "1.5.5"
+    }
+  ],
+  "recordings": {
+    "analysis": {
+      "file": "analysis.json",
+      "schemaVersion": "1alpha1",
+      "sha256": "6a5035b8142d7a767002b696ca5e21d0094c70b4719698979b6f298905676c66"
+    },
+    "flowId": "incident-014-recovery-margin-robotweax-haivision",
+    "format": "robotweax-srt-telemetry-jsonl-v1",
+    "receiver": {
+      "file": "receiver.jsonl",
+      "records": 9,
+      "sha256": "a3a9e762ce96bb3d9895af30a8ab3c7512107af16a5fd46d02069341c6ba2f12"
+    },
+    "schemaVersion": "1alpha1",
+    "sender": {
+      "file": "sender.jsonl",
+      "records": 9,
+      "sha256": "5b5365f1fec23f15d2c13a02f270bbd0e35faeaef50bb8d8a22a0e09bb1315c0"
+    }
+  },
+  "schemaVersion": "1alpha1",
+  "topology": "Robotweax SRT sender through a deterministic sequence-hold proxy to a Haivision SRT receiver",
+  "transportProfile": {
+    "addressFamily": "ipv4",
+    "api": "message",
+    "encryption": "none",
+    "fec": "none",
+    "group": "none",
+    "mode": "live"
+  }
+}

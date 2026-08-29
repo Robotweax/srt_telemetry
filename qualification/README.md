@@ -283,6 +283,32 @@ Retained captures:
 - [2026-08-29 Robotweax sender through reduced egress capacity](../testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/manifest.json)
 - [2026-08-29 Haivision sender through reduced egress capacity](../testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/manifest.json)
 
+## Receiver recovery-margin capture runner
+
+`qualification/run_recovery_margin_capture.py` places a deterministic
+sequence-hold UDP boundary between the exact provider-linked peers. The default
+experiment retains the first 100 original DATA sequences and every observed
+repeat while the sender emits 1,100 messages and the receiver completes after
+1,000. The proxy releases its retained packet copies only after receiver
+delivery has completed.
+
+The command accepts the same exact Robotweax/Haivision peer, library, version,
+revision, build-profile, direction, telemetry-revision, JSONL, and output
+arguments as the bandwidth runner. It additionally accepts
+`--sender-messages`, `--receiver-messages`, and `--held-originals`; their
+difference must match the held-original count.
+
+The capture requires paired loss and retransmission, receiver drops that
+exactly account for the unique delivery gap, a positive public receiver TSBPD
+delay, and subsequent recovery. It does not treat that evidence as proof that
+increasing latency is the correct remediation. Belated-arrival counters and a
+larger-latency counterfactual remain explicitly unavailable.
+
+Retained captures:
+
+- [2026-08-29 Robotweax sender to Haivision receiver recovery-margin exhaustion](../testdata/golden-incidents/incident-014-recovery-margin-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender to Robotweax receiver recovery-margin exhaustion](../testdata/golden-incidents/incident-015-recovery-margin-haivision-robotweax/manifest.json)
+
 ## Operator comparison
 
 `tools/operator_evaluation.py` prepares and runs the counterbalanced comparison

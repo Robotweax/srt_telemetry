@@ -27,28 +27,30 @@
   directions; common incident sampling selected for the coarse 50 ms question,
   exact within-window adjacency and a release cost gate open;
 - constant- and burst-loss captured cross-provider gap candidates complete in
-  both sender directions; and
+  both sender directions;
 - receiver-pause/backpressure and reduced-egress-capacity public-gauge
   candidates complete in both provider directions with lossless recovery and
   no Robotweax extension required for the bounded endpoint-localization
   questions;
-  flight-tail/profile coverage and the remaining initial corpus open.
+- receiver recovery-margin public-counter candidates complete in both provider
+  directions with an exact drop/delivery-gap accounting and no prescriptive
+  latency claim or Robotweax extension; and
+- flight-tail/profile coverage and the remaining initial corpus open.
 
 ## Phase 2: diagnostic proof — current
 
 - deterministic local incident timeline candidate complete;
-- four explainable hypothesis candidates complete, including a public-API RTT
+- five explainable hypothesis candidates complete, including a public-API RTT
   step with warm-baseline thresholds and observed recovery;
 - explicit insufficient-evidence outcome complete;
 - synthetic correlation plus direct provider-linked recorder-to-analyzer
-  candidates complete for constant loss, an RTT step, receiver pause, and
-  bandwidth reduction with sender queue growth in both cross-provider sender
-  directions; real cross-endpoint clock-quality
-  contract open; and
+  candidates complete for constant loss, an RTT step, receiver pause,
+  bandwidth reduction with sender queue growth, and receiver recovery-margin
+  exhaustion in both cross-provider sender directions; real cross-endpoint
+  clock-quality contract open; and
 - versioned, counterbalanced raw-statistics versus incident-report evaluation
-  harness complete; automated coverage of four failure classes complete;
-  internal rehearsal, design-partner observations, and coverage of at least
-  five real or representative failure classes open.
+  harness complete; automated coverage of five failure classes complete;
+  internal rehearsal and design-partner observations open.
 
 ## Phase 3: pipeline pilot
 

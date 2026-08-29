@@ -2,12 +2,13 @@
 
 `tools/analyze_incident.py` is the first deterministic diagnostic proof for the
 SDK. It correlates paired sender and receiver evidence into a machine-readable
-timeline and evaluates four bounded hypotheses:
+timeline and evaluates five bounded hypotheses:
 
 - recoverable sender-to-receiver transmission-path loss;
 - a recoverable transmission-path RTT step;
-- sender-side pressure; and
-- receiver-side pressure.
+- sender-side pressure;
+- receiver-side pressure; and
+- exhausted receiver recovery/playout margin.
 
 Each hypothesis reports supporting, contradictory, and missing evidence. The
 analyzer selects path loss only when aligned sender loss, receiver loss, and
@@ -26,6 +27,12 @@ baselines. Sender pressure is supported when sender-buffer growth spans at
 least two samples, overlaps flight growth, the receiver buffer remains below
 its pressure threshold throughout that overlap, and both sender gauges later
 recover.
+Recovery-margin exhaustion is supported only when paired loss and sender
+retransmission precede or coincide with receiver drops, those drops exactly
+account for the unique sender/receiver delivery gap, a positive configured
+receiver TSBPD delay is available, and the counters subsequently recover. This
+localizes the failure boundary without claiming that another latency setting
+would have prevented it.
 Supported receiver pressure is a competing endpoint explanation and therefore
 prevents an overlapping RTT step from being selected as a path-delay incident.
 An RTT estimator may remain above its threshold for a bounded sample after the
@@ -58,9 +65,10 @@ clock-synchronization quality.
 The provider-linked incident peer now supplies this format directly. Every
 successful public-adapter sample is pushed into an endpoint-local bounded
 recorder; the `DONE` barrier atomically publishes the JSONL snapshot. Retained
-Incidents 006 through 013 prove this path for constant loss, an RTT step,
-receiver pause, and bandwidth reduction with sender queue growth using exact
-Robotweax and Haivision libraries in both sender directions. The pressure
+Incidents 006 through 015 prove this path for constant loss, an RTT step,
+receiver pause, bandwidth reduction with sender queue growth, and receiver
+recovery-margin exhaustion using exact Robotweax and Haivision libraries in
+both sender directions. The pressure
 captures additionally consume public buffer and flight gauges from the same
 recorder path. Their CSV views remain an
 independent delta-contract replay rather than an input to the retained JSONL
@@ -85,7 +93,8 @@ This is a local, rule-based candidate rather than a production RCA engine. It
 does not identify an exact failing network hop, infer one-way delay or its
 direction from round-trip measurements, infer missing endpoint metrics or exact
 application scheduling or an exact egress-capacity restriction from public SRT
-buffer gauges, resolve sequence
+buffer gauges, infer a sufficient latency setting without a counterfactual,
+recover unavailable belated-arrival counters, resolve sequence
 adjacency inside a sample window, or establish the product's operator-value
 claim. Those limits are emitted as non-claims or missing evidence rather than
 hidden behind a generic score.

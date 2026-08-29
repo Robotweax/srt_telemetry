@@ -14,15 +14,16 @@ partner use `design-partner`.
 ## Study design
 
 The packet requires at least two retained JSONL incidents. The automated packet
-uses constant loss, an RTT step, receiver pause/backpressure, and bandwidth
-reduction with sender queue growth in both provider directions. It creates two
+uses constant loss, an RTT step, receiver pause/backpressure, bandwidth
+reduction with sender queue growth, and receiver recovery-margin exhaustion in
+both provider directions. It creates two
 counterbalanced arms by alternating the
 condition and reversing it for every scenario in the other arm:
 
-| Arm | Task 1 | Task 2 | Task 3 | Task 4 | Task 5 | Task 6 |
-| --- | --- | --- | --- | --- | --- | --- |
-| A | Loss, raw | RTT, report | Robotweax→Haivision receiver pressure, raw | Haivision→Robotweax receiver pressure, report | Robotweax→Haivision sender pressure, raw | Haivision→Robotweax sender pressure, report |
-| B | Loss, report | RTT, raw | Robotweax→Haivision receiver pressure, report | Haivision→Robotweax receiver pressure, raw | Robotweax→Haivision sender pressure, report | Haivision→Robotweax sender pressure, raw |
+| Arm | Task 1 | Task 2 | Task 3 | Task 4 | Task 5 | Task 6 | Task 7 | Task 8 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A | Loss, raw | RTT, report | Robotweax→Haivision receiver pressure, raw | Haivision→Robotweax receiver pressure, report | Robotweax→Haivision sender pressure, raw | Haivision→Robotweax sender pressure, report | Robotweax→Haivision recovery margin, raw | Haivision→Robotweax recovery margin, report |
+| B | Loss, report | RTT, raw | Robotweax→Haivision receiver pressure, report | Haivision→Robotweax receiver pressure, raw | Robotweax→Haivision sender pressure, report | Haivision→Robotweax sender pressure, raw | Robotweax→Haivision recovery margin, report | Haivision→Robotweax recovery margin, raw |
 
 Each participant sees an incident only once. Across the arms, every scenario
 appears under both conditions and both condition orders occur. Automatic arm
@@ -61,6 +62,8 @@ python3 tools/operator_evaluation.py prepare \
   --manifest testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/manifest.json \
   --manifest testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/manifest.json \
   --manifest testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/manifest.json \
+  --manifest testdata/golden-incidents/incident-014-recovery-margin-robotweax-haivision/manifest.json \
+  --manifest testdata/golden-incidents/incident-015-recovery-margin-haivision-robotweax/manifest.json \
   --output-dir /new/operator-evaluation-packet
 ```
 
@@ -112,10 +115,12 @@ Claim status is deliberately bounded:
 - satisfying the machine checks only makes a result eligible for human gate
   review. It never automatically proves the product claim.
 
-The current automated packet uses Incidents 006, 008, and 010 through 013. It
+The current automated packet uses Incidents 006, 008, and 010 through 015. It
 validates the counterbalanced method across constant-loss, RTT-step,
-receiver-pressure, and sender-/egress-pressure cases, but covers only four of
-the five real or representative failure classes required by strategy Gate B.
+receiver-pressure, sender-/egress-pressure, and receiver recovery-margin cases.
+It covers the five real or representative failure classes required by strategy
+Gate B, but the responses remain synthetic harness fixtures and cannot close
+the human evidence gate.
 Incidents 007 and 009 separately retain the reverse provider direction for the
 first two classes.
 

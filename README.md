@@ -21,7 +21,7 @@ lifecycle for both providers. Full field, controlled performance, and
 deployment-profile qualification remain open. The project intentionally does
 not yet contain a production agent, backend, dashboard, alert engine, or
 production RCA engine. The local analyzer turns paired evidence into a
-deterministic timeline, four bounded hypotheses, and an explicit
+deterministic timeline, five bounded hypotheses, and an explicit
 insufficient-evidence outcome. Exact provider-linked peers now record real
 adapter samples directly through the bounded recorder and JSONL exporter;
 retained constant-loss and RTT-step captures complete that path through the
@@ -35,8 +35,12 @@ queue growth, public sender-buffer/flight pressure, a receiver buffer below its
 conservative pressure threshold, lossless recovery, and a supported sender
 endpoint hypothesis. Public statistics do not identify the exact restriction,
 but no Robotweax-only extension is required for the bounded localization
-question. The first deterministic constant-loss fixture preserves
-paired sender/receiver evidence and explicit
+question. Paired sequence-hold captures now add the fifth candidate: public
+loss and retransmission followed by receiver drops that exactly account for the unique
+delivery gap under a configured TSBPD delay. The diagnosis is deliberately
+bounded to an exhausted recovery/playout margin and does not claim that a
+larger latency setting is the correct remediation. The first deterministic
+constant-loss fixture preserves paired sender/receiver evidence and explicit
 non-claims for future diagnostic work. Captured constant- and burst-loss runs
 in both sender directions additionally retain exact public loss,
 retransmission, and recovery observations through a deterministic user-space
@@ -47,12 +51,14 @@ in one 50 ms window from the same aggregate loss distributed across eight
 windows in both cross-provider directions. Therefore no Robotweax-only signal
 is currently required for that coarse operator question. Exact within-window
 packet adjacency and a controlled release cost budget remain open.
-An executable, counterbalanced operator-evaluation candidate now compares six
+An executable, counterbalanced operator-evaluation candidate now compares eight
 real cross-provider recordings as inference-free normalized public SRT
 statistics versus deterministic incident reports. It records pseudonymous
 timing, accuracy, unsupported hypotheses, missing-evidence recognition, and
 confidence. The automated comparison now exercises constant loss, an RTT step,
-receiver pause/backpressure, and bandwidth reduction with sender queue growth.
+receiver pause/backpressure, bandwidth reduction with sender queue growth, and
+receiver recovery-margin exhaustion. This closes the automated five-class
+coverage check, but not the human diagnostic-value gate.
 Automated answers are explicitly harness-only;
 no design-partner or diagnostic-value product claim has been made.
 
@@ -185,5 +191,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Haivision sender to paused Robotweax receiver](testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/README.md)
 - [Robotweax sender through reduced egress capacity](testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/README.md)
 - [Haivision sender through reduced egress capacity](testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/README.md)
+- [Robotweax sender to Haivision receiver recovery-margin exhaustion](testdata/golden-incidents/incident-014-recovery-margin-robotweax-haivision/README.md)
+- [Haivision sender to Robotweax receiver recovery-margin exhaustion](testdata/golden-incidents/incident-015-recovery-margin-haivision-robotweax/README.md)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)

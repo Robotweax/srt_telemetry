@@ -169,6 +169,23 @@ Robotweax-only signal is selected for the bounded localization question.
 - [2026-08-29 Robotweax sender through reduced egress capacity](../../testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/manifest.json)
 - [2026-08-29 Haivision sender through reduced egress capacity](../../testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/manifest.json)
 
+## Receiver recovery-margin field candidate evidence
+
+A monotonic user-space UDP proxy retained the first 100 original DATA sequences
+and every observed repeat until each receiver had completed 1,000 of 1,100
+offered messages. Both directions expose paired sender/receiver loss, sender
+retransmission, exactly 100 receiver drops, and a positive configured receiver
+TSBPD delay. Across warm, active, and recovery transfers, 1,500 unique packets
+were sent and 1,400 received; receiver drops exactly account for the gap.
+
+Common public fields therefore support a bounded receiver recovery/playout
+margin diagnosis. They do not expose belated-arrival counters or prove that a
+larger latency setting would prevent the incident. No Robotweax-only signal is
+selected for that bounded question.
+
+- [2026-08-29 Robotweax sender to Haivision receiver recovery-margin exhaustion](../../testdata/golden-incidents/incident-014-recovery-margin-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender to Robotweax receiver recovery-margin exhaustion](../../testdata/golden-incidents/incident-015-recovery-margin-haivision-robotweax/manifest.json)
+
 ## Remaining release qualification
 
 - live caller-to-listener and listener-to-caller sampling for the remaining
