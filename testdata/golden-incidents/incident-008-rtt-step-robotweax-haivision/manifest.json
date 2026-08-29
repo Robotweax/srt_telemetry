@@ -1,0 +1,279 @@
+{
+  "capture": {
+    "artifacts": [
+      {
+        "peerExecutableSha256": "089bd983139466e8b99b637981e91e404a22b84f528c0dc10db02acf5daf431f",
+        "providerLibrarySha256": "1377a61d159856f7785bcc6c6fd9af74d1f11e78804c8e6db7b8bc6cb8e95f6a",
+        "role": "sender"
+      },
+      {
+        "peerExecutableSha256": "8b6caada2815ffff067e83461b51f59265ce8d0d1b9d51bae859c5dce8225661",
+        "providerLibrarySha256": "f5db9ca66be4d681c3271664c6f25ae269a7ad62ae75c815e0fb521f991cff04",
+        "role": "receiver"
+      }
+    ],
+    "delayProxy": {
+      "clock": "time.monotonic_ns",
+      "messagesPerInterval": 1000,
+      "oneWayDelayMillis": 25,
+      "payloadBytesPerMessage": 1316,
+      "settleMillis": 500,
+      "stages": [
+        {
+          "active": false,
+          "delayedDownstreamPackets": 0,
+          "delayedReversePackets": 0,
+          "downstreamPackets": 1005,
+          "maximumQueuedPackets": 0,
+          "reversePackets": 18,
+          "sampleIndex": 1
+        },
+        {
+          "active": false,
+          "delayedDownstreamPackets": 0,
+          "delayedReversePackets": 0,
+          "downstreamPackets": 1005,
+          "maximumQueuedPackets": 0,
+          "reversePackets": 19,
+          "sampleIndex": 2
+        },
+        {
+          "active": true,
+          "delayedDownstreamPackets": 1784,
+          "delayedReversePackets": 32,
+          "downstreamPackets": 1784,
+          "maximumQueuedPackets": 634,
+          "reversePackets": 32,
+          "sampleIndex": 3
+        },
+        {
+          "active": true,
+          "delayedDownstreamPackets": 1005,
+          "delayedReversePackets": 18,
+          "downstreamPackets": 1005,
+          "maximumQueuedPackets": 727,
+          "reversePackets": 18,
+          "sampleIndex": 4
+        },
+        {
+          "active": true,
+          "delayedDownstreamPackets": 1005,
+          "delayedReversePackets": 18,
+          "downstreamPackets": 1005,
+          "maximumQueuedPackets": 719,
+          "reversePackets": 18,
+          "sampleIndex": 5
+        },
+        {
+          "active": true,
+          "delayedDownstreamPackets": 1005,
+          "delayedReversePackets": 18,
+          "downstreamPackets": 1005,
+          "maximumQueuedPackets": 709,
+          "reversePackets": 18,
+          "sampleIndex": 6
+        },
+        {
+          "active": false,
+          "delayedDownstreamPackets": 0,
+          "delayedReversePackets": 0,
+          "downstreamPackets": 1004,
+          "maximumQueuedPackets": 0,
+          "reversePackets": 17,
+          "sampleIndex": 7
+        },
+        {
+          "active": false,
+          "delayedDownstreamPackets": 0,
+          "delayedReversePackets": 0,
+          "downstreamPackets": 1006,
+          "maximumQueuedPackets": 0,
+          "reversePackets": 19,
+          "sampleIndex": 8
+        },
+        {
+          "active": false,
+          "delayedDownstreamPackets": 0,
+          "delayedReversePackets": 0,
+          "downstreamPackets": 1006,
+          "maximumQueuedPackets": 0,
+          "reversePackets": 18,
+          "sampleIndex": 9
+        },
+        {
+          "active": false,
+          "delayedDownstreamPackets": 0,
+          "delayedReversePackets": 0,
+          "downstreamPackets": 1005,
+          "maximumQueuedPackets": 0,
+          "reversePackets": 18,
+          "sampleIndex": 10
+        },
+        {
+          "active": false,
+          "delayedDownstreamPackets": 0,
+          "delayedReversePackets": 0,
+          "downstreamPackets": 1005,
+          "maximumQueuedPackets": 0,
+          "reversePackets": 18,
+          "sampleIndex": 11
+        },
+        {
+          "active": false,
+          "delayedDownstreamPackets": 0,
+          "delayedReversePackets": 0,
+          "downstreamPackets": 1004,
+          "maximumQueuedPackets": 0,
+          "reversePackets": 18,
+          "sampleIndex": 12
+        }
+      ]
+    },
+    "environment": {
+      "machine": "arm64",
+      "platform": "macOS-26.5.2-arm64-arm-64bit",
+      "pythonVersion": "3.9.6",
+      "timingSource": "orchestrator-logical-one-second",
+      "transport": "ipv4-loopback-udp-proxy"
+    },
+    "generatedAt": "2026-08-29T12:16:19.516103+00:00",
+    "telemetryRevision": "cb6b531629ab0fd444d5e98646c2c41f0de94f12"
+  },
+  "contradictions": [
+    "Logical sample timestamps make rate columns deterministic but do not measure wall-clock throughput.",
+    "The SRT RTT estimator can smooth the injected boundary and delay the first observable step.",
+    "IPv4 loopback through a user-space proxy does not qualify physical network devices or wide-area paths.",
+    "Round-trip time does not identify one-way delay, its direction, or the exact failing hop.",
+    "The capture qualifies only the declared unencrypted Live/Message direction and exact provider artifacts."
+  ],
+  "dataset": {
+    "format": "robotweax-srt-telemetry-csv-v1",
+    "roles": [
+      "sender",
+      "receiver"
+    ],
+    "rows": 26,
+    "sampleIntervalNano": 1000000000,
+    "samplesFile": "samples.csv",
+    "sha256": "ed870f5b195ff5c9a5a376655b89aa2a877f497e57791da416bbb4755e86f6aa"
+  },
+  "direction": "sender-to-receiver",
+  "expectedEvidence": [
+    "paired sender and receiver RTT cross conservative warm-baseline thresholds",
+    "RTT returns below both thresholds after removal of the delay",
+    "loss, drop, and undecryptable deltas remain zero",
+    "transient retransmission without paired loss is treated as a delay response"
+  ],
+  "failureClass": "round-trip-time-step",
+  "faultPlan": {
+    "description": "Add 25 ms one-way delay in both directions during samples 3 through 6.",
+    "firstActiveSample": 3,
+    "lastActiveSample": 6,
+    "seed": 0
+  },
+  "incidentId": "incident-008-rtt-step-robotweax-haivision",
+  "machineExpectations": [
+    {
+      "field": "rtt_seconds",
+      "id": "sender-rtt-elevated",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 4,
+        "last": 7
+      },
+      "source": "raw",
+      "value": 0.020146
+    },
+    {
+      "field": "rtt_seconds",
+      "id": "sender-rtt-recovered",
+      "operator": "less-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 8,
+        "last": 8
+      },
+      "source": "raw",
+      "value": 0.020146
+    },
+    {
+      "field": "rtt_seconds",
+      "id": "receiver-rtt-elevated",
+      "operator": "greater-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 3,
+        "last": 7
+      },
+      "source": "raw",
+      "value": 0.020375
+    },
+    {
+      "field": "rtt_seconds",
+      "id": "receiver-rtt-recovered",
+      "operator": "less-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 8,
+        "last": 8
+      },
+      "source": "raw",
+      "value": 0.020375
+    }
+  ],
+  "payloadDigest": "9746e40973b2e5c17165ed73e86f644e42aa22b54cd776abb28e55eaa83feaac",
+  "provenance": {
+    "capturedFromProvider": true,
+    "description": "Public srt_bistats RTT observations captured from exact provider-linked peers through a monotonic-clock delay boundary.",
+    "generator": "qualification/run_rtt_step_capture.py",
+    "kind": "captured-provider-run",
+    "telemetryVersion": "0.1.0-alpha.0"
+  },
+  "providers": [
+    {
+      "buildProfile": "clean-release-shared-openssl",
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "role": "sender",
+      "version": "0.2.0-4-g271f832"
+    },
+    {
+      "buildProfile": "release-shared-openssl-generated-install",
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "role": "receiver",
+      "version": "1.5.5"
+    }
+  ],
+  "recordings": {
+    "analysis": {
+      "file": "analysis.json",
+      "schemaVersion": "1alpha1",
+      "sha256": "1b0add7020bc9f21998e53b911a4894e30c0b8a336db64a0d1e7a7975f204892"
+    },
+    "flowId": "incident-008-rtt-step-robotweax-haivision",
+    "format": "robotweax-srt-telemetry-jsonl-v1",
+    "receiver": {
+      "file": "receiver.jsonl",
+      "records": 13,
+      "sha256": "32cb034cf8d06e3a7f710d9534806768b2271741fac2b1fc3522394552332451"
+    },
+    "schemaVersion": "1alpha1",
+    "sender": {
+      "file": "sender.jsonl",
+      "records": 13,
+      "sha256": "364db181a57d3c0fb55667c4daca07a8669f44027fa1489332f12f99226bed25"
+    }
+  },
+  "schemaVersion": "1alpha1",
+  "topology": "Robotweax SRT sender through a deterministic UDP delay proxy to a Haivision SRT receiver",
+  "transportProfile": {
+    "addressFamily": "ipv4",
+    "api": "message",
+    "encryption": "none",
+    "fec": "none",
+    "group": "none",
+    "mode": "live"
+  }
+}

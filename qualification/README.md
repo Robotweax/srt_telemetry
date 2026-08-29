@@ -203,6 +203,11 @@ The common public SRT RTT fields answer this round-trip operator question for
 both providers; they do not identify one-way delay, its direction, or a failing
 hop. No Robotweax-only extension is required for this candidate.
 
+Retained captures:
+
+- [2026-08-29 Robotweax sender to Haivision receiver RTT step](../testdata/golden-incidents/incident-008-rtt-step-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender to Robotweax receiver RTT step](../testdata/golden-incidents/incident-009-rtt-step-haivision-robotweax/manifest.json)
+
 ## Operator comparison
 
 `tools/operator_evaluation.py` prepares and runs the counterbalanced comparison

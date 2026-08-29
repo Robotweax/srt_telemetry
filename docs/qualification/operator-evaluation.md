@@ -13,8 +13,9 @@ partner use `design-partner`.
 
 ## Study design
 
-The initial packet requires exactly two retained JSONL incidents. It creates
-two counterbalanced arms:
+The initial packet requires exactly two retained JSONL incidents. The automated
+packet uses one constant-loss and one RTT-step scenario so the harness
+exercises multiple failure classes. It creates two counterbalanced arms:
 
 | Arm | First task | Second task |
 | --- | --- | --- |
@@ -50,9 +51,9 @@ session artifact is retained in the repository.
 
 ```sh
 python3 tools/operator_evaluation.py prepare \
-  --study-id constant-loss-comparison-candidate \
+  --study-id loss-rtt-comparison-candidate \
   --manifest testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json \
-  --manifest testdata/golden-incidents/incident-007-jsonl-constant-loss-haivision-robotweax/manifest.json \
+  --manifest testdata/golden-incidents/incident-008-rtt-step-robotweax-haivision/manifest.json \
   --output-dir /new/operator-evaluation-packet
 ```
 
@@ -104,9 +105,10 @@ Claim status is deliberately bounded:
 - satisfying the machine checks only makes a result eligible for human gate
   review. It never automatically proves the product claim.
 
-The current incidents 006 and 007 are both constant-loss cases. They validate
-the counterbalanced method and both provider directions, but cover only one of
-the five real or representative failure classes required by strategy Gate B.
+The current automated packet uses Incidents 006 and 008. It validates the
+counterbalanced method across constant-loss and RTT-step cases, but covers only
+two of the five real or representative failure classes required by strategy
+Gate B. Incidents 007 and 009 separately retain the reverse provider direction.
 
 ## Versioned contracts
 

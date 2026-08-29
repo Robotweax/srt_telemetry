@@ -23,12 +23,13 @@ not yet contain a production agent, backend, dashboard, alert engine, or
 production RCA engine. The local analyzer turns paired evidence into a
 deterministic timeline, four bounded hypotheses, and an explicit
 insufficient-evidence outcome. Exact provider-linked peers now record real
-adapter samples directly through the bounded recorder and JSONL exporter; two
-retained captures complete that path through the analyzer in both
-cross-provider sender directions. The first deterministic constant-loss
-fixture preserves paired sender/receiver evidence and explicit non-claims for
-future diagnostic work. Captured constant- and burst-loss runs in both sender
-directions additionally retain exact public loss, retransmission, and recovery
+adapter samples directly through the bounded recorder and JSONL exporter;
+retained constant-loss and RTT-step captures complete that path through the
+analyzer in both cross-provider sender directions. The first deterministic
+constant-loss fixture preserves paired sender/receiver evidence and explicit
+non-claims for future diagnostic work. Captured constant- and burst-loss runs
+in both sender directions additionally retain exact public loss,
+retransmission, and recovery
 observations through a deterministic user-space fault boundary. The captures
 qualify exposed gaps; finite flight-tail recovery without later DATA remains
 open. A retained 20 Hz incident-mode experiment now distinguishes eight losses
@@ -40,7 +41,8 @@ An executable, counterbalanced operator-evaluation candidate now compares the
 two real cross-provider recordings as inference-free normalized public SRT
 statistics versus deterministic incident reports. It records pseudonymous
 timing, accuracy, unsupported hypotheses, missing-evidence recognition, and
-confidence. Automated answers are explicitly harness-only; no design-partner
+confidence. The automated comparison now exercises constant loss and an RTT
+step. Automated answers are explicitly harness-only; no design-partner
 or diagnostic-value product claim has been made.
 
 The first product claim to prove is:

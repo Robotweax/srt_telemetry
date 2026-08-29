@@ -24,11 +24,30 @@ def load_analyzer(path: Path):
     return module
 
 
-def validate_loss_result(result: dict, expected_format: str) -> None:
+HYPOTHESIS_IDS = {
+    "transmission-path-loss-with-recovery",
+    "transmission-path-rtt-step-with-recovery",
+    "sender-side-pressure",
+    "receiver-side-pressure",
+}
+
+
+def validate_common_result(result: dict, expected_format: str) -> None:
     if result.get("schemaVersion") != "1alpha1" or result.get("status") != "pass":
         fail("analysis result identity is invalid")
     if result["source"]["format"] != expected_format:
         fail(f"analysis source format mismatch: {result['source']['format']}")
+    hypotheses = result["hypotheses"]
+    if len(hypotheses) != 4 or {item["id"] for item in hypotheses} != HYPOTHESIS_IDS:
+        fail("analysis does not contain the four required hypotheses")
+    if not all(item["missingEvidence"] for item in hypotheses):
+        fail("every hypothesis must expose its missing evidence")
+    if not result["nonClaims"]:
+        fail("analysis must retain explicit non-claims")
+
+
+def validate_loss_result(result: dict, expected_format: str) -> None:
+    validate_common_result(result, expected_format)
     timeline = result["timeline"]
     expected_timeline = {
         "sampleCount": 9,
@@ -39,14 +58,6 @@ def validate_loss_result(result: dict, expected_format: str) -> None:
     for field, expected in expected_timeline.items():
         if timeline[field] != expected:
             fail(f"timeline {field} expected {expected}, got {timeline[field]}")
-    hypotheses = result["hypotheses"]
-    if len(hypotheses) != 4 or {item["id"] for item in hypotheses} != {
-        "transmission-path-loss-with-recovery",
-        "transmission-path-rtt-step-with-recovery",
-        "sender-side-pressure",
-        "receiver-side-pressure",
-    }:
-        fail("analysis does not contain the four required hypotheses")
     if result["selectedHypothesis"] != {
         "id": "transmission-path-loss-with-recovery",
         "assessment": "supported",
@@ -56,10 +67,55 @@ def validate_loss_result(result: dict, expected_format: str) -> None:
         ),
     }:
         fail(f"unexpected selected hypothesis: {result['selectedHypothesis']}")
-    if not all(item["missingEvidence"] for item in hypotheses):
-        fail("every hypothesis must expose its missing evidence")
-    if not result["nonClaims"]:
-        fail("analysis must retain explicit non-claims")
+
+
+def validate_rtt_result(result: dict, expected_format: str) -> None:
+    validate_common_result(result, expected_format)
+    expected_timeline = {
+        "sampleCount": 13,
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 7,
+        "recoverySample": 8,
+    }
+    for field, expected in expected_timeline.items():
+        actual = result["timeline"][field]
+        if actual != expected:
+            fail(f"RTT timeline {field} expected {expected}, got {actual}")
+    if result["selectedHypothesis"] != {
+        "id": "transmission-path-rtt-step-with-recovery",
+        "assessment": "supported",
+        "rationale": (
+            "Paired sender and receiver RTT cross conservative warm-baseline "
+            "thresholds and recover without loss or endpoint-pressure evidence."
+        ),
+    }:
+        fail(f"unexpected RTT selected hypothesis: {result['selectedHypothesis']}")
+    rtt_hypothesis = next(
+        item
+        for item in result["hypotheses"]
+        if item["id"] == "transmission-path-rtt-step-with-recovery"
+    )
+    support_ids = {item["id"] for item in rtt_hypothesis["supportingEvidence"]}
+    if rtt_hypothesis["assessment"] != "supported" or not {
+        "paired-rtt-step",
+        "rtt-recovery-boundary",
+    }.issubset(support_ids):
+        fail(f"retained RTT evidence is incomplete: {rtt_hypothesis}")
+    totals = result["totals"]
+    if totals["senderLossPackets"] != 0 or totals["receiverLossPackets"] != 0:
+        fail(f"retained RTT incident contains public loss: {totals}")
+    if (
+        totals["uniqueSentPackets"] != 12_000
+        or totals["uniqueReceivedPackets"] != 12_000
+        or totals["physicalSentPackets"] < totals["uniqueSentPackets"]
+    ):
+        fail(f"retained RTT delivery totals are invalid: {totals}")
+    baseline = result["baselines"]["rttSeconds"]
+    for role in ["sender", "receiver"]:
+        value = baseline[role]
+        threshold = baseline[f"{role}StepThreshold"]
+        if value is None or threshold is None or threshold <= value:
+            fail(f"retained RTT {role} baseline is invalid: {baseline}")
 
 
 def main() -> int:
@@ -75,10 +131,19 @@ def main() -> int:
     retained_recording_count = 0
     for manifest in arguments.manifest:
         manifest = manifest.resolve()
-        result = analyzer.build_analysis(analyzer.load_manifest(manifest))
-        validate_loss_result(result, "robotweax-srt-telemetry-csv-v1")
-        manifest_results.append(result)
         manifest_document = json.loads(manifest.read_text(encoding="utf-8"))
+        validators = {
+            "constant-packet-loss": validate_loss_result,
+            "burst-packet-loss": validate_loss_result,
+            "round-trip-time-step": validate_rtt_result,
+        }
+        failure_class = manifest_document["failureClass"]
+        if failure_class not in validators:
+            fail(f"test has no result validator for {failure_class}: {manifest}")
+        result_validator = validators[failure_class]
+        result = analyzer.build_analysis(analyzer.load_manifest(manifest))
+        result_validator(result, "robotweax-srt-telemetry-csv-v1")
+        manifest_results.append(result)
         recordings = manifest_document.get("recordings")
         if recordings is not None:
             retained_recording_count += 1
@@ -90,7 +155,7 @@ def main() -> int:
                     ]
                 )
             )
-            validate_loss_result(jsonl_result, "robotweax-srt-telemetry-jsonl-v1")
+            result_validator(jsonl_result, "robotweax-srt-telemetry-jsonl-v1")
             retained = json.loads(
                 (manifest.parent / recordings["analysis"]["file"]).read_text(
                     encoding="utf-8"
@@ -98,7 +163,13 @@ def main() -> int:
             )
             if jsonl_result != retained:
                 fail(f"retained JSONL analysis is not reproducible: {manifest}")
-            for field in ["timeline", "totals", "hypotheses", "selectedHypothesis"]:
+            for field in [
+                "timeline",
+                "baselines",
+                "totals",
+                "hypotheses",
+                "selectedHypothesis",
+            ]:
                 if jsonl_result[field] != result[field]:
                     fail(f"CSV and JSONL analysis disagree on {field}: {manifest}")
     expected = json.loads(arguments.expected_analysis.read_text(encoding="utf-8"))

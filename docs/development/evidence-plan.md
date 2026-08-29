@@ -33,8 +33,7 @@ IPv6, FEC, group, remaining-field, and multi-platform gates.
    provider directions; public interval counters quantify magnitude and
    recovery but do not independently identify within-interval adjacency;
 3. RTT step — deterministic public-API capture and diagnostic candidate
-   complete in both cross-provider directions; retained evidence pending; RTT
-   ramp open;
+   retained in both cross-provider directions; RTT ramp open;
 4. bandwidth reduction with queue growth;
 5. receiver pause/backpressure;
 6. hard path outage;
@@ -119,10 +118,9 @@ The first executable comparison harness now prepares hash-verified,
 counterbalanced raw-statistics and incident-report tasks from retained
 recordings, captures the two timing milestones and bounded operator answers,
 and emits paired aggregate statistics. Its automated end-to-end test uses only
-`synthetic-harness` responses and cannot satisfy this gate. The current retained
-operator packet still contains one constant-loss failure class, while strategy
-Gate B requires at least five real or representative failure classes. The next
-evidence step is to retain the calibrated RTT-step captures, add that distinct
-class to the harness, and then conduct an internal facilitation rehearsal
-followed by controlled design-partner sessions. None should use cross-host
-wall-clock ordering until clock quality is declared.
+`synthetic-harness` responses and cannot satisfy this gate. The updated
+automated packet contains constant loss and an RTT step, so the harness now
+exercises two of the five real or representative failure classes required by
+strategy Gate B. The next evidence step is an internal facilitation rehearsal
+followed by controlled design-partner sessions and additional fault classes.
+None should use cross-host wall-clock ordering until clock quality is declared.

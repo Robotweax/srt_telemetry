@@ -24,3 +24,5 @@ Current incidents:
 - [Incident 005: captured Haivision-to-Robotweax burst loss](incident-005-captured-burst-loss-haivision-robotweax/README.md)
 - [Incident 006: real Robotweax-to-Haivision JSONL analysis](incident-006-jsonl-constant-loss-robotweax-haivision/README.md)
 - [Incident 007: real Haivision-to-Robotweax JSONL analysis](incident-007-jsonl-constant-loss-haivision-robotweax/README.md)
+- [Incident 008: Robotweax-to-Haivision RTT step](incident-008-rtt-step-robotweax-haivision/README.md)
+- [Incident 009: Haivision-to-Robotweax RTT step](incident-009-rtt-step-haivision-robotweax/README.md)

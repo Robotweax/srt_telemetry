@@ -139,7 +139,7 @@ def main() -> int:
             str(arguments.tool.resolve()),
             "prepare",
             "--study-id",
-            "constant-loss-comparison-candidate",
+            "loss-rtt-comparison-candidate",
             "--analyzer",
             str(arguments.analyzer.resolve()),
             "--output-dir",
@@ -232,8 +232,14 @@ def main() -> int:
         if summary["claimAssessment"]["status"] != "harness-only":
             fail("synthetic sessions were mistaken for product evidence")
         if summary["claimAssessment"]["eligibleForHumanGateReview"]:
-            fail("single-class synthetic fixtures must not close the diagnostic gate")
-        if summary["distinctFailureClasses"] != ["constant-packet-loss"]:
+            fail("synthetic harness fixtures must not close the diagnostic gate")
+        expected_failure_classes = sorted(
+            {
+                read_json(manifest.resolve())["failureClass"]
+                for manifest in arguments.manifest
+            }
+        )
+        if summary["distinctFailureClasses"] != expected_failure_classes:
             fail("summary failure-class accounting is incorrect")
         comparison = summary["comparison"]
         if comparison["medianRawMinusReportTimeToFailureDomainMillis"] <= 0:

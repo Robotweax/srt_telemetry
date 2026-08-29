@@ -44,9 +44,10 @@ clock-synchronization quality.
 The provider-linked incident peer now supplies this format directly. Every
 successful public-adapter sample is pushed into an endpoint-local bounded
 recorder; the `DONE` barrier atomically publishes the JSONL snapshot. Retained
-Incidents 006 and 007 prove this path with exact Robotweax and Haivision
-libraries in both sender directions. Their CSV views remain an independent
-delta-contract replay rather than an input to the retained JSONL analyses.
+Incidents 006 through 009 prove this path for constant loss and an RTT step
+with exact Robotweax and Haivision libraries in both sender directions. Their
+CSV views remain an independent delta-contract replay rather than an input to
+the retained JSONL analyses.
 
 `--output` refuses to overwrite an existing file. Without it, formatted JSON is
 written to standard output; `--compact` produces one compact line. The result

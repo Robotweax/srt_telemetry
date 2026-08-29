@@ -94,3 +94,11 @@ both directions. Public-adapter samples are recorded inside each peer, exported
 as JSONL, correlated by a shared flow identity, and analyzed without translating
 the retained JSONL through CSV. The independent CSV replay and direct JSONL
 analysis must agree on timeline, totals, hypotheses, and selection.
+
+Incidents 008 and 009 apply a monotonic user-space delay boundary in both
+provider directions. A 25 ms one-way delay in both paths is active during
+samples 3 through 6; later traffic demonstrates the smoothed RTT-estimator
+recovery. Both public endpoints cross conservative warm-baseline thresholds,
+all 12,000 application messages arrive, and public loss remains zero. The
+captures prove round-trip observability, not one-way delay, direction, or an
+exact failing hop.

@@ -241,6 +241,16 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     add_test(NAME robotweax_srt_telemetry_reverse_jsonl_captured_golden_incident_test
         COMMAND robotweax_srt_telemetry_golden_incident_test
             "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_JSONL_CAPTURED_GOLDEN_INCIDENT_DIR}/samples.csv")
+    set(ROBOTWEAX_SRT_TELEMETRY_RTT_STEP_GOLDEN_INCIDENT_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/testdata/golden-incidents/incident-008-rtt-step-robotweax-haivision")
+    add_test(NAME robotweax_srt_telemetry_rtt_step_golden_incident_test
+        COMMAND robotweax_srt_telemetry_golden_incident_test
+            "${ROBOTWEAX_SRT_TELEMETRY_RTT_STEP_GOLDEN_INCIDENT_DIR}/samples.csv")
+    set(ROBOTWEAX_SRT_TELEMETRY_REVERSE_RTT_STEP_GOLDEN_INCIDENT_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/testdata/golden-incidents/incident-009-rtt-step-haivision-robotweax")
+    add_test(NAME robotweax_srt_telemetry_reverse_rtt_step_golden_incident_test
+        COMMAND robotweax_srt_telemetry_golden_incident_test
+            "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_RTT_STEP_GOLDEN_INCIDENT_DIR}/samples.csv")
 
     add_executable(robotweax_srt_telemetry_generate_jsonl_incident
         sdk/tests/generate_jsonl_incident.cpp)
@@ -294,6 +304,14 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
                 "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_JSONL_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json")
+        add_test(NAME robotweax_srt_telemetry_rtt_step_golden_incident_manifest_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
+                "${ROBOTWEAX_SRT_TELEMETRY_RTT_STEP_GOLDEN_INCIDENT_DIR}/manifest.json")
+        add_test(NAME robotweax_srt_telemetry_reverse_rtt_step_golden_incident_manifest_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
+                "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_RTT_STEP_GOLDEN_INCIDENT_DIR}/manifest.json")
         add_test(NAME robotweax_srt_telemetry_loss_shape_observability_result_test
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_loss_shape_observability.py"
@@ -314,6 +332,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
                 --manifest "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
                 --manifest "${ROBOTWEAX_SRT_TELEMETRY_JSONL_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
                 --manifest "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_JSONL_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --manifest "${ROBOTWEAX_SRT_TELEMETRY_RTT_STEP_GOLDEN_INCIDENT_DIR}/manifest.json"
+                --manifest "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_RTT_STEP_GOLDEN_INCIDENT_DIR}/manifest.json"
                 --expected-analysis
                 "${ROBOTWEAX_SRT_TELEMETRY_GOLDEN_INCIDENT_DIR}/analysis.json")
         set_tests_properties(robotweax_srt_telemetry_incident_analysis_test
@@ -329,7 +349,7 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
                 --manifest
                 "${ROBOTWEAX_SRT_TELEMETRY_JSONL_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
                 --manifest
-                "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_JSONL_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json"
+                "${ROBOTWEAX_SRT_TELEMETRY_RTT_STEP_GOLDEN_INCIDENT_DIR}/manifest.json"
                 --work-dir "${CMAKE_CURRENT_BINARY_DIR}/operator-evaluation-fixtures")
         set_tests_properties(robotweax_srt_telemetry_operator_evaluation_test
             PROPERTIES

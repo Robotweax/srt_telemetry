@@ -37,11 +37,12 @@
   step with warm-baseline thresholds and observed recovery;
 - explicit insufficient-evidence outcome complete;
 - synthetic correlation plus direct provider-linked recorder-to-analyzer
-  candidates complete in both cross-provider sender directions; real
-  cross-endpoint clock-quality contract open; and
+  candidates complete for constant loss and an RTT step in both cross-provider
+  sender directions; real cross-endpoint clock-quality contract open; and
 - versioned, counterbalanced raw-statistics versus incident-report evaluation
-  harness complete; internal rehearsal, design-partner observations, and
-  coverage of at least five real or representative failure classes open.
+  harness complete; automated coverage of two failure classes complete;
+  internal rehearsal, design-partner observations, and coverage of at least
+  five real or representative failure classes open.
 
 ## Phase 3: pipeline pilot
 
