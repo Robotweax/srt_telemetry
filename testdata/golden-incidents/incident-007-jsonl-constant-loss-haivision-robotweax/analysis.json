@@ -1,0 +1,341 @@
+{
+  "hypotheses": [
+    {
+      "assessment": "supported",
+      "contradictoryEvidence": [],
+      "failureDomain": "sender-to-receiver transmission path",
+      "id": "transmission-path-loss-with-recovery",
+      "missingEvidence": [
+        "Packet sequence adjacency and the exact failing network hop are unavailable."
+      ],
+      "summary": "Paired loss and retransmission evidence localizes the deviation to the transmission path and shows recovery, but not the exact failing hop.",
+      "supportingEvidence": [
+        {
+          "id": "paired-loss",
+          "samples": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "summary": "Sender-learned and receiver-observed loss are positive in aligned samples."
+        },
+        {
+          "id": "recovery-traffic",
+          "samples": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "summary": "Retransmissions explain physical sends above unique sends."
+        },
+        {
+          "id": "recovery-boundary",
+          "samples": [
+            7
+          ],
+          "summary": "Loss and retransmission return to zero after the deviation window."
+        }
+      ]
+    },
+    {
+      "assessment": "insufficient-evidence",
+      "contradictoryEvidence": [],
+      "failureDomain": "sender endpoint",
+      "id": "sender-side-pressure",
+      "missingEvidence": [
+        "Sender buffer occupancy is unavailable.",
+        "Sender flight-size evidence is unavailable."
+      ],
+      "summary": "Sender pressure requires drop, queue, or flight-window evidence.",
+      "supportingEvidence": []
+    },
+    {
+      "assessment": "insufficient-evidence",
+      "contradictoryEvidence": [],
+      "failureDomain": "receiver endpoint",
+      "id": "receiver-side-pressure",
+      "missingEvidence": [
+        "Receiver buffer occupancy is unavailable."
+      ],
+      "summary": "Receiver pressure requires drop, buffer, or backpressure evidence.",
+      "supportingEvidence": []
+    }
+  ],
+  "kind": "robotweax-srt-local-incident-analysis",
+  "nonClaims": [
+    "The analysis does not identify the exact failing network hop.",
+    "The analysis does not infer unavailable endpoint-pressure metrics as zero."
+  ],
+  "schemaVersion": "1alpha1",
+  "selectedHypothesis": {
+    "assessment": "supported",
+    "id": "transmission-path-loss-with-recovery",
+    "rationale": "Aligned sender loss, receiver loss, and retransmission deltas identify recoverable path loss without sufficient endpoint-pressure evidence."
+  },
+  "source": {
+    "artifacts": [
+      {
+        "path": "sender.jsonl",
+        "sha256": "0cc801107e6794d58b9f3ca76b7987763317c40f714801c12d1414a8f849fc14"
+      },
+      {
+        "path": "receiver.jsonl",
+        "sha256": "a1fd3756793b5b951d21708d09cefeb24c5f773d53309244be80355096119881"
+      }
+    ],
+    "declaredFailureClass": null,
+    "flowId": "incident-007-jsonl-constant-loss-haivision-robotweax",
+    "format": "robotweax-srt-telemetry-jsonl-v1",
+    "incidentId": null,
+    "streams": [
+      {
+        "buildProfile": "release-shared-openssl-generated-install",
+        "overwrittenCount": 0,
+        "provider": "haivision-srt",
+        "providerRevision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+        "providerVersion": "1.5.5",
+        "recordCount": 9,
+        "role": "sender",
+        "streamId": "incident-007-jsonl-constant-loss-haivision-robotweax-sender"
+      },
+      {
+        "buildProfile": "clean-release-shared-openssl",
+        "overwrittenCount": 0,
+        "provider": "robotweax-srt",
+        "providerRevision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+        "providerVersion": "0.2.0-4-g271f832",
+        "recordCount": 9,
+        "role": "receiver",
+        "streamId": "incident-007-jsonl-constant-loss-haivision-robotweax-receiver"
+      }
+    ]
+  },
+  "status": "pass",
+  "timeline": {
+    "firstDeviationSample": 3,
+    "lastDeviationSample": 6,
+    "observations": [
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000001000000000,
+          "sender": 1800000001000000000
+        },
+        "qualityBoundaries": [
+          {
+            "flags": [
+              "first-sample"
+            ],
+            "role": "sender"
+          },
+          {
+            "flags": [
+              "first-sample"
+            ],
+            "role": "receiver"
+          }
+        ],
+        "sampleIndex": 0,
+        "signals": {
+          "physicalSentPackets": null,
+          "receiverDropPackets": null,
+          "receiverLossPackets": null,
+          "receiverUndecryptablePackets": null,
+          "retransmittedPackets": null,
+          "senderDropPackets": null,
+          "senderLossPackets": null,
+          "uniqueReceivedPackets": null,
+          "uniqueSentPackets": null
+        }
+      },
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000002000000000,
+          "sender": 1800000002000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 1,
+        "signals": {
+          "physicalSentPackets": 201,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderLossPackets": 0,
+          "uniqueReceivedPackets": 201,
+          "uniqueSentPackets": 201
+        }
+      },
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000003000000000,
+          "sender": 1800000003000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 2,
+        "signals": {
+          "physicalSentPackets": 201,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderLossPackets": 0,
+          "uniqueReceivedPackets": 201,
+          "uniqueSentPackets": 201
+        }
+      },
+      {
+        "deviating": true,
+        "observedAtUnixNano": {
+          "receiver": 1800000004000000000,
+          "sender": 1800000004000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 3,
+        "signals": {
+          "physicalSentPackets": 211,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 10,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 10,
+          "senderDropPackets": 0,
+          "senderLossPackets": 10,
+          "uniqueReceivedPackets": 201,
+          "uniqueSentPackets": 201
+        }
+      },
+      {
+        "deviating": true,
+        "observedAtUnixNano": {
+          "receiver": 1800000005000000000,
+          "sender": 1800000005000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 4,
+        "signals": {
+          "physicalSentPackets": 211,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 10,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 10,
+          "senderDropPackets": 0,
+          "senderLossPackets": 10,
+          "uniqueReceivedPackets": 201,
+          "uniqueSentPackets": 201
+        }
+      },
+      {
+        "deviating": true,
+        "observedAtUnixNano": {
+          "receiver": 1800000006000000000,
+          "sender": 1800000006000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 5,
+        "signals": {
+          "physicalSentPackets": 211,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 10,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 10,
+          "senderDropPackets": 0,
+          "senderLossPackets": 10,
+          "uniqueReceivedPackets": 201,
+          "uniqueSentPackets": 201
+        }
+      },
+      {
+        "deviating": true,
+        "observedAtUnixNano": {
+          "receiver": 1800000007000000000,
+          "sender": 1800000007000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 6,
+        "signals": {
+          "physicalSentPackets": 211,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 10,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 10,
+          "senderDropPackets": 0,
+          "senderLossPackets": 10,
+          "uniqueReceivedPackets": 201,
+          "uniqueSentPackets": 201
+        }
+      },
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000008000000000,
+          "sender": 1800000008000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 7,
+        "signals": {
+          "physicalSentPackets": 201,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderLossPackets": 0,
+          "uniqueReceivedPackets": 201,
+          "uniqueSentPackets": 201
+        }
+      },
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000009000000000,
+          "sender": 1800000009000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 8,
+        "signals": {
+          "physicalSentPackets": 201,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderLossPackets": 0,
+          "uniqueReceivedPackets": 201,
+          "uniqueSentPackets": 201
+        }
+      }
+    ],
+    "qualityBoundaries": [
+      {
+        "flags": [
+          "first-sample"
+        ],
+        "role": "sender",
+        "sampleIndex": 0
+      },
+      {
+        "flags": [
+          "first-sample"
+        ],
+        "role": "receiver",
+        "sampleIndex": 0
+      }
+    ],
+    "recoverySample": 7,
+    "sampleCount": 9
+  },
+  "totals": {
+    "physicalSentPackets": 1648,
+    "receiverLossPackets": 40,
+    "retransmittedPackets": 40,
+    "senderLossPackets": 40,
+    "uniqueReceivedPackets": 1608,
+    "uniqueSentPackets": 1608
+  }
+}

@@ -106,8 +106,9 @@ with raw SRT statistics for real or representative incidents. Measure:
 The first local analyzer candidate now establishes the machine-testable side of
 this gate: a paired timeline, three explicit hypotheses, supporting,
 contradictory, and missing evidence, plus an insufficient-evidence outcome. It
-passes the synthetic and four captured loss incidents and the SDK JSONL export
-path. This does not close the product claim. A design-partner comparison must
-still measure the operator outcomes above, and real cross-endpoint correlation
-must declare clock-synchronization quality before wall-clock ordering is used
-as RCA evidence.
+passes the synthetic and captured loss incidents. Two retained cross-provider
+runs now also prove the real public-adapter → recorder → JSONL → analyzer path
+in both directions. This does not close the product claim. A design-partner
+comparison must still measure the operator outcomes above, and real
+cross-endpoint correlation must declare clock-synchronization quality before
+wall-clock ordering is used as RCA evidence.

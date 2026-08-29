@@ -83,6 +83,16 @@ profiles and that remaining boundary pass.
 - [2026-08-28 captured Robotweax-to-Haivision constant loss](../../testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/manifest.json)
 - [2026-08-28 captured Haivision-to-Robotweax constant loss](../../testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/manifest.json)
 
+The direct diagnostic captures repeat this constant-loss profile with a
+nine-record SDK ring inside each exact provider-linked peer. Both endpoint
+snapshots are published through the versioned JSONL exporter and consumed by
+the local analyzer. In both provider directions it identifies samples 3–6 as
+the deviation window, sample 7 as recovery, and selects recoverable
+transmission-path loss. No recorder overwrite occurs.
+
+- [2026-08-29 Robotweax-to-Haivision direct JSONL analysis](../../testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision-to-Robotweax direct JSONL analysis](../../testdata/golden-incidents/incident-007-jsonl-constant-loss-haivision-robotweax/manifest.json)
+
 ## Burst-loss field candidate evidence
 
 The same exact peers pass a contiguous burst profile in both sender directions.

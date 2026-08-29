@@ -35,6 +35,13 @@ each endpoint's wall and monotonic timestamps, but the analyzer does not use
 cross-host wall-clock ordering as evidence until the session contract exposes
 clock-synchronization quality.
 
+The provider-linked incident peer now supplies this format directly. Every
+successful public-adapter sample is pushed into an endpoint-local bounded
+recorder; the `DONE` barrier atomically publishes the JSONL snapshot. Retained
+Incidents 006 and 007 prove this path with exact Robotweax and Haivision
+libraries in both sender directions. Their CSV views remain an independent
+delta-contract replay rather than an input to the retained JSONL analyses.
+
 `--output` refuses to overwrite an existing file. Without it, formatted JSON is
 written to standard output; `--compact` produces one compact line. The result
 contract is [`incident-analysis-result.schema.json`](../../schema/incident-analysis-result.schema.json).

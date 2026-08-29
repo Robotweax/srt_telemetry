@@ -28,9 +28,10 @@ Each incident directory contains:
 - a generator or capture runner; and
 - a short incident-specific explanation.
 
-An incident may additionally retain `analysis.json`, a deterministic output of
-the local incident analyzer. It is derived evidence, not a replacement for the
-manifest or raw dataset.
+An incident may additionally retain paired `sender.jsonl` and `receiver.jsonl`
+SDK recorder exports plus `analysis.json`. The manifest pins all three hashes.
+The analysis is derived evidence, not a replacement for the manifest or raw
+dataset.
 
 CSV rows contain raw lifetime observations followed by `expected_*` delta and
 rate columns. An empty cell means unavailable. A numeric zero is an explicitly
@@ -87,3 +88,9 @@ magnitudes. The one-second counter rows do not preserve packet adjacency;
 therefore the manifest's proxy pattern is required ground truth and the public
 fields alone cannot distinguish the burst shape from another 20-loss
 distribution inside the same interval.
+
+Incidents 006 and 007 exercise the complete provider-linked diagnostic path in
+both directions. Public-adapter samples are recorded inside each peer, exported
+as JSONL, correlated by a shared flow identity, and analyzed without translating
+the retained JSONL through CSV. The independent CSV replay and direct JSONL
+analysis must agree on timeline, totals, hypotheses, and selection.

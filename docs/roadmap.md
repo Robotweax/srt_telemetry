@@ -35,8 +35,9 @@
 - deterministic local incident timeline candidate complete;
 - three explainable hypothesis candidates complete;
 - explicit insufficient-evidence outcome complete;
-- synthetic and captured paired sender/receiver correlation candidate complete;
-  real cross-endpoint clock-quality contract open; and
+- synthetic correlation plus direct provider-linked recorder-to-analyzer
+  candidates complete in both cross-provider sender directions; real
+  cross-endpoint clock-quality contract open; and
 - design-partner comparison with raw statistics.
 
 ## Phase 3: pipeline pilot

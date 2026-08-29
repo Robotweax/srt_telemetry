@@ -129,6 +129,7 @@ python3 qualification/run_constant_loss_capture.py \
   --haivision-revision REVISION \
   --haivision-build-profile PROFILE \
   --telemetry-revision REVISION \
+  --record-jsonl \
   --output-dir /new/incident-directory
 ```
 
@@ -142,6 +143,12 @@ The output directory must not already contain `manifest.json` or `samples.csv`;
 retained evidence is never overwritten. Logical one-second sample timestamps
 make delta-rate replay deterministic and therefore do not measure wall-clock
 throughput.
+
+With `--record-jsonl`, both provider-linked peers feed their real adapter
+samples into the SDK bounded recorder and atomically publish `sender.jsonl` and
+`receiver.jsonl`. The runner then writes `analysis.json` through the local
+analyzer and adds all three hashes to the manifest. `--incident-id` may assign a
+new retained identity; it never changes the provider direction or fault plan.
 
 Use `--direction haivision-to-robotweax --messages-per-interval 201` for the
 retained reverse-direction gap-loss profile. The extra, non-dropped message
@@ -160,3 +167,5 @@ Retained captures:
 - [2026-08-28 Haivision sender to Robotweax receiver constant loss](../testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/manifest.json)
 - [2026-08-29 Robotweax sender to Haivision receiver burst loss](../testdata/golden-incidents/incident-004-captured-burst-loss-robotweax-haivision/manifest.json)
 - [2026-08-29 Haivision sender to Robotweax receiver burst loss](../testdata/golden-incidents/incident-005-captured-burst-loss-haivision-robotweax/manifest.json)
+- [2026-08-29 Robotweax sender to Haivision receiver direct JSONL analysis](../testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender to Robotweax receiver direct JSONL analysis](../testdata/golden-incidents/incident-007-jsonl-constant-loss-haivision-robotweax/manifest.json)

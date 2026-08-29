@@ -22,10 +22,12 @@ deployment-profile qualification remain open. The project intentionally does
 not yet contain a production agent, backend, dashboard, alert engine, or
 production RCA engine. The local analyzer turns paired evidence into a
 deterministic timeline, three bounded hypotheses, and an explicit
-insufficient-evidence outcome. The first deterministic constant-loss incident
-fixture preserves
-paired sender/receiver evidence and explicit non-claims for future diagnostic
-work. Captured constant- and burst-loss runs in both cross-provider sender
+insufficient-evidence outcome. Exact provider-linked peers now record real
+adapter samples directly through the bounded recorder and JSONL exporter; two
+retained captures complete that path through the analyzer in both
+cross-provider sender directions. The first deterministic constant-loss
+fixture preserves paired sender/receiver evidence and explicit non-claims for
+future diagnostic work. Captured constant- and burst-loss runs in both sender
 directions additionally retain exact public loss, retransmission, and recovery
 observations through a deterministic user-space fault boundary. The captures
 qualify exposed gaps; finite flight-tail recovery without later DATA remains
@@ -155,5 +157,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Captured Haivision-to-Robotweax constant-loss incident](testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/README.md)
 - [Captured Robotweax-to-Haivision burst-loss incident](testdata/golden-incidents/incident-004-captured-burst-loss-robotweax-haivision/README.md)
 - [Captured Haivision-to-Robotweax burst-loss incident](testdata/golden-incidents/incident-005-captured-burst-loss-haivision-robotweax/README.md)
+- [Direct Robotweax-to-Haivision JSONL analysis](testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/README.md)
+- [Direct Haivision-to-Robotweax JSONL analysis](testdata/golden-incidents/incident-007-jsonl-constant-loss-haivision-robotweax/README.md)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)
