@@ -81,4 +81,12 @@ implementation as sender. Both directions recover all application messages
 and preserve loss, retransmission, and physical-versus-unique magnitudes. The
 public interval counters do not expose sequence adjacency, so burst-shape
 classification requires retained fault ground truth or a future, separately
-qualified signal.
+qualified signal when sampled only once per second.
+
+A subsequent wall-clock-paced 20 Hz experiment compares equal eight-packet
+aggregate loss in eight separate windows with one eight-packet window. Both
+public implementations expose the coarse shape in both sender directions with
+zero complete-window deadline misses. This supports an incident-mode 20 Hz SDK
+profile for that operator question and defers a Robotweax-only extension. Exact
+sequence adjacency inside a 50 ms window remains unavailable through the
+public counters.

@@ -50,12 +50,20 @@ Do not extend Robotweax SRT pre-emptively. First demonstrate that the common
 public field set cannot answer a concrete operator question or discriminate a
 required failure class.
 
-The paired burst captures now establish one candidate gap: one-second public
+The paired burst captures established one candidate gap: one-second public
 counter deltas answer how many packets were lost and recovered, but not whether
-those losses were adjacent. Before proposing a Robotweax-only signal, compare
-higher-frequency SDK sampling against a versioned burst event or maximum-run
-metric, state the Haivision fallback explicitly, and coordinate the selected
-contract with the Robotweax SRT coding agent.
+those losses were adjacent. The retained 20 Hz comparison now answers the
+narrower operator question of whether equal aggregate loss was concentrated in
+one 50 ms observation window or distributed across several windows. It passes
+in both provider directions, so the selected common approach is incident-mode
+20 Hz SDK sampling and no Robotweax-only signal is required for that question.
+
+Exact sequence adjacency within a 50 ms window remains unproven. Reopen this
+gate only if that precision is required by a concrete operator workflow or a
+new failure-class experiment cannot discriminate through public fields. Then
+compare the public fallback against a versioned Robotweax event or maximum-run
+metric and coordinate the selected contract with the Robotweax SRT coding
+agent.
 
 Use this request template when coordination with the Robotweax SRT coding agent
 is necessary:

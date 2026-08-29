@@ -69,6 +69,46 @@ Retained results:
 
 - [2026-08-28 macOS arm64 sampling and lifecycle](results/2026-08-28-macos-arm64-public-srt-runtime.json)
 
+## Loss-shape observability runner
+
+The incident peer also supports a paced continuous transfer while telemetry is
+sampled concurrently. Run the bidirectional distributed-versus-concentrated
+comparison against the exact provider-linked peers:
+
+```sh
+python3 qualification/run_loss_shape_observability.py \
+  --robotweax-peer /path/to/robotweax/incident-peer \
+  --robotweax-library /path/to/robotweax/libsrt \
+  --robotweax-version VERSION \
+  --robotweax-revision REVISION \
+  --robotweax-build-profile PROFILE \
+  --haivision-peer /path/to/haivision/incident-peer \
+  --haivision-library /path/to/haivision/libsrt \
+  --haivision-version VERSION \
+  --haivision-revision REVISION \
+  --haivision-build-profile PROFILE \
+  --telemetry-revision REVISION \
+  --runtime-qualification qualification/results/runtime.json \
+  --output qualification/results/loss-shape.json
+```
+
+The runner sends 240 paced application messages and samples both endpoints 26
+times at a wall-clock-paced 20 Hz. It compares eight one-packet loss windows
+with one eight-packet loss window in both sender directions. Aggregate loss,
+retransmission, physical, unique, and delivery totals must remain equal between
+the shapes. Proxy stages are switched atomically, every transfer must complete,
+no full 50 ms sampling window may be missed, and the maximum measured interval
+must remain below 80 ms.
+
+The retained candidate discriminates the coarse 50 ms loss shape but not exact
+packet adjacency within a window. Its cost figures are projections from an
+uncontrolled runtime candidate, not a release gate. Validate it with
+`qualification/validate_loss_shape_observability.py`.
+
+Retained results:
+
+- [2026-08-29 macOS arm64 20 Hz loss-shape observability](results/2026-08-29-macos-arm64-loss-shape-observability.json)
+
 ## Packet-loss capture runner
 
 Build `robotweax_srt_telemetry_public_srt_incident_peer` once against each exact

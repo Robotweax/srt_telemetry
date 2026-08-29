@@ -16,7 +16,8 @@
     "constant-loss-robotweax-sender-haivision-receiver-candidate",
     "constant-loss-haivision-sender-robotweax-receiver-candidate",
     "burst-loss-robotweax-sender-haivision-receiver-candidate",
-    "burst-loss-haivision-sender-robotweax-receiver-candidate"
+    "burst-loss-haivision-sender-robotweax-receiver-candidate",
+    "loss-shape-20hz-bidirectional-cross-provider-candidate"
   ],
   "notes": [
     "Candidate record only; full-field and deployment-profile qualification have not been completed.",
@@ -24,6 +25,7 @@
     "The macOS arm64 sampling and lifecycle result is candidate evidence only; it does not establish a release performance budget or support concurrent socket close and sampling.",
     "The captured Haivision-receiver constant-loss result exercises receiver loss and physical-versus-unique traffic against a Robotweax sender.",
     "The captured Haivision-sender result exercises gap-loss recovery, sender loss, retransmission, and physical-versus-unique traffic against a Robotweax receiver; finite flight-tail loss without later DATA remains unqualified.",
-    "The two captured burst-loss results exercise one exposed contiguous 20-packet gap with Haivision as sender and receiver in separate runs; public interval counters quantify magnitude and recovery but not sequence adjacency."
+    "The two captured burst-loss results exercise one exposed contiguous 20-packet gap with Haivision as sender and receiver in separate runs; public interval counters quantify magnitude and recovery but not sequence adjacency.",
+    "A wall-clock-paced 20 Hz candidate distinguishes eight one-packet loss windows from one eight-packet window through the common public counters in both sender directions; exact within-window adjacency and a controlled release cost budget remain unqualified."
   ]
 }

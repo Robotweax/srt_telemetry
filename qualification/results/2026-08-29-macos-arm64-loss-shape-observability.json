@@ -1,0 +1,3886 @@
+{
+  "costProjection": {
+    "benchmarkIsReleaseGate": false,
+    "combinedProjectedOneCorePercent": 0.053437416,
+    "providers": [
+      {
+        "projectedOneCorePercent": 0.05292075,
+        "projectedSamplingNanosecondsPerSecond": 529207.5,
+        "provider": "robotweax-srt",
+        "sourceAdapterP50Nanoseconds": 26460.375
+      },
+      {
+        "projectedOneCorePercent": 0.000516666,
+        "projectedSamplingNanosecondsPerSecond": 5166.660000000001,
+        "provider": "haivision-srt",
+        "sourceAdapterP50Nanoseconds": 258.333
+      }
+    ],
+    "sampleRateHz": 20,
+    "sourceResultSha256": "2703d0e37964c4ed8652827ee9bb9aa6c3b6b1c2b712a1bbb1b08c3ee5b13da0",
+    "sourceTelemetryRevision": "3359b49a9d2d27223541f5402296f07bcbab048c"
+  },
+  "decision": {
+    "aggregateCountersEqual": true,
+    "coarseLossShapeDiscriminated": true,
+    "protocolExtensionRequiredForOperatorQuestion": false,
+    "reason": "The distributed case produces eight one-packet loss windows; the concentrated case produces one eight-packet loss window in both provider directions while aggregate loss and retransmission totals remain equal.",
+    "releaseCostGatePassed": false,
+    "residualLimitation": "Sampling distinguishes concentration across 50 ms windows but does not prove packet-sequence adjacency inside one window.",
+    "selectedApproach": "incident-mode-20hz-sdk-sampling"
+  },
+  "environment": {
+    "machine": "arm64",
+    "mode": "live-message",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "pythonVersion": "3.9.6",
+    "sampleIntervalNano": 50000000,
+    "sampleRateHz": 20,
+    "sampleTimestampSource": "host-monotonic-clock",
+    "transport": "ipv4-loopback-udp-proxy",
+    "wallClockPaced": true
+  },
+  "generatedAt": "2026-08-29T08:26:04.056153+00:00",
+  "kind": "public-srt-loss-shape-observability",
+  "operatorQuestion": "Were equal aggregate packet losses concentrated in one 50 ms observation window or distributed across multiple 50 ms windows?",
+  "providers": [
+    {
+      "artifacts": {
+        "peerExecutableSha256": "b5dace474dd0ecb8587079b44d57ef50dea0f7c5a0e361b8c7ba380778140724",
+        "providerLibrarySha256": "1377a61d159856f7785bcc6c6fd9af74d1f11e78804c8e6db7b8bc6cb8e95f6a"
+      },
+      "buildProfile": "clean-release-shared-openssl",
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "version": "0.2.0-4-g271f832"
+    },
+    {
+      "artifacts": {
+        "peerExecutableSha256": "33706ce01edc1e86f3a842fc4f91b6647cb85db0c1754aeee9948aaba11bf7d5",
+        "providerLibrarySha256": "f5db9ca66be4d681c3271664c6f25ae269a7ad62ae75c815e0fb521f991cff04"
+      },
+      "buildProfile": "release-shared-openssl-generated-install",
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "version": "1.5.5"
+    }
+  ],
+  "scenarios": [
+    {
+      "direction": "robotweax-to-haivision",
+      "fault": {
+        "activeSamples": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "dropsPerActiveSample": 1,
+        "totalDrops": 8
+      },
+      "proxyStages": [
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 21,
+          "originalDataPackets": 21,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 1
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 6,
+          "forwardedDataPackets": 22,
+          "originalDataPackets": 22,
+          "repeatedDataPackets": 1,
+          "reversePackets": 6,
+          "sampleIndex": 2
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 18,
+          "originalDataPackets": 18,
+          "repeatedDataPackets": 1,
+          "reversePackets": 5,
+          "sampleIndex": 3
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 1,
+          "reversePackets": 6,
+          "sampleIndex": 4
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 22,
+          "originalDataPackets": 22,
+          "repeatedDataPackets": 1,
+          "reversePackets": 6,
+          "sampleIndex": 5
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 1,
+          "reversePackets": 5,
+          "sampleIndex": 6
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 1,
+          "reversePackets": 6,
+          "sampleIndex": 7
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 1,
+          "reversePackets": 5,
+          "sampleIndex": 8
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 1,
+          "reversePackets": 5,
+          "sampleIndex": 9
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 22,
+          "originalDataPackets": 22,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 10
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 4,
+          "sampleIndex": 11
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 12
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 1,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 1,
+          "sampleIndex": 13
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 14
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 15
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 16
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 17
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 18
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 19
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 20
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 21
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 22
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 23
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 24
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 25
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 26
+        }
+      ],
+      "receiverProvider": "haivision-srt",
+      "roles": [
+        {
+          "maximumLossPacketsPerSample": 1,
+          "positiveLossSamples": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "role": "sender",
+          "timeline": [
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 1,
+              "sentPacketDelta": 22,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 22
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 2,
+              "sentPacketDelta": 22,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 3,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 4,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 5,
+              "sentPacketDelta": 22,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 6,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 7,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 8,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 9,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 10,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 11,
+              "sentPacketDelta": 19,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 12,
+              "sentPacketDelta": 19,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 13,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 14,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 15,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 16,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 17,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 18,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 19,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 20,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 21,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 22,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 23,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 24,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 25,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 26,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            }
+          ],
+          "totalLossPackets": 8,
+          "totalReceivedPackets": 0,
+          "totalRetransmittedPackets": 8,
+          "totalSentPackets": 248,
+          "totalUniqueReceivedPackets": 0,
+          "totalUniqueSentPackets": 240
+        },
+        {
+          "maximumLossPacketsPerSample": 1,
+          "positiveLossSamples": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "role": "receiver",
+          "timeline": [
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 21,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 1,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 21,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 2,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 18,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 3,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 18,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 4,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 5,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 6,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 7,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 8,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 9,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 10,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 11,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 12,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 13,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 14,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 15,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 16,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 17,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 18,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 19,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 20,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 21,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 22,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 23,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 24,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 25,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 26,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            }
+          ],
+          "totalLossPackets": 8,
+          "totalReceivedPackets": 240,
+          "totalRetransmittedPackets": 0,
+          "totalSentPackets": 0,
+          "totalUniqueReceivedPackets": 240,
+          "totalUniqueSentPackets": 0
+        }
+      ],
+      "sampling": {
+        "deadlineMisses": 0,
+        "maximumIntervalNano": 54755750,
+        "meanIntervalNano": 50151000.0,
+        "minimumIntervalNano": 45496042,
+        "schedule": [
+          {
+            "completionLatenessNano": 2320250,
+            "sampleIndex": 1,
+            "startLatenessNano": 2071917,
+            "targetOffsetNano": 50000000
+          },
+          {
+            "completionLatenessNano": 5208250,
+            "sampleIndex": 2,
+            "startLatenessNano": 5012834,
+            "targetOffsetNano": 100000000
+          },
+          {
+            "completionLatenessNano": 2696250,
+            "sampleIndex": 3,
+            "startLatenessNano": 2396459,
+            "targetOffsetNano": 150000000
+          },
+          {
+            "completionLatenessNano": 865792,
+            "sampleIndex": 4,
+            "startLatenessNano": 474917,
+            "targetOffsetNano": 200000000
+          },
+          {
+            "completionLatenessNano": 5621542,
+            "sampleIndex": 5,
+            "startLatenessNano": 5030292,
+            "targetOffsetNano": 250000000
+          },
+          {
+            "completionLatenessNano": 3780625,
+            "sampleIndex": 6,
+            "startLatenessNano": 2941959,
+            "targetOffsetNano": 300000000
+          },
+          {
+            "completionLatenessNano": 4746167,
+            "sampleIndex": 7,
+            "startLatenessNano": 3944959,
+            "targetOffsetNano": 350000000
+          },
+          {
+            "completionLatenessNano": 3439792,
+            "sampleIndex": 8,
+            "startLatenessNano": 2791834,
+            "targetOffsetNano": 400000000
+          },
+          {
+            "completionLatenessNano": 2497125,
+            "sampleIndex": 9,
+            "startLatenessNano": 1823500,
+            "targetOffsetNano": 450000000
+          },
+          {
+            "completionLatenessNano": 5644625,
+            "sampleIndex": 10,
+            "startLatenessNano": 5029334,
+            "targetOffsetNano": 500000000
+          },
+          {
+            "completionLatenessNano": 5350917,
+            "sampleIndex": 11,
+            "startLatenessNano": 4810417,
+            "targetOffsetNano": 550000000
+          },
+          {
+            "completionLatenessNano": 5373209,
+            "sampleIndex": 12,
+            "startLatenessNano": 4815375,
+            "targetOffsetNano": 600000000
+          },
+          {
+            "completionLatenessNano": 4817917,
+            "sampleIndex": 13,
+            "startLatenessNano": 4252250,
+            "targetOffsetNano": 650000000
+          },
+          {
+            "completionLatenessNano": 5455417,
+            "sampleIndex": 14,
+            "startLatenessNano": 4813459,
+            "targetOffsetNano": 700000000
+          },
+          {
+            "completionLatenessNano": 5618542,
+            "sampleIndex": 15,
+            "startLatenessNano": 5040000,
+            "targetOffsetNano": 750000000
+          },
+          {
+            "completionLatenessNano": 1114584,
+            "sampleIndex": 16,
+            "startLatenessNano": 444750,
+            "targetOffsetNano": 800000000
+          },
+          {
+            "completionLatenessNano": 5386834,
+            "sampleIndex": 17,
+            "startLatenessNano": 4828625,
+            "targetOffsetNano": 850000000
+          },
+          {
+            "completionLatenessNano": 2817292,
+            "sampleIndex": 18,
+            "startLatenessNano": 2354709,
+            "targetOffsetNano": 900000000
+          },
+          {
+            "completionLatenessNano": 1599459,
+            "sampleIndex": 19,
+            "startLatenessNano": 1033792,
+            "targetOffsetNano": 950000000
+          },
+          {
+            "completionLatenessNano": 5438584,
+            "sampleIndex": 20,
+            "startLatenessNano": 4852042,
+            "targetOffsetNano": 1000000000
+          },
+          {
+            "completionLatenessNano": 4983834,
+            "sampleIndex": 21,
+            "startLatenessNano": 3661542,
+            "targetOffsetNano": 1050000000
+          },
+          {
+            "completionLatenessNano": 5548500,
+            "sampleIndex": 22,
+            "startLatenessNano": 4842334,
+            "targetOffsetNano": 1100000000
+          },
+          {
+            "completionLatenessNano": 2873125,
+            "sampleIndex": 23,
+            "startLatenessNano": 2105834,
+            "targetOffsetNano": 1150000000
+          },
+          {
+            "completionLatenessNano": 3664875,
+            "sampleIndex": 24,
+            "startLatenessNano": 2983250,
+            "targetOffsetNano": 1200000000
+          },
+          {
+            "completionLatenessNano": 4792209,
+            "sampleIndex": 25,
+            "startLatenessNano": 3891792,
+            "targetOffsetNano": 1250000000
+          },
+          {
+            "completionLatenessNano": 3926000,
+            "sampleIndex": 26,
+            "startLatenessNano": 3301292,
+            "targetOffsetNano": 1300000000
+          }
+        ],
+        "targetIntervalNano": 50000000
+      },
+      "scenario": "distributed-8x1",
+      "senderProvider": "robotweax-srt"
+    },
+    {
+      "direction": "robotweax-to-haivision",
+      "fault": {
+        "activeSamples": [
+          5
+        ],
+        "dropsPerActiveSample": 8,
+        "totalDrops": 8
+      },
+      "proxyStages": [
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 21,
+          "originalDataPackets": 21,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 1
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 2
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 3,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 4,
+          "sampleIndex": 3
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 22,
+          "originalDataPackets": 22,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 4
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 8,
+          "forwardedControlPackets": 3,
+          "forwardedDataPackets": 17,
+          "originalDataPackets": 17,
+          "repeatedDataPackets": 8,
+          "reversePackets": 3,
+          "sampleIndex": 5
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 22,
+          "originalDataPackets": 22,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 6
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 4,
+          "sampleIndex": 7
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 21,
+          "originalDataPackets": 21,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 8
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 18,
+          "originalDataPackets": 18,
+          "repeatedDataPackets": 0,
+          "reversePackets": 4,
+          "sampleIndex": 9
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 10
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 21,
+          "originalDataPackets": 21,
+          "repeatedDataPackets": 0,
+          "reversePackets": 4,
+          "sampleIndex": 11
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 12
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 2,
+          "forwardedDataPackets": 2,
+          "originalDataPackets": 2,
+          "repeatedDataPackets": 0,
+          "reversePackets": 1,
+          "sampleIndex": 13
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 14
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 15
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 16
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 17
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 18
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 19
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 20
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 21
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 22
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 23
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 24
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 25
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 26
+        }
+      ],
+      "receiverProvider": "haivision-srt",
+      "roles": [
+        {
+          "maximumLossPacketsPerSample": 8,
+          "positiveLossSamples": [
+            5
+          ],
+          "role": "sender",
+          "timeline": [
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 1,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 2,
+              "sentPacketDelta": 19,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 3,
+              "sentPacketDelta": 19,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 4,
+              "sentPacketDelta": 22,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 22
+            },
+            {
+              "lossPacketDelta": 8,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 8,
+              "sampleIndex": 5,
+              "sentPacketDelta": 26,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 18
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 6,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 7,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 8,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 9,
+              "sentPacketDelta": 18,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 18
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 10,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 11,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 12,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 13,
+              "sentPacketDelta": 1,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 1
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 14,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 15,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 16,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 17,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 18,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 19,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 20,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 21,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 22,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 23,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 24,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 25,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 26,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            }
+          ],
+          "totalLossPackets": 8,
+          "totalReceivedPackets": 0,
+          "totalRetransmittedPackets": 8,
+          "totalSentPackets": 248,
+          "totalUniqueReceivedPackets": 0,
+          "totalUniqueSentPackets": 240
+        },
+        {
+          "maximumLossPacketsPerSample": 8,
+          "positiveLossSamples": [
+            5
+          ],
+          "role": "receiver",
+          "timeline": [
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 21,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 1,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 21,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 2,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 3,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 4,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 8,
+              "receivedPacketDelta": 17,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 5,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 17,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 6,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 7,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 21,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 8,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 21,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 18,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 9,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 18,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 10,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 21,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 11,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 21,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 12,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 2,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 13,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 2,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 14,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 15,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 16,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 17,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 18,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 19,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 20,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 21,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 22,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 23,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 24,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 25,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 26,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            }
+          ],
+          "totalLossPackets": 8,
+          "totalReceivedPackets": 240,
+          "totalRetransmittedPackets": 0,
+          "totalSentPackets": 0,
+          "totalUniqueReceivedPackets": 240,
+          "totalUniqueSentPackets": 0
+        }
+      ],
+      "sampling": {
+        "deadlineMisses": 0,
+        "maximumIntervalNano": 54368583,
+        "meanIntervalNano": 50221187.5,
+        "minimumIntervalNano": 45366542,
+        "schedule": [
+          {
+            "completionLatenessNano": 979875,
+            "sampleIndex": 1,
+            "startLatenessNano": 707666,
+            "targetOffsetNano": 50000000
+          },
+          {
+            "completionLatenessNano": 5348458,
+            "sampleIndex": 2,
+            "startLatenessNano": 5021666,
+            "targetOffsetNano": 100000000
+          },
+          {
+            "completionLatenessNano": 1337375,
+            "sampleIndex": 3,
+            "startLatenessNano": 999125,
+            "targetOffsetNano": 150000000
+          },
+          {
+            "completionLatenessNano": 5340416,
+            "sampleIndex": 4,
+            "startLatenessNano": 5018250,
+            "targetOffsetNano": 200000000
+          },
+          {
+            "completionLatenessNano": 1678791,
+            "sampleIndex": 5,
+            "startLatenessNano": 733000,
+            "targetOffsetNano": 250000000
+          },
+          {
+            "completionLatenessNano": 3726416,
+            "sampleIndex": 6,
+            "startLatenessNano": 3317000,
+            "targetOffsetNano": 300000000
+          },
+          {
+            "completionLatenessNano": 4402666,
+            "sampleIndex": 7,
+            "startLatenessNano": 3716250,
+            "targetOffsetNano": 350000000
+          },
+          {
+            "completionLatenessNano": 5449083,
+            "sampleIndex": 8,
+            "startLatenessNano": 5028583,
+            "targetOffsetNano": 400000000
+          },
+          {
+            "completionLatenessNano": 2077000,
+            "sampleIndex": 9,
+            "startLatenessNano": 1327583,
+            "targetOffsetNano": 450000000
+          },
+          {
+            "completionLatenessNano": 2812833,
+            "sampleIndex": 10,
+            "startLatenessNano": 1583291,
+            "targetOffsetNano": 500000000
+          },
+          {
+            "completionLatenessNano": 4702916,
+            "sampleIndex": 11,
+            "startLatenessNano": 4174875,
+            "targetOffsetNano": 550000000
+          },
+          {
+            "completionLatenessNano": 4991666,
+            "sampleIndex": 12,
+            "startLatenessNano": 4303958,
+            "targetOffsetNano": 600000000
+          },
+          {
+            "completionLatenessNano": 3322041,
+            "sampleIndex": 13,
+            "startLatenessNano": 2254041,
+            "targetOffsetNano": 650000000
+          },
+          {
+            "completionLatenessNano": 2527583,
+            "sampleIndex": 14,
+            "startLatenessNano": 1789291,
+            "targetOffsetNano": 700000000
+          },
+          {
+            "completionLatenessNano": 5717416,
+            "sampleIndex": 15,
+            "startLatenessNano": 5050541,
+            "targetOffsetNano": 750000000
+          },
+          {
+            "completionLatenessNano": 1083958,
+            "sampleIndex": 16,
+            "startLatenessNano": 212125,
+            "targetOffsetNano": 800000000
+          },
+          {
+            "completionLatenessNano": 3399458,
+            "sampleIndex": 17,
+            "startLatenessNano": 2660166,
+            "targetOffsetNano": 850000000
+          },
+          {
+            "completionLatenessNano": 4936083,
+            "sampleIndex": 18,
+            "startLatenessNano": 4450083,
+            "targetOffsetNano": 900000000
+          },
+          {
+            "completionLatenessNano": 3052958,
+            "sampleIndex": 19,
+            "startLatenessNano": 2112833,
+            "targetOffsetNano": 950000000
+          },
+          {
+            "completionLatenessNano": 3747041,
+            "sampleIndex": 20,
+            "startLatenessNano": 2808916,
+            "targetOffsetNano": 1000000000
+          },
+          {
+            "completionLatenessNano": 4361083,
+            "sampleIndex": 21,
+            "startLatenessNano": 3777958,
+            "targetOffsetNano": 1050000000
+          },
+          {
+            "completionLatenessNano": 5668000,
+            "sampleIndex": 22,
+            "startLatenessNano": 5057083,
+            "targetOffsetNano": 1100000000
+          },
+          {
+            "completionLatenessNano": 2897875,
+            "sampleIndex": 23,
+            "startLatenessNano": 2256833,
+            "targetOffsetNano": 1150000000
+          },
+          {
+            "completionLatenessNano": 3826916,
+            "sampleIndex": 24,
+            "startLatenessNano": 3250666,
+            "targetOffsetNano": 1200000000
+          },
+          {
+            "completionLatenessNano": 2626833,
+            "sampleIndex": 25,
+            "startLatenessNano": 1800333,
+            "targetOffsetNano": 1250000000
+          },
+          {
+            "completionLatenessNano": 5750875,
+            "sampleIndex": 26,
+            "startLatenessNano": 5051041,
+            "targetOffsetNano": 1300000000
+          }
+        ],
+        "targetIntervalNano": 50000000
+      },
+      "scenario": "concentrated-1x8",
+      "senderProvider": "robotweax-srt"
+    },
+    {
+      "direction": "haivision-to-robotweax",
+      "fault": {
+        "activeSamples": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "dropsPerActiveSample": 1,
+        "totalDrops": 8
+      },
+      "proxyStages": [
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 22,
+          "originalDataPackets": 22,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 1
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 1,
+          "reversePackets": 5,
+          "sampleIndex": 2
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 1,
+          "reversePackets": 14,
+          "sampleIndex": 3
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 1,
+          "reversePackets": 19,
+          "sampleIndex": 4
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 1,
+          "reversePackets": 18,
+          "sampleIndex": 5
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 21,
+          "originalDataPackets": 21,
+          "repeatedDataPackets": 1,
+          "reversePackets": 20,
+          "sampleIndex": 6
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 1,
+          "reversePackets": 17,
+          "sampleIndex": 7
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 1,
+          "reversePackets": 19,
+          "sampleIndex": 8
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 1,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 1,
+          "reversePackets": 16,
+          "sampleIndex": 9
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 18,
+          "sampleIndex": 10
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 0,
+          "reversePackets": 16,
+          "sampleIndex": 11
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 0,
+          "reversePackets": 17,
+          "sampleIndex": 12
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 18,
+          "sampleIndex": 13
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 16,
+          "sampleIndex": 14
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 3,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 9,
+          "sampleIndex": 15
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 16
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 17
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 18
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 19
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 20
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 21
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 22
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 23
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 24
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 25
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 26
+        }
+      ],
+      "receiverProvider": "robotweax-srt",
+      "roles": [
+        {
+          "maximumLossPacketsPerSample": 1,
+          "positiveLossSamples": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "role": "sender",
+          "timeline": [
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 1,
+              "sentPacketDelta": 22,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 22
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 2,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 3,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 4,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 5,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 6,
+              "sentPacketDelta": 22,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 7,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 8,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 1,
+              "sampleIndex": 9,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 10,
+              "sentPacketDelta": 19,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 11,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 12,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 13,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 14,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 15,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 16,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 17,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 18,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 19,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 20,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 21,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 22,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 23,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 24,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 25,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 26,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            }
+          ],
+          "totalLossPackets": 8,
+          "totalReceivedPackets": 0,
+          "totalRetransmittedPackets": 8,
+          "totalSentPackets": 248,
+          "totalUniqueReceivedPackets": 0,
+          "totalUniqueSentPackets": 240
+        },
+        {
+          "maximumLossPacketsPerSample": 1,
+          "positiveLossSamples": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "role": "receiver",
+          "timeline": [
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 1,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 2,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 3,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 4,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 5,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 6,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 7,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 21,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 8,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 21,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 1,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 9,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 10,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 11,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 12,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 1,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 13,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 1,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 14,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 15,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 16,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 17,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 18,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 19,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 20,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 21,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 22,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 23,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 24,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 25,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 26,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            }
+          ],
+          "totalLossPackets": 8,
+          "totalReceivedPackets": 240,
+          "totalRetransmittedPackets": 0,
+          "totalSentPackets": 0,
+          "totalUniqueReceivedPackets": 240,
+          "totalUniqueSentPackets": 0
+        }
+      ],
+      "sampling": {
+        "deadlineMisses": 0,
+        "maximumIntervalNano": 55352375,
+        "meanIntervalNano": 50211479.15384615,
+        "minimumIntervalNano": 47947416,
+        "schedule": [
+          {
+            "completionLatenessNano": 5352375,
+            "sampleIndex": 1,
+            "startLatenessNano": 5014208,
+            "targetOffsetNano": 50000000
+          },
+          {
+            "completionLatenessNano": 5954916,
+            "sampleIndex": 2,
+            "startLatenessNano": 5135250,
+            "targetOffsetNano": 100000000
+          },
+          {
+            "completionLatenessNano": 5335541,
+            "sampleIndex": 3,
+            "startLatenessNano": 4738333,
+            "targetOffsetNano": 150000000
+          },
+          {
+            "completionLatenessNano": 5746916,
+            "sampleIndex": 4,
+            "startLatenessNano": 4762125,
+            "targetOffsetNano": 200000000
+          },
+          {
+            "completionLatenessNano": 3950333,
+            "sampleIndex": 5,
+            "startLatenessNano": 3141416,
+            "targetOffsetNano": 250000000
+          },
+          {
+            "completionLatenessNano": 6156750,
+            "sampleIndex": 6,
+            "startLatenessNano": 4775375,
+            "targetOffsetNano": 300000000
+          },
+          {
+            "completionLatenessNano": 5563708,
+            "sampleIndex": 7,
+            "startLatenessNano": 4137458,
+            "targetOffsetNano": 350000000
+          },
+          {
+            "completionLatenessNano": 5661958,
+            "sampleIndex": 8,
+            "startLatenessNano": 4786083,
+            "targetOffsetNano": 400000000
+          },
+          {
+            "completionLatenessNano": 5636916,
+            "sampleIndex": 9,
+            "startLatenessNano": 4775500,
+            "targetOffsetNano": 450000000
+          },
+          {
+            "completionLatenessNano": 6170750,
+            "sampleIndex": 10,
+            "startLatenessNano": 4757666,
+            "targetOffsetNano": 500000000
+          },
+          {
+            "completionLatenessNano": 5159166,
+            "sampleIndex": 11,
+            "startLatenessNano": 4361916,
+            "targetOffsetNano": 550000000
+          },
+          {
+            "completionLatenessNano": 5798875,
+            "sampleIndex": 12,
+            "startLatenessNano": 4750041,
+            "targetOffsetNano": 600000000
+          },
+          {
+            "completionLatenessNano": 5496250,
+            "sampleIndex": 13,
+            "startLatenessNano": 4718375,
+            "targetOffsetNano": 650000000
+          },
+          {
+            "completionLatenessNano": 4488833,
+            "sampleIndex": 14,
+            "startLatenessNano": 3639625,
+            "targetOffsetNano": 700000000
+          },
+          {
+            "completionLatenessNano": 5669000,
+            "sampleIndex": 15,
+            "startLatenessNano": 4761375,
+            "targetOffsetNano": 750000000
+          },
+          {
+            "completionLatenessNano": 3616416,
+            "sampleIndex": 16,
+            "startLatenessNano": 2661125,
+            "targetOffsetNano": 800000000
+          },
+          {
+            "completionLatenessNano": 6301250,
+            "sampleIndex": 17,
+            "startLatenessNano": 4939458,
+            "targetOffsetNano": 850000000
+          },
+          {
+            "completionLatenessNano": 6063833,
+            "sampleIndex": 18,
+            "startLatenessNano": 4823541,
+            "targetOffsetNano": 900000000
+          },
+          {
+            "completionLatenessNano": 6095041,
+            "sampleIndex": 19,
+            "startLatenessNano": 4770958,
+            "targetOffsetNano": 950000000
+          },
+          {
+            "completionLatenessNano": 6029208,
+            "sampleIndex": 20,
+            "startLatenessNano": 4795625,
+            "targetOffsetNano": 1000000000
+          },
+          {
+            "completionLatenessNano": 4601041,
+            "sampleIndex": 21,
+            "startLatenessNano": 4010333,
+            "targetOffsetNano": 1050000000
+          },
+          {
+            "completionLatenessNano": 4782916,
+            "sampleIndex": 22,
+            "startLatenessNano": 4182708,
+            "targetOffsetNano": 1100000000
+          },
+          {
+            "completionLatenessNano": 3843791,
+            "sampleIndex": 23,
+            "startLatenessNano": 3147208,
+            "targetOffsetNano": 1150000000
+          },
+          {
+            "completionLatenessNano": 6228208,
+            "sampleIndex": 24,
+            "startLatenessNano": 5043916,
+            "targetOffsetNano": 1200000000
+          },
+          {
+            "completionLatenessNano": 6527458,
+            "sampleIndex": 25,
+            "startLatenessNano": 5109625,
+            "targetOffsetNano": 1250000000
+          },
+          {
+            "completionLatenessNano": 5498458,
+            "sampleIndex": 26,
+            "startLatenessNano": 4772666,
+            "targetOffsetNano": 1300000000
+          }
+        ],
+        "targetIntervalNano": 50000000
+      },
+      "scenario": "distributed-8x1",
+      "senderProvider": "haivision-srt"
+    },
+    {
+      "direction": "haivision-to-robotweax",
+      "fault": {
+        "activeSamples": [
+          5
+        ],
+        "dropsPerActiveSample": 8,
+        "totalDrops": 8
+      },
+      "proxyStages": [
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 22,
+          "originalDataPackets": 22,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 1
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 0,
+          "reversePackets": 5,
+          "sampleIndex": 2
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 18,
+          "originalDataPackets": 18,
+          "repeatedDataPackets": 0,
+          "reversePackets": 11,
+          "sampleIndex": 3
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 22,
+          "originalDataPackets": 22,
+          "repeatedDataPackets": 0,
+          "reversePackets": 17,
+          "sampleIndex": 4
+        },
+        {
+          "active": true,
+          "droppedOriginalDataPackets": 8,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 8,
+          "reversePackets": 18,
+          "sampleIndex": 5
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 0,
+          "reversePackets": 19,
+          "sampleIndex": 6
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 16,
+          "sampleIndex": 7
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 21,
+          "originalDataPackets": 21,
+          "repeatedDataPackets": 0,
+          "reversePackets": 19,
+          "sampleIndex": 8
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 19,
+          "originalDataPackets": 19,
+          "repeatedDataPackets": 0,
+          "reversePackets": 18,
+          "sampleIndex": 9
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 21,
+          "originalDataPackets": 21,
+          "repeatedDataPackets": 0,
+          "reversePackets": 17,
+          "sampleIndex": 10
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 20,
+          "originalDataPackets": 20,
+          "repeatedDataPackets": 0,
+          "reversePackets": 17,
+          "sampleIndex": 11
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 18,
+          "originalDataPackets": 18,
+          "repeatedDataPackets": 0,
+          "reversePackets": 16,
+          "sampleIndex": 12
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 5,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 19,
+          "sampleIndex": 13
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 4,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 19,
+          "sampleIndex": 14
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 2,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 7,
+          "sampleIndex": 15
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 16
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 17
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 18
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 19
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 20
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 21
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 22
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 23
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 24
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 25
+        },
+        {
+          "active": false,
+          "droppedOriginalDataPackets": 0,
+          "forwardedControlPackets": 0,
+          "forwardedDataPackets": 0,
+          "originalDataPackets": 0,
+          "repeatedDataPackets": 0,
+          "reversePackets": 0,
+          "sampleIndex": 26
+        }
+      ],
+      "receiverProvider": "robotweax-srt",
+      "roles": [
+        {
+          "maximumLossPacketsPerSample": 8,
+          "positiveLossSamples": [
+            5
+          ],
+          "role": "sender",
+          "timeline": [
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 1,
+              "sentPacketDelta": 22,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 22
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 2,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 3,
+              "sentPacketDelta": 19,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 4,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 8,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 8,
+              "sampleIndex": 5,
+              "sentPacketDelta": 28,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 6,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 7,
+              "sentPacketDelta": 19,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 19
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 8,
+              "sentPacketDelta": 21,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 21
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 9,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 10,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 11,
+              "sentPacketDelta": 20,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 20
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 12,
+              "sentPacketDelta": 18,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 18
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 13,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 14,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 15,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 16,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 17,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 18,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 19,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 20,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 21,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 22,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 23,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 24,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 25,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 26,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            }
+          ],
+          "totalLossPackets": 8,
+          "totalReceivedPackets": 0,
+          "totalRetransmittedPackets": 8,
+          "totalSentPackets": 248,
+          "totalUniqueReceivedPackets": 0,
+          "totalUniqueSentPackets": 240
+        },
+        {
+          "maximumLossPacketsPerSample": 8,
+          "positiveLossSamples": [
+            5
+          ],
+          "role": "receiver",
+          "timeline": [
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 1,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 2,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 18,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 3,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 18,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 4,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 8,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 5,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 21,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 6,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 21,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 18,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 7,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 18,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 22,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 8,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 22,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 19,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 9,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 19,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 21,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 10,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 21,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 20,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 11,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 20,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 18,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 12,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 18,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 13,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 14,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 15,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 16,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 17,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 18,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 19,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 20,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 21,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 22,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 23,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 24,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 25,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            },
+            {
+              "lossPacketDelta": 0,
+              "receivedPacketDelta": 0,
+              "retransmittedPacketDelta": 0,
+              "sampleIndex": 26,
+              "sentPacketDelta": 0,
+              "uniqueReceivedPacketDelta": 0,
+              "uniqueSentPacketDelta": 0
+            }
+          ],
+          "totalLossPackets": 8,
+          "totalReceivedPackets": 240,
+          "totalRetransmittedPackets": 0,
+          "totalSentPackets": 0,
+          "totalUniqueReceivedPackets": 240,
+          "totalUniqueSentPackets": 0
+        }
+      ],
+      "sampling": {
+        "deadlineMisses": 0,
+        "maximumIntervalNano": 55302250,
+        "meanIntervalNano": 50201546.461538464,
+        "minimumIntervalNano": 45212708,
+        "schedule": [
+          {
+            "completionLatenessNano": 5302250,
+            "sampleIndex": 1,
+            "startLatenessNano": 5022667,
+            "targetOffsetNano": 50000000
+          },
+          {
+            "completionLatenessNano": 3938833,
+            "sampleIndex": 2,
+            "startLatenessNano": 3517917,
+            "targetOffsetNano": 100000000
+          },
+          {
+            "completionLatenessNano": 1084458,
+            "sampleIndex": 3,
+            "startLatenessNano": 253417,
+            "targetOffsetNano": 150000000
+          },
+          {
+            "completionLatenessNano": 3717208,
+            "sampleIndex": 4,
+            "startLatenessNano": 2725333,
+            "targetOffsetNano": 200000000
+          },
+          {
+            "completionLatenessNano": 4383750,
+            "sampleIndex": 5,
+            "startLatenessNano": 3580625,
+            "targetOffsetNano": 250000000
+          },
+          {
+            "completionLatenessNano": 5553417,
+            "sampleIndex": 6,
+            "startLatenessNano": 4797583,
+            "targetOffsetNano": 300000000
+          },
+          {
+            "completionLatenessNano": 766125,
+            "sampleIndex": 7,
+            "startLatenessNano": 292167,
+            "targetOffsetNano": 350000000
+          },
+          {
+            "completionLatenessNano": 4675250,
+            "sampleIndex": 8,
+            "startLatenessNano": 3549375,
+            "targetOffsetNano": 400000000
+          },
+          {
+            "completionLatenessNano": 3791750,
+            "sampleIndex": 9,
+            "startLatenessNano": 2876667,
+            "targetOffsetNano": 450000000
+          },
+          {
+            "completionLatenessNano": 7274625,
+            "sampleIndex": 10,
+            "startLatenessNano": 5817833,
+            "targetOffsetNano": 500000000
+          },
+          {
+            "completionLatenessNano": 4918917,
+            "sampleIndex": 11,
+            "startLatenessNano": 4312625,
+            "targetOffsetNano": 550000000
+          },
+          {
+            "completionLatenessNano": 2186333,
+            "sampleIndex": 12,
+            "startLatenessNano": 1311792,
+            "targetOffsetNano": 600000000
+          },
+          {
+            "completionLatenessNano": 4990250,
+            "sampleIndex": 13,
+            "startLatenessNano": 3595833,
+            "targetOffsetNano": 650000000
+          },
+          {
+            "completionLatenessNano": 4363208,
+            "sampleIndex": 14,
+            "startLatenessNano": 3746958,
+            "targetOffsetNano": 700000000
+          },
+          {
+            "completionLatenessNano": 4197833,
+            "sampleIndex": 15,
+            "startLatenessNano": 3558958,
+            "targetOffsetNano": 750000000
+          },
+          {
+            "completionLatenessNano": 3733125,
+            "sampleIndex": 16,
+            "startLatenessNano": 2717833,
+            "targetOffsetNano": 800000000
+          },
+          {
+            "completionLatenessNano": 5796958,
+            "sampleIndex": 17,
+            "startLatenessNano": 4844833,
+            "targetOffsetNano": 850000000
+          },
+          {
+            "completionLatenessNano": 5309667,
+            "sampleIndex": 18,
+            "startLatenessNano": 3586417,
+            "targetOffsetNano": 900000000
+          },
+          {
+            "completionLatenessNano": 3309250,
+            "sampleIndex": 19,
+            "startLatenessNano": 2552250,
+            "targetOffsetNano": 950000000
+          },
+          {
+            "completionLatenessNano": 5939958,
+            "sampleIndex": 20,
+            "startLatenessNano": 4531042,
+            "targetOffsetNano": 1000000000
+          },
+          {
+            "completionLatenessNano": 5870375,
+            "sampleIndex": 21,
+            "startLatenessNano": 4922375,
+            "targetOffsetNano": 1050000000
+          },
+          {
+            "completionLatenessNano": 5763375,
+            "sampleIndex": 22,
+            "startLatenessNano": 4600125,
+            "targetOffsetNano": 1100000000
+          },
+          {
+            "completionLatenessNano": 4932375,
+            "sampleIndex": 23,
+            "startLatenessNano": 4573542,
+            "targetOffsetNano": 1150000000
+          },
+          {
+            "completionLatenessNano": 1577042,
+            "sampleIndex": 24,
+            "startLatenessNano": 1189708,
+            "targetOffsetNano": 1200000000
+          },
+          {
+            "completionLatenessNano": 5646875,
+            "sampleIndex": 25,
+            "startLatenessNano": 5035625,
+            "targetOffsetNano": 1250000000
+          },
+          {
+            "completionLatenessNano": 5240208,
+            "sampleIndex": 26,
+            "startLatenessNano": 3618708,
+            "targetOffsetNano": 1300000000
+          }
+        ],
+        "targetIntervalNano": 50000000
+      },
+      "scenario": "concentrated-1x8",
+      "senderProvider": "haivision-srt"
+    }
+  ],
+  "schemaVersion": "1alpha1",
+  "status": "pass",
+  "telemetry": {
+    "adapterVersion": "0.1.0-alpha.0",
+    "revision": "aaca88fe1e9a5190ed29f065e0b43d768b5d92d9"
+  },
+  "workload": {
+    "continuousTransfer": true,
+    "payloadBytesPerMessage": 1316,
+    "payloadSha256": "c1084aaf823763cbfabd614385a573ba7ac5087c8f9d1320c1d2c21ac8a694a2",
+    "samples": 26,
+    "sendPacingMicroseconds": 2000,
+    "totalMessagesPerScenario": 240
+  }
+}

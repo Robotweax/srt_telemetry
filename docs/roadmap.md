@@ -22,7 +22,9 @@
   caller/listener role combinations for the common nine-field subset;
 - macOS arm64 sampling microbenchmark and close/sample lifecycle candidate
   complete; controlled multi-platform release budgets and stress profiles open;
-  and
+- wall-clock-paced 20 Hz loss-shape candidate complete in both cross-provider
+  directions; common incident sampling selected for the coarse 50 ms question,
+  exact within-window adjacency and a release cost gate open; and
 - constant- and burst-loss captured cross-provider gap candidates complete in
   both sender directions; flight-tail/profile coverage and the remaining
   initial corpus open.

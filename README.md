@@ -25,8 +25,11 @@ work. Captured constant- and burst-loss runs in both cross-provider sender
 directions additionally retain exact public loss, retransmission, and recovery
 observations through a deterministic user-space fault boundary. The captures
 qualify exposed gaps; finite flight-tail recovery without later DATA remains
-open. Public interval counters quantify burst severity but do not preserve
-within-interval packet adjacency.
+open. A retained 20 Hz incident-mode experiment now distinguishes eight losses
+in one 50 ms window from the same aggregate loss distributed across eight
+windows in both cross-provider directions. Therefore no Robotweax-only signal
+is currently required for that coarse operator question. Exact within-window
+packet adjacency and a controlled release cost budget remain open.
 
 The first product claim to prove is:
 
@@ -130,11 +133,13 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Provider and capability model](docs/architecture/provider-model.md)
 - [SRT statistics field map](docs/architecture/srt-stats-field-map.md)
 - [Public SRT API adapter](docs/architecture/public-srt-adapter.md)
+- [Loss-shape observability decision](docs/architecture/loss-shape-observability.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
 - [Golden incident datasets](docs/architecture/golden-incidents.md)
 - [Provider qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
 - [Retained cross-provider evidence](qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
 - [Retained sampling and lifecycle evidence](qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
+- [Retained 20 Hz loss-shape evidence](qualification/results/2026-08-29-macos-arm64-loss-shape-observability.json)
 - [Constant-loss golden incident](testdata/golden-incidents/incident-001-constant-loss/README.md)
 - [Captured Robotweax-to-Haivision constant-loss incident](testdata/golden-incidents/incident-002-captured-constant-loss-robotweax-haivision/README.md)
 - [Captured Haivision-to-Robotweax constant-loss incident](testdata/golden-incidents/incident-003-captured-constant-loss-haivision-robotweax/README.md)

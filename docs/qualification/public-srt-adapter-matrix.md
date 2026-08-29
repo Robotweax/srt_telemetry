@@ -103,6 +103,24 @@ capability is declared from these candidates.
 - [2026-08-29 captured Robotweax-to-Haivision burst loss](../../testdata/golden-incidents/incident-004-captured-burst-loss-robotweax-haivision/manifest.json)
 - [2026-08-29 captured Haivision-to-Robotweax burst loss](../../testdata/golden-incidents/incident-005-captured-burst-loss-haivision-robotweax/manifest.json)
 
+## Incident-mode loss-shape candidate evidence
+
+A continuous 240-message transfer was sampled at a wall-clock-paced 20 Hz in
+both cross-provider sender directions. The distributed profile drops one packet
+in each of eight 50 ms windows; the concentrated profile drops eight packets in
+one window. Every scenario reports the same aggregate eight losses, eight
+sender retransmissions, 248 physical sends, 240 unique sends, and 240 received
+messages.
+
+Both sender and receiver timelines expose eight one-packet windows versus one
+eight-packet window. All four schedules miss zero complete sample windows; the
+largest measured interval is 55.35 ms. This is candidate evidence for
+incident-mode coarse loss-shape discrimination through the common public API,
+so no Robotweax-only extension is selected for that operator question. Exact
+adjacency inside a window and a controlled release cost gate remain open.
+
+- [2026-08-29 macOS arm64 20 Hz loss-shape observability](../../qualification/results/2026-08-29-macos-arm64-loss-shape-observability.json)
+
 ## Remaining release qualification
 
 - live caller-to-listener and listener-to-caller sampling for the remaining
