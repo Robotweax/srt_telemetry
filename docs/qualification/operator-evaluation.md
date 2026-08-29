@@ -72,6 +72,35 @@ and writes hashed raw, report, and reference artifacts. It refuses to overwrite
 an existing packet. Every subsequent command verifies the packet hashes before
 using it.
 
+For a retained or shared packet, pass `--repository-revision` so its provenance
+is pinned. Repository manifests are stored as portable relative labels rather
+than host-specific absolute paths.
+
+## Internal facilitation rehearsal
+
+The retained [five-class rehearsal packet](../../qualification/operator-evaluation/five-class-internal-rehearsal-v1/README.md)
+contains eight scenarios across the five required classes. Before any internal
+session, reproduce its readiness result:
+
+```sh
+python3 tools/operator_evaluation.py rehearsal \
+  --study qualification/operator-evaluation/five-class-internal-rehearsal-v1/study.json \
+  --check qualification/operator-evaluation/five-class-internal-rehearsal-v1/rehearsal-readiness.json
+```
+
+The preflight checks packet hashes, pinned provenance, portable sources,
+five-class coverage, equal condition counts within both arms, complete
+counterbalancing, inference isolation in raw tasks, interactive public-field
+parity, report/reference alignment, terminal rendering, and privacy
+guardrails. The raw terminal view explicitly includes receiver undecryptable
+and configured TSBPD fields because the diagnostic candidates consume them.
+
+Readiness does not create a session and is not participant evidence. Conduct at
+least two genuine `internal-pilot` sessions with explicit opposite arms, keep
+reference files hidden from participants, and retain outputs outside the
+immutable packet. The full facilitator checklist and non-claims are versioned
+in `rehearsal-readiness.json`.
+
 ## Run one session
 
 ```sh
@@ -127,6 +156,8 @@ first two classes.
 ## Versioned contracts
 
 - `schema/operator-evaluation-study.schema.json` describes `study.json`.
+- `schema/operator-evaluation-rehearsal.schema.json` describes the reproducible
+  internal-facilitation preflight.
 - `schema/operator-evaluation-result.schema.json` describes completed sessions
   and aggregate summaries.
 - raw task, report task, reference, and imported response documents use

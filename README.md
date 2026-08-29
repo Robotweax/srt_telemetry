@@ -61,6 +61,10 @@ receiver recovery-margin exhaustion. This closes the automated five-class
 coverage check, but not the human diagnostic-value gate.
 Automated answers are explicitly harness-only;
 no design-partner or diagnostic-value product claim has been made.
+An immutable eight-scenario internal-rehearsal packet now passes eleven
+machine-checked preflight controls, including raw-view inference isolation and
+interactive field parity. It contains no participant answers; genuinely
+conducted internal sessions remain the next evidence step.
 
 The first product claim to prove is:
 
@@ -172,6 +176,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
 - [Local incident analysis](docs/architecture/incident-analysis.md)
 - [Operator evaluation](docs/qualification/operator-evaluation.md)
+- [Five-class internal rehearsal packet](qualification/operator-evaluation/five-class-internal-rehearsal-v1/README.md)
 - [Golden incident datasets](docs/architecture/golden-incidents.md)
 - [Provider qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
 - [Retained cross-provider evidence](qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)

@@ -323,3 +323,10 @@ and claim limits.
 arms, scoring, aggregation, overwrite refusal, inference isolation in the raw
 condition, and tamper detection. Its responses are synthetic test fixtures and
 do not count as operator or design-partner evidence.
+
+The retained [five-class internal rehearsal packet](operator-evaluation/five-class-internal-rehearsal-v1/README.md)
+adds a revision-pinned, portable eight-scenario packet and a reproducible
+eleven-check facilitation preflight. It verifies interactive field parity as
+well as packet integrity and study design. The readiness artifact contains no
+answers or timings; at least two genuinely conducted `internal-pilot` sessions
+on opposite arms remain required.

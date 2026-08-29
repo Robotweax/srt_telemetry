@@ -427,6 +427,20 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
             PROPERTIES
                 ENVIRONMENT
                     "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
+        set(ROBOTWEAX_SRT_TELEMETRY_REHEARSAL_PACKET_DIR
+            "${CMAKE_CURRENT_SOURCE_DIR}/qualification/operator-evaluation/five-class-internal-rehearsal-v1")
+        add_test(NAME robotweax_srt_telemetry_operator_rehearsal_readiness_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/operator_evaluation.py"
+                rehearsal
+                --study
+                "${ROBOTWEAX_SRT_TELEMETRY_REHEARSAL_PACKET_DIR}/study.json"
+                --check
+                "${ROBOTWEAX_SRT_TELEMETRY_REHEARSAL_PACKET_DIR}/rehearsal-readiness.json")
+        set_tests_properties(robotweax_srt_telemetry_operator_rehearsal_readiness_test
+            PROPERTIES
+                ENVIRONMENT
+                    "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
     endif()
 endif()
 

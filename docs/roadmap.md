@@ -50,7 +50,8 @@
   clock-quality contract open; and
 - versioned, counterbalanced raw-statistics versus incident-report evaluation
   harness complete; automated coverage of five failure classes complete;
-  internal rehearsal and design-partner observations open.
+- immutable eight-scenario internal-rehearsal packet and reproducible preflight
+  complete; conducted internal sessions and design-partner observations open.
 
 ## Phase 3: pipeline pilot
 

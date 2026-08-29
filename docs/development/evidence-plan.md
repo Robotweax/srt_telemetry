@@ -138,8 +138,8 @@ contradictory, and missing evidence, plus an insufficient-evidence outcome. It
 passes the synthetic and captured loss incidents. Ten retained cross-provider
 runs now also prove the real public-adapter → recorder → JSONL → analyzer path
 for five failure classes in both directions. This does not close the product
-claim. A design-partner
-comparison must still measure the operator outcomes above, and real
+claim. A design-partner comparison must still measure the operator outcomes
+above, and real
 cross-endpoint correlation must declare clock-synchronization quality before
 wall-clock ordering is used as RCA evidence.
 
@@ -152,7 +152,8 @@ automated packet contains constant loss, an RTT step, receiver
 pause/backpressure, bandwidth reduction with sender queue growth, and receiver
 recovery-margin exhaustion in both provider directions. The harness therefore
 exercises all five real or representative failure classes required by strategy
-Gate B. This closes only the automated coverage prerequisite. The next evidence
-step is an internal facilitation rehearsal followed by controlled design-partner
-sessions.
+Gate B. This closes only the automated coverage prerequisite. An immutable
+eight-scenario rehearsal packet and its eleven-check machine preflight are now
+retained. The next evidence step is to conduct at least two genuine internal
+sessions on opposite arms, then proceed to controlled design-partner sessions.
 None should use cross-host wall-clock ordering until clock quality is declared.

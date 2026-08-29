@@ -141,6 +141,10 @@ RAW_VIEW_FORBIDDEN_KEYS = {
     "supportingEvidence",
 }
 RAW_INTERACTIVE_REQUIRED_FIELDS = {
+    "sent_packet_delta",
+    "received_packet_delta",
+    "unique_sent_packet_delta",
+    "unique_received_packet_delta",
     "sender_loss_packet_delta",
     "receiver_loss_packet_delta",
     "retransmitted_packet_delta",

@@ -1,0 +1,324 @@
+{
+  "arms": {
+    "arm-a": [
+      {
+        "condition": "raw-statistics",
+        "scenarioId": "incident-006-jsonl-constant-loss-robotweax-haivision"
+      },
+      {
+        "condition": "incident-report",
+        "scenarioId": "incident-008-rtt-step-robotweax-haivision"
+      },
+      {
+        "condition": "raw-statistics",
+        "scenarioId": "incident-010-receiver-pause-robotweax-haivision"
+      },
+      {
+        "condition": "incident-report",
+        "scenarioId": "incident-011-receiver-pause-haivision-robotweax"
+      },
+      {
+        "condition": "raw-statistics",
+        "scenarioId": "incident-012-bandwidth-reduction-robotweax-haivision"
+      },
+      {
+        "condition": "incident-report",
+        "scenarioId": "incident-013-bandwidth-reduction-haivision-robotweax"
+      },
+      {
+        "condition": "raw-statistics",
+        "scenarioId": "incident-014-recovery-margin-robotweax-haivision"
+      },
+      {
+        "condition": "incident-report",
+        "scenarioId": "incident-015-recovery-margin-haivision-robotweax"
+      }
+    ],
+    "arm-b": [
+      {
+        "condition": "incident-report",
+        "scenarioId": "incident-006-jsonl-constant-loss-robotweax-haivision"
+      },
+      {
+        "condition": "raw-statistics",
+        "scenarioId": "incident-008-rtt-step-robotweax-haivision"
+      },
+      {
+        "condition": "incident-report",
+        "scenarioId": "incident-010-receiver-pause-robotweax-haivision"
+      },
+      {
+        "condition": "raw-statistics",
+        "scenarioId": "incident-011-receiver-pause-haivision-robotweax"
+      },
+      {
+        "condition": "incident-report",
+        "scenarioId": "incident-012-bandwidth-reduction-robotweax-haivision"
+      },
+      {
+        "condition": "raw-statistics",
+        "scenarioId": "incident-013-bandwidth-reduction-haivision-robotweax"
+      },
+      {
+        "condition": "incident-report",
+        "scenarioId": "incident-014-recovery-margin-robotweax-haivision"
+      },
+      {
+        "condition": "raw-statistics",
+        "scenarioId": "incident-015-recovery-margin-haivision-robotweax"
+      }
+    ]
+  },
+  "design": {
+    "allocation": "SHA-256(studyId:participantId) first-byte parity; even selects arm-a and odd selects arm-b",
+    "rationale": "Each participant sees each incident once. Conditions alternate within an arm and reverse for every scenario in the other arm.",
+    "type": "alternating-condition-counterbalanced-crossover"
+  },
+  "gateLimits": {
+    "automaticProductClaim": false,
+    "minimumDistinctFailureClasses": 5,
+    "note": "The strategy requires at least five reproducible failure classes and faster operator understanding. This candidate packet validates the method but cannot close that gate alone."
+  },
+  "kind": "robotweax-srt-operator-evaluation-study",
+  "metrics": [
+    "time-to-first-deviation",
+    "time-to-failure-domain",
+    "first-deviation-accuracy",
+    "failure-domain-accuracy",
+    "unsupported-hypothesis-count",
+    "missing-evidence-precision-recall",
+    "operator-confidence"
+  ],
+  "privacy": {
+    "forbidden": [
+      "customer telemetry",
+      "names or email addresses",
+      "private network inventory",
+      "stream identifiers",
+      "media payloads"
+    ],
+    "participantId": "pseudonymous identifier only"
+  },
+  "provenance": {
+    "generator": "tools/operator_evaluation.py",
+    "repositoryRevision": "e4f5f8c7cd1458e3d46b0fbabaa1bbcf340db72b"
+  },
+  "questions": {
+    "confidenceScale": {
+      "maximum": 5,
+      "minimum": 1
+    },
+    "failureDomains": [
+      "exact-network-hop",
+      "insufficient-evidence",
+      "receiver-endpoint",
+      "sender-endpoint",
+      "transmission-path"
+    ],
+    "hypotheses": [
+      "receiver-recovery-margin-exhausted",
+      "receiver-side-pressure",
+      "sender-side-pressure",
+      "transmission-path-loss-with-recovery",
+      "transmission-path-rtt-step-with-recovery"
+    ],
+    "missingEvidence": [
+      "exact-egress-capacity",
+      "exact-failing-hop",
+      "latency-counterfactual",
+      "offered-application-rate",
+      "one-way-delay",
+      "packet-belated-arrival",
+      "packet-sequence-adjacency",
+      "paired-loss-alignment",
+      "paired-rtt-step-threshold",
+      "receiver-application-consumption",
+      "receiver-buffer-occupancy",
+      "sender-application-scheduling",
+      "sender-buffer-occupancy",
+      "sender-flight-size",
+      "sender-retransmission-deltas"
+    ]
+  },
+  "scenarios": [
+    {
+      "failureClass": "constant-packet-loss",
+      "reference": {
+        "file": "scenarios/incident-006-jsonl-constant-loss-robotweax-haivision/reference.json",
+        "sha256": "98d57c8ba324d734cc497282c7a36bcfc93d489b51e8088ac3c7c664c0095937"
+      },
+      "scenarioId": "incident-006-jsonl-constant-loss-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json",
+        "sha256": "d4348d163af6bd0ea2a5bcdc0ae9e41c5bf2c2e4e1a3f4bbf85bce55efbd16cf"
+      },
+      "views": {
+        "incident-report": {
+          "file": "scenarios/incident-006-jsonl-constant-loss-robotweax-haivision/incident-report.json",
+          "sha256": "a00b4ba7dd28a84286e439c22a34d45d5c00bee7e26d5b452a9a342d957a6ad3"
+        },
+        "raw-statistics": {
+          "file": "scenarios/incident-006-jsonl-constant-loss-robotweax-haivision/raw-statistics.json",
+          "sha256": "250c14e489c52b2c43f6936ec71f1c8e10a9bbfd341ed7105dd44d2f8e95e2f6"
+        }
+      }
+    },
+    {
+      "failureClass": "round-trip-time-step",
+      "reference": {
+        "file": "scenarios/incident-008-rtt-step-robotweax-haivision/reference.json",
+        "sha256": "7f26b7382570462ab578cb7fd40cccdcc1ef61065b57e3b2388ee4ed4d7dd79b"
+      },
+      "scenarioId": "incident-008-rtt-step-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-008-rtt-step-robotweax-haivision/manifest.json",
+        "sha256": "40eee5fa1dceb414b366d9a4cd014c33fa62f8d61b88e7ba8415655d6149bb29"
+      },
+      "views": {
+        "incident-report": {
+          "file": "scenarios/incident-008-rtt-step-robotweax-haivision/incident-report.json",
+          "sha256": "e057eeedfea4a1827e5dfb1e582dca2c4e017fb7263214152d82b10aa316db59"
+        },
+        "raw-statistics": {
+          "file": "scenarios/incident-008-rtt-step-robotweax-haivision/raw-statistics.json",
+          "sha256": "899b1fd08b001b8dfdacc9fd0b771c0eb10bb25f48d740705c4a685a72db7ec8"
+        }
+      }
+    },
+    {
+      "failureClass": "receiver-application-pause",
+      "reference": {
+        "file": "scenarios/incident-010-receiver-pause-robotweax-haivision/reference.json",
+        "sha256": "39dc85b6c6f00a7b1482e6c2450bd73b92b865f9c7c71b33e54affff4140774d"
+      },
+      "scenarioId": "incident-010-receiver-pause-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/manifest.json",
+        "sha256": "d3120b2c5b1bdf74eab06129b2748785982a29a105706c6e00beb9d4cebdd816"
+      },
+      "views": {
+        "incident-report": {
+          "file": "scenarios/incident-010-receiver-pause-robotweax-haivision/incident-report.json",
+          "sha256": "1ead2dbbc27b788ea359c03cb7bc0231c908904c13ed0bb815013c7d4a8828b7"
+        },
+        "raw-statistics": {
+          "file": "scenarios/incident-010-receiver-pause-robotweax-haivision/raw-statistics.json",
+          "sha256": "e0a5b5e1ff00185002c685bdf9a3dd951cad808860cc2e7698919e83faec062e"
+        }
+      }
+    },
+    {
+      "failureClass": "receiver-application-pause",
+      "reference": {
+        "file": "scenarios/incident-011-receiver-pause-haivision-robotweax/reference.json",
+        "sha256": "1c9f03ddf09d51c29da2634126d0e8e456e37d275d23631cb9a0c9f68f4ed063"
+      },
+      "scenarioId": "incident-011-receiver-pause-haivision-robotweax",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/manifest.json",
+        "sha256": "e58a6fc33d6dee753988484c9fe62894d17c91909400e1bc15f3c808ad99fe2a"
+      },
+      "views": {
+        "incident-report": {
+          "file": "scenarios/incident-011-receiver-pause-haivision-robotweax/incident-report.json",
+          "sha256": "40dddf43a457e9a4cc8f250e091d1be871d2e03838e663731299ffebf56e63e5"
+        },
+        "raw-statistics": {
+          "file": "scenarios/incident-011-receiver-pause-haivision-robotweax/raw-statistics.json",
+          "sha256": "2d310f36e4afd52a7292197507d67a073fa47887f5960669520d718f231a43cb"
+        }
+      }
+    },
+    {
+      "failureClass": "bandwidth-reduction-with-queue-growth",
+      "reference": {
+        "file": "scenarios/incident-012-bandwidth-reduction-robotweax-haivision/reference.json",
+        "sha256": "23b23930be90413d0e0fbdfe537952488c1674cbbfcfa24c28f6999cca98677c"
+      },
+      "scenarioId": "incident-012-bandwidth-reduction-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/manifest.json",
+        "sha256": "7396bd530d81386492f50021a1050f6fcbaf4b53bcb67fdf5a5fffcda1230276"
+      },
+      "views": {
+        "incident-report": {
+          "file": "scenarios/incident-012-bandwidth-reduction-robotweax-haivision/incident-report.json",
+          "sha256": "e3c2a21ce3ca3071454cfb3f007f9cd8b2cf1f2a4ab0e6a6a898a7ac1e06a724"
+        },
+        "raw-statistics": {
+          "file": "scenarios/incident-012-bandwidth-reduction-robotweax-haivision/raw-statistics.json",
+          "sha256": "6c4cc275d1cab4e0eca72de8302a1f85a24f71b8aeabca86bf039d4f69cd0c59"
+        }
+      }
+    },
+    {
+      "failureClass": "bandwidth-reduction-with-queue-growth",
+      "reference": {
+        "file": "scenarios/incident-013-bandwidth-reduction-haivision-robotweax/reference.json",
+        "sha256": "8a4535560306e43eed25095f491fe0358bbbe2a04832f8bb7e67823c1262f6cd"
+      },
+      "scenarioId": "incident-013-bandwidth-reduction-haivision-robotweax",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/manifest.json",
+        "sha256": "1c007ad2bd2d3e33e30e3f86b9dd5ce400da4a01e38282b6bbd0c521210d0f10"
+      },
+      "views": {
+        "incident-report": {
+          "file": "scenarios/incident-013-bandwidth-reduction-haivision-robotweax/incident-report.json",
+          "sha256": "c1dc1d0c04fd94f8016e5bb6984d1765b4017082927269c3c5f34b5a2c35ee6d"
+        },
+        "raw-statistics": {
+          "file": "scenarios/incident-013-bandwidth-reduction-haivision-robotweax/raw-statistics.json",
+          "sha256": "74da1f68b63400c0c7940b08b3e083ffe6c89d49ebce2c319a18a51ffcb24817"
+        }
+      }
+    },
+    {
+      "failureClass": "receiver-recovery-margin-exhaustion",
+      "reference": {
+        "file": "scenarios/incident-014-recovery-margin-robotweax-haivision/reference.json",
+        "sha256": "9c967351f324219aabe8b38f77b9c499aea56a0b99c9a54a5d4ba4542e1b7cc2"
+      },
+      "scenarioId": "incident-014-recovery-margin-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-014-recovery-margin-robotweax-haivision/manifest.json",
+        "sha256": "c4093cf48235be43d8c6b02203178cb31f70381577ffbf3faf069b8f834c16b8"
+      },
+      "views": {
+        "incident-report": {
+          "file": "scenarios/incident-014-recovery-margin-robotweax-haivision/incident-report.json",
+          "sha256": "720d3d529869ec23435683a01d88e84b837a2b57d2bacf26dd2d926005420b13"
+        },
+        "raw-statistics": {
+          "file": "scenarios/incident-014-recovery-margin-robotweax-haivision/raw-statistics.json",
+          "sha256": "4bb0da10650282d38f8a921ec238e6b30dc5e43058a6d32b3b2c3591866dece0"
+        }
+      }
+    },
+    {
+      "failureClass": "receiver-recovery-margin-exhaustion",
+      "reference": {
+        "file": "scenarios/incident-015-recovery-margin-haivision-robotweax/reference.json",
+        "sha256": "17a558e8eda00a250b7849fb0a9510787452f2a2a7b1e55d5376c47811c882d0"
+      },
+      "scenarioId": "incident-015-recovery-margin-haivision-robotweax",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-015-recovery-margin-haivision-robotweax/manifest.json",
+        "sha256": "9bf67dc22db499d193628ed44724995bb55b0f9af4e22e5b9b41d7b2660deac4"
+      },
+      "views": {
+        "incident-report": {
+          "file": "scenarios/incident-015-recovery-margin-haivision-robotweax/incident-report.json",
+          "sha256": "4849c208691e39d4d744f875164fd3abb506ec23f04fd03dc6249bc4360efd70"
+        },
+        "raw-statistics": {
+          "file": "scenarios/incident-015-recovery-margin-haivision-robotweax/raw-statistics.json",
+          "sha256": "41180c7abab3c210af65a5f9114bd627cdc1dbb2452b6d19705993d4db7827f6"
+        }
+      }
+    }
+  ],
+  "schemaVersion": "1alpha1",
+  "status": "candidate",
+  "studyId": "five-class-internal-rehearsal-v1"
+}
