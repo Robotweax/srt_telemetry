@@ -29,6 +29,7 @@ HYPOTHESIS_IDS = {
     "transmission-path-rtt-step-with-recovery",
     "sender-side-pressure",
     "receiver-side-pressure",
+    "receiver-recovery-margin-exhausted",
 }
 
 
@@ -38,8 +39,8 @@ def validate_common_result(result: dict, expected_format: str) -> None:
     if result["source"]["format"] != expected_format:
         fail(f"analysis source format mismatch: {result['source']['format']}")
     hypotheses = result["hypotheses"]
-    if len(hypotheses) != 4 or {item["id"] for item in hypotheses} != HYPOTHESIS_IDS:
-        fail("analysis does not contain the four required hypotheses")
+    if len(hypotheses) != 5 or {item["id"] for item in hypotheses} != HYPOTHESIS_IDS:
+        fail("analysis does not contain the five required hypotheses")
     if not all(item["missingEvidence"] for item in hypotheses):
         fail("every hypothesis must expose its missing evidence")
     if not result["nonClaims"]:
@@ -214,6 +215,59 @@ def validate_sender_pressure_result(result: dict, expected_format: str) -> None:
         fail(f"retained sender-pressure delivery totals are invalid: {totals}")
 
 
+def validate_recovery_margin_result(result: dict, expected_format: str) -> None:
+    validate_common_result(result, expected_format)
+    timeline = result["timeline"]
+    if timeline["sampleCount"] != 9 or timeline["firstDeviationSample"] != 3:
+        fail(f"recovery-margin timeline identity is invalid: {timeline}")
+    last_deviation = timeline["lastDeviationSample"]
+    if last_deviation not in {3, 4} or timeline["recoverySample"] != last_deviation + 1:
+        fail(f"recovery-margin recovery boundary is invalid: {timeline}")
+    expected_selection = {
+        "id": "receiver-recovery-margin-exhausted",
+        "assessment": "supported",
+        "rationale": (
+            "Paired loss and retransmission are followed by receiver drops that "
+            "exactly account for the unique delivery gap under a configured TSBPD "
+            "delay, then recover without security evidence."
+        ),
+    }
+    if result["selectedHypothesis"] != expected_selection:
+        fail(
+            "unexpected recovery-margin selected hypothesis: "
+            f"{result['selectedHypothesis']}"
+        )
+    hypothesis = next(
+        item
+        for item in result["hypotheses"]
+        if item["id"] == "receiver-recovery-margin-exhausted"
+    )
+    support_ids = {item["id"] for item in hypothesis["supportingEvidence"]}
+    required_support = {
+        "loss-retransmission-before-receiver-drop",
+        "receiver-drop-delivery-gap",
+        "configured-receiver-tsbpd-delay",
+        "recovery-margin-recovery",
+    }
+    if hypothesis["assessment"] != "supported" or support_ids != required_support:
+        fail(f"retained recovery-margin evidence is incomplete: {hypothesis}")
+    totals = result["totals"]
+    if (
+        totals["uniqueSentPackets"] != 1_500
+        or totals["uniqueReceivedPackets"] != 1_400
+        or totals["senderLossPackets"] <= 0
+        or totals["receiverLossPackets"] <= 0
+        or totals["retransmittedPackets"] <= 0
+    ):
+        fail(f"retained recovery-margin delivery totals are invalid: {totals}")
+    receiver_drop_total = sum(
+        observation["signals"]["receiverDropPackets"] or 0
+        for observation in timeline["observations"]
+    )
+    if receiver_drop_total != 100:
+        fail(f"retained recovery-margin receiver drops are invalid: {receiver_drop_total}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Test the local incident analyzer")
     parser.add_argument("--analyzer", type=Path, required=True)
@@ -234,6 +288,7 @@ def main() -> int:
             "round-trip-time-step": validate_rtt_result,
             "receiver-application-pause": validate_receiver_pressure_result,
             "bandwidth-reduction-with-queue-growth": validate_sender_pressure_result,
+            "receiver-recovery-margin-exhaustion": validate_recovery_margin_result,
         }
         failure_class = manifest_document["failureClass"]
         if failure_class not in validators:
@@ -486,6 +541,72 @@ def main() -> int:
         "sender-pressure-recovery",
     }:
         fail(f"sender-pressure evidence is incomplete: {sender_hypothesis}")
+
+    recovery_margin_source = copy.deepcopy(jsonl_source)
+    for role, stream in recovery_margin_source["streams"].items():
+        for sample in stream["samples"]:
+            index = sample["sampleIndex"]
+            for field in [
+                "sender_loss_packet_delta",
+                "receiver_loss_packet_delta",
+                "retransmitted_packet_delta",
+                "sender_drop_packet_delta",
+                "receiver_drop_packet_delta",
+                "receiver_undecryptable_packet_delta",
+            ]:
+                if index > 0 and field in sample["delta"]:
+                    sample["delta"][field] = 0
+            if index > 0:
+                if role == "sender":
+                    sample["delta"]["unique_sent_packet_delta"] = 100
+                else:
+                    sample["delta"]["unique_received_packet_delta"] = (
+                        0 if index == 3 else 100
+                    )
+            sample["raw"]["rtt_seconds"] = 0.010
+            sample["raw"]["flight_size_packets"] = 0
+            sample["raw"]["send_buffer_bytes"] = 0
+            sample["raw"]["send_buffer_seconds"] = 0.0
+            sample["raw"]["receive_buffer_bytes"] = 0
+            sample["raw"]["receive_buffer_seconds"] = 0.0
+            sample["raw"]["receiver_tsbpd_delay_seconds"] = 0.120
+    recovery_margin_source["streams"]["sender"]["samples"][3]["delta"][
+        "sender_loss_packet_delta"
+    ] = 100
+    recovery_margin_source["streams"]["sender"]["samples"][3]["delta"][
+        "retransmitted_packet_delta"
+    ] = 100
+    recovery_margin_source["streams"]["receiver"]["samples"][3]["delta"][
+        "receiver_loss_packet_delta"
+    ] = 100
+    recovery_margin_source["streams"]["receiver"]["samples"][4]["delta"][
+        "receiver_drop_packet_delta"
+    ] = 100
+    recovery_margin = analyzer.build_analysis(recovery_margin_source)
+    expected_recovery_margin_timeline = {
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 4,
+        "recoverySample": 5,
+    }
+    for field, expected in expected_recovery_margin_timeline.items():
+        if recovery_margin["timeline"][field] != expected:
+            fail(
+                f"recovery margin {field} expected {expected}: "
+                f"{recovery_margin['timeline']}"
+            )
+    if recovery_margin["selectedHypothesis"] != {
+        "id": "receiver-recovery-margin-exhausted",
+        "assessment": "supported",
+        "rationale": (
+            "Paired loss and retransmission are followed by receiver drops that "
+            "exactly account for the unique delivery gap under a configured TSBPD "
+            "delay, then recover without security evidence."
+        ),
+    }:
+        fail(
+            "unexpected recovery-margin hypothesis: "
+            f"{recovery_margin['selectedHypothesis']}"
+        )
     print(
         f"incident analyzer valid: {len(arguments.manifest)} golden incidents, "
         f"{retained_recording_count} retained recordings, and generated JSONL path"

@@ -40,6 +40,7 @@ HYPOTHESIS_OPTIONS = {
     "transmission-path-rtt-step-with-recovery",
     "sender-side-pressure",
     "receiver-side-pressure",
+    "receiver-recovery-margin-exhausted",
 }
 MISSING_EVIDENCE_OPTIONS = {
     "packet-sequence-adjacency",
@@ -55,12 +56,15 @@ MISSING_EVIDENCE_OPTIONS = {
     "receiver-application-consumption",
     "offered-application-rate",
     "exact-egress-capacity",
+    "packet-belated-arrival",
+    "latency-counterfactual",
 }
 
 DOMAIN_BY_ANALYSIS = {
     "sender-to-receiver transmission path": "transmission-path",
     "sender endpoint": "sender-endpoint",
     "receiver endpoint": "receiver-endpoint",
+    "receiver playout/recovery boundary": "receiver-endpoint",
 }
 
 MISSING_EVIDENCE_BY_TEXT = {
@@ -111,6 +115,17 @@ MISSING_EVIDENCE_BY_TEXT = {
         "Receiver application-consumption timing is unavailable from public "
         "SRT statistics."
     ): {"receiver-application-consumption"},
+    (
+        "Packet belated-arrival counters are unavailable under the "
+        "non-destructive public statistics contract."
+    ): {"packet-belated-arrival"},
+    "The counterfactual outcome under a larger configured latency is unavailable.": {
+        "latency-counterfactual"
+    },
+    "The exact delay distribution and failing network hop are unavailable.": {
+        "one-way-delay",
+        "exact-failing-hop",
+    },
 }
 
 PARTICIPANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")

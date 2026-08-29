@@ -72,8 +72,8 @@
     "totals": { "$ref": "#/$defs/totals" },
     "hypotheses": {
       "type": "array",
-      "minItems": 4,
-      "maxItems": 4,
+      "minItems": 5,
+      "maxItems": 5,
       "items": { "$ref": "#/$defs/hypothesis" }
     },
     "selectedHypothesis": {
@@ -86,7 +86,9 @@
           "enum": [
             "transmission-path-loss-with-recovery",
             "transmission-path-rtt-step-with-recovery",
+            "sender-side-pressure",
             "receiver-side-pressure",
+            "receiver-recovery-margin-exhausted",
             null
           ]
         },
@@ -348,7 +350,8 @@
             "transmission-path-loss-with-recovery",
             "transmission-path-rtt-step-with-recovery",
             "sender-side-pressure",
-            "receiver-side-pressure"
+            "receiver-side-pressure",
+            "receiver-recovery-margin-exhausted"
           ]
         },
         "failureDomain": { "type": "string", "minLength": 1 },

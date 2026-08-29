@@ -40,6 +40,8 @@ RAW_FIELDS = [
     "send_buffer_seconds",
     "receive_buffer_bytes",
     "receive_buffer_seconds",
+    "sender_tsbpd_delay_seconds",
+    "receiver_tsbpd_delay_seconds",
 ]
 
 
@@ -865,9 +867,7 @@ def build_analysis(source: dict) -> dict:
         and bool(overlap_indexes)
         and pressure_recovery_sample is not None
     )
-    receiver_hypothesis_supported = (
-        receiver_drop_total > 0 or receiver_pressure_supported
-    )
+    receiver_hypothesis_supported = receiver_pressure_supported
     if receiver_pressure_supported:
         sender_contradictions.append(
             "Receiver buffer pressure provides a competing endpoint explanation."
@@ -880,6 +880,118 @@ def build_analysis(source: dict) -> dict:
     if sender_pressure_supported:
         rtt_contradictions.append(
             "Sender egress pressure provides a competing endpoint explanation."
+        )
+        rtt_supported = False
+
+    receiver_drop_indexes = [
+        sample["sampleIndex"]
+        for sample in receiver_samples
+        if positive(sample["delta"].get("receiver_drop_packet_delta"))
+    ]
+    receiver_tsbpd_indexes = [
+        sample["sampleIndex"]
+        for sample in receiver_samples
+        if positive(sample["raw"].get("receiver_tsbpd_delay_seconds"))
+    ]
+    receiver_tsbpd_values = sorted(
+        {
+            numeric(sample["raw"].get("receiver_tsbpd_delay_seconds"))
+            for sample in receiver_samples
+            if positive(sample["raw"].get("receiver_tsbpd_delay_seconds"))
+        }
+    )
+    unique_delivery_gap = max(0, unique_sent_total - unique_received_total)
+    receiver_drop_accounts_for_gap = (
+        receiver_drop_total > 0
+        and unique_sent_total >= unique_received_total
+        and abs(unique_delivery_gap - receiver_drop_total) < 1e-9
+    )
+    loss_precedes_receiver_drop = (
+        bool(paired_loss_indexes)
+        and bool(receiver_drop_indexes)
+        and paired_loss_indexes[0] <= receiver_drop_indexes[0]
+        and receiver_drop_indexes[0] <= paired_loss_indexes[-1] + 1
+    )
+    recovery_margin_support = []
+    recovery_margin_contradictions = []
+    recovery_margin_missing = [
+        (
+            "Packet belated-arrival counters are unavailable under the "
+            "non-destructive public statistics contract."
+        ),
+        "The counterfactual outcome under a larger configured latency is unavailable.",
+        "The exact delay distribution and failing network hop are unavailable.",
+    ]
+    if loss_precedes_receiver_drop and retransmission_total > 0:
+        recovery_margin_support.append(
+            evidence(
+                "loss-retransmission-before-receiver-drop",
+                (
+                    "Paired sender/receiver loss and sender retransmission precede "
+                    "or coincide with receiver drops."
+                ),
+                sorted(set(paired_loss_indexes + receiver_drop_indexes)),
+            )
+        )
+    if receiver_drop_accounts_for_gap:
+        recovery_margin_support.append(
+            evidence(
+                "receiver-drop-delivery-gap",
+                (
+                    f"Receiver drops ({receiver_drop_total:g}) exactly account for "
+                    f"the unique packet delivery gap ({unique_delivery_gap:g})."
+                ),
+                receiver_drop_indexes,
+            )
+        )
+    if receiver_tsbpd_values:
+        recovery_margin_support.append(
+            evidence(
+                "configured-receiver-tsbpd-delay",
+                (
+                    "A positive configured receiver TSBPD delay is available in "
+                    "the public statistics."
+                ),
+                receiver_tsbpd_indexes,
+            )
+        )
+    if recovery_sample is not None and receiver_drop_indexes:
+        recovery_margin_support.append(
+            evidence(
+                "recovery-margin-recovery",
+                (
+                    "Loss, retransmission, and receiver-drop deltas return to zero "
+                    "after the deviation."
+                ),
+                [recovery_sample],
+            )
+        )
+    if undecryptable_total > 0:
+        recovery_margin_contradictions.append(
+            "Receiver undecryptable counters provide a competing security explanation."
+        )
+    if sender_pressure_supported:
+        recovery_margin_contradictions.append(
+            "Sustained sender egress pressure provides a competing endpoint explanation."
+        )
+    if receiver_pressure_supported:
+        recovery_margin_contradictions.append(
+            "Sustained receiver buffer pressure provides a competing endpoint explanation."
+        )
+    recovery_margin_supported = (
+        loss_precedes_receiver_drop
+        and retransmission_total > 0
+        and receiver_drop_accounts_for_gap
+        and bool(receiver_tsbpd_values)
+        and recovery_sample is not None
+        and not recovery_margin_contradictions
+    )
+    if recovery_margin_supported:
+        rtt_contradictions.append(
+            (
+                "Receiver drops and an accounted delivery gap provide a competing "
+                "recovery-margin explanation."
+            )
         )
         rtt_supported = False
 
@@ -939,11 +1051,30 @@ def build_analysis(source: dict) -> dict:
             "contradictoryEvidence": receiver_contradictions,
             "missingEvidence": receiver_missing,
         },
+        {
+            "id": "receiver-recovery-margin-exhausted",
+            "failureDomain": "receiver playout/recovery boundary",
+            "assessment": (
+                "supported"
+                if recovery_margin_supported
+                else "insufficient-evidence"
+            ),
+            "summary": (
+                "Paired loss and retransmission followed by receiver drops and an "
+                "accounted delivery gap indicate that the configured receiver "
+                "recovery/playout margin was exhausted; they do not prove which "
+                "latency setting would be sufficient."
+            ),
+            "supportingEvidence": recovery_margin_support,
+            "contradictoryEvidence": recovery_margin_contradictions,
+            "missingEvidence": recovery_margin_missing,
+        },
     ]
     if (
         path_supported
         and not sender_hypothesis_supported
         and not receiver_hypothesis_supported
+        and not recovery_margin_supported
     ):
         selected = {
             "id": "transmission-path-loss-with-recovery",
@@ -958,6 +1089,7 @@ def build_analysis(source: dict) -> dict:
         rtt_supported
         and not sender_hypothesis_supported
         and not receiver_hypothesis_supported
+        and not recovery_margin_supported
     ):
         selected = {
             "id": "transmission-path-rtt-step-with-recovery",
@@ -971,6 +1103,7 @@ def build_analysis(source: dict) -> dict:
         sender_pressure_supported
         and not path_supported
         and not receiver_hypothesis_supported
+        and not recovery_margin_supported
     ):
         selected = {
             "id": "sender-side-pressure",
@@ -985,6 +1118,7 @@ def build_analysis(source: dict) -> dict:
         receiver_pressure_supported
         and not path_supported
         and not sender_hypothesis_supported
+        and not recovery_margin_supported
     ):
         selected = {
             "id": "receiver-side-pressure",
@@ -993,6 +1127,20 @@ def build_analysis(source: dict) -> dict:
                 "Receiver buffer growth overlaps upstream sender pressure and "
                 "recovers after the deviation without a supported path-loss "
                 "explanation."
+            ),
+        }
+    elif (
+        recovery_margin_supported
+        and not sender_pressure_supported
+        and not receiver_pressure_supported
+    ):
+        selected = {
+            "id": "receiver-recovery-margin-exhausted",
+            "assessment": "supported",
+            "rationale": (
+                "Paired loss and retransmission are followed by receiver drops "
+                "that exactly account for the unique delivery gap under a "
+                "configured TSBPD delay, then recover without security evidence."
             ),
         }
     else:
@@ -1041,6 +1189,10 @@ def build_analysis(source: dict) -> dict:
             (
                 "The analysis does not infer unavailable endpoint-pressure metrics "
                 "as zero."
+            ),
+            (
+                "Receiver drops and configured TSBPD delay do not by themselves "
+                "prove that increasing latency is the correct remediation."
             ),
         ]
     )

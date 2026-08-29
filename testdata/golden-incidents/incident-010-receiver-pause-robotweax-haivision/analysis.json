@@ -128,6 +128,37 @@
           "summary": "Receiver buffer occupancy returns below its candidate threshold."
         }
       ]
+    },
+    {
+      "assessment": "insufficient-evidence",
+      "contradictoryEvidence": [
+        "Sustained receiver buffer pressure provides a competing endpoint explanation."
+      ],
+      "failureDomain": "receiver playout/recovery boundary",
+      "id": "receiver-recovery-margin-exhausted",
+      "missingEvidence": [
+        "Packet belated-arrival counters are unavailable under the non-destructive public statistics contract.",
+        "The counterfactual outcome under a larger configured latency is unavailable.",
+        "The exact delay distribution and failing network hop are unavailable."
+      ],
+      "summary": "Paired loss and retransmission followed by receiver drops and an accounted delivery gap indicate that the configured receiver recovery/playout margin was exhausted; they do not prove which latency setting would be sufficient.",
+      "supportingEvidence": [
+        {
+          "id": "configured-receiver-tsbpd-delay",
+          "samples": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "summary": "A positive configured receiver TSBPD delay is available in the public statistics."
+        }
+      ]
     }
   ],
   "kind": "robotweax-srt-local-incident-analysis",
@@ -136,7 +167,8 @@
     "RTT evidence does not isolate one-way delay or its direction.",
     "Public SRT buffer gauges do not expose exact application scheduling or consumption timing.",
     "Public SRT statistics do not expose the offered application rate or identify an exact egress capacity restriction.",
-    "The analysis does not infer unavailable endpoint-pressure metrics as zero."
+    "The analysis does not infer unavailable endpoint-pressure metrics as zero.",
+    "Receiver drops and configured TSBPD delay do not by themselves prove that increasing latency is the correct remediation."
   ],
   "schemaVersion": "1alpha1",
   "selectedHypothesis": {

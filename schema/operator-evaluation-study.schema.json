@@ -129,7 +129,8 @@
         "transmission-path-loss-with-recovery",
         "transmission-path-rtt-step-with-recovery",
         "sender-side-pressure",
-        "receiver-side-pressure"
+        "receiver-side-pressure",
+        "receiver-recovery-margin-exhausted"
       ]
     },
     "missingEvidence": {
@@ -146,7 +147,9 @@
         "sender-application-scheduling",
         "receiver-application-consumption",
         "offered-application-rate",
-        "exact-egress-capacity"
+        "exact-egress-capacity",
+        "packet-belated-arrival",
+        "latency-counterfactual"
       ]
     },
     "assignment": {

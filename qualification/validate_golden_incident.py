@@ -191,6 +191,7 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
     delay_proxy = capture.get("delayProxy")
     application_pause = capture.get("applicationPause")
     bandwidth_proxy = capture.get("bandwidthProxy")
+    sequence_hold_proxy = capture.get("sequenceHoldProxy")
     if sum(
         candidate is not None
         for candidate in [
@@ -198,11 +199,12 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
             delay_proxy,
             application_pause,
             bandwidth_proxy,
+            sequence_hold_proxy,
         ]
     ) != 1:
         fail(
             "capture must contain exactly one fault proxy, delay proxy, "
-            "application pause, or bandwidth proxy"
+            "application pause, bandwidth proxy, or sequence-hold proxy"
         )
     first_active = manifest["faultPlan"]["firstActiveSample"]
     last_active = manifest["faultPlan"]["lastActiveSample"]
@@ -233,6 +235,8 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
         else delay_proxy
         if delay_proxy is not None
         else bandwidth_proxy
+        if bandwidth_proxy is not None
+        else sequence_hold_proxy
     )
     if not isinstance(proxy, dict) or not isinstance(proxy.get("stages"), list):
         fail("capture proxy observations are missing")
@@ -241,6 +245,77 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
     expected_indexes = list(range(1, max(index for _, index in by_key) + 1))
     if indexes != expected_indexes:
         fail(f"capture fault stages are not contiguous: {indexes}")
+    if sequence_hold_proxy is not None:
+        if capture.get("environment", {}).get("transport") != (
+            "ipv4-loopback-udp-proxy"
+        ):
+            fail("sequence-hold capture must use the IPv4 loopback UDP proxy")
+        held_originals = proxy.get("heldOriginalDataPackets")
+        sender_messages = proxy.get("senderMessages")
+        receiver_messages = proxy.get("receiverMessages")
+        steady_messages = proxy.get("steadyMessagesPerInterval")
+        measured_hold = proxy.get("measuredHoldNano")
+        if not isinstance(held_originals, int) or held_originals <= 0:
+            fail("sequence-hold original packet count is invalid")
+        if not isinstance(sender_messages, int) or sender_messages <= 0:
+            fail("sequence-hold sender transfer size is invalid")
+        if not isinstance(receiver_messages, int) or receiver_messages <= 0:
+            fail("sequence-hold receiver transfer size is invalid")
+        if sender_messages - receiver_messages != held_originals:
+            fail("sequence-hold transfer gap does not match held originals")
+        if not isinstance(steady_messages, int) or steady_messages <= 0:
+            fail("sequence-hold steady transfer size is invalid")
+        if not isinstance(measured_hold, int) or measured_hold <= 0:
+            fail("sequence-hold measured duration is invalid")
+        for stage in stages:
+            index = stage["sampleIndex"]
+            active = first_active <= index <= last_active
+            if stage.get("active") != active:
+                fail(f"sequence-hold proxy active state mismatch at sample {index}")
+            for field in [
+                "queueAtStart",
+                "originalDataPackets",
+                "repeatedDataPackets",
+                "heldDataPackets",
+                "forwardedDataPackets",
+                "forwardedControlPackets",
+                "reversePackets",
+                "maximumQueuedPackets",
+                "releasedHeldPackets",
+                "queueAtEnd",
+            ]:
+                value = stage.get(field)
+                if not isinstance(value, int) or value < 0:
+                    fail(
+                        f"sequence-hold proxy {field} is invalid at sample "
+                        f"{index}: {value}"
+                    )
+        active_stages = [stage for stage in stages if stage["active"]]
+        if not active_stages:
+            fail("sequence-hold proxy has no active stages")
+        first_stage = active_stages[0]
+        if first_stage["originalDataPackets"] < sender_messages:
+            fail("sequence-hold proxy did not observe the offered active transfer")
+        if first_stage["heldDataPackets"] < held_originals:
+            fail("sequence-hold proxy did not retain all selected originals")
+        if first_stage["queueAtEnd"] <= 0:
+            fail("sequence-hold queue did not grow in the first active stage")
+        if active_stages[-1]["queueAtEnd"] <= 0:
+            fail("sequence-hold queue drained before the active hold ended")
+        if any(stage["releasedHeldPackets"] != 0 for stage in active_stages):
+            fail("sequence-hold proxy released packets during the active hold")
+        recovery_stages = [
+            stage for stage in stages if stage["sampleIndex"] > last_active
+        ]
+        if not recovery_stages or recovery_stages[0]["queueAtStart"] <= 0:
+            fail("sequence-hold recovery did not begin with retained packets")
+        if (
+            recovery_stages[0]["releasedHeldPackets"]
+            != recovery_stages[0]["queueAtStart"]
+            or recovery_stages[0]["queueAtEnd"] != 0
+        ):
+            fail("sequence-hold queue did not release exactly at recovery")
+        return
     if bandwidth_proxy is not None:
         if capture.get("environment", {}).get("transport") != (
             "ipv4-loopback-udp-proxy"
