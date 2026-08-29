@@ -1,3 +1,4 @@
+#include <robotweax/srt_telemetry.hpp>
 #include <robotweax/srt_telemetry_public_srt.h>
 
 #if defined(ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
@@ -19,8 +20,12 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -56,6 +61,23 @@ constexpr std::uint64_t incident_fields =
     ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_WIRE_BYTE_TOTAL |
     ROBOTWEAX_SRT_TELEMETRY_FIELD_RETRANSMITTED_WIRE_BYTE_TOTAL |
     ROBOTWEAX_SRT_TELEMETRY_FIELD_RTT_SECONDS;
+
+struct RecordingConfig final
+{
+    std::filesystem::path output;
+    std::string flow_id;
+    std::string provider_version;
+    std::string provider_revision;
+    std::string build_profile;
+    std::size_t capacity = 4'096;
+};
+
+struct Options final
+{
+    std::string role;
+    int port = 0;
+    std::optional<RecordingConfig> recording;
+};
 
 class Runtime final
 {
@@ -378,10 +400,64 @@ bool no_extra_input(std::istringstream &command)
     return !(command >> extra);
 }
 
+bool export_recording(const robotweax::srt::telemetry::BoundedRecorder &recorder,
+                      const RecordingConfig &config, const std::string_view role)
+{
+    if (recorder.size() == 0)
+    {
+        std::cerr << "FAIL: refusing to export an empty incident recording\n";
+        return false;
+    }
+    const auto partial = std::filesystem::path(config.output.string() + ".partial");
+    if (std::filesystem::exists(config.output) || std::filesystem::exists(partial))
+    {
+        std::cerr << "FAIL: refusing to overwrite incident recording " << config.output << '\n';
+        return false;
+    }
+
+    robotweax::srt::telemetry::JsonlExportMetadata metadata;
+    metadata.stream_id = config.flow_id + "-" + std::string(role);
+    metadata.flow_id = config.flow_id;
+    metadata.provider_version = config.provider_version;
+    metadata.provider_revision = config.provider_revision;
+    metadata.build_profile = config.build_profile;
+    metadata.role = role == "sender" ? ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER
+                                     : ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER;
+    metadata.configured_provider = runtime_provider;
+    const auto jsonl = recorder.export_jsonl(metadata);
+
+    std::ofstream output(partial, std::ios::binary | std::ios::trunc);
+    output.write(jsonl.data(), static_cast<std::streamsize>(jsonl.size()));
+    output.close();
+    if (!output)
+    {
+        std::cerr << "FAIL: writing incident recording " << partial << '\n';
+        return false;
+    }
+    std::error_code rename_error;
+    std::filesystem::rename(partial, config.output, rename_error);
+    if (rename_error)
+    {
+        std::cerr << "FAIL: publishing incident recording " << config.output << ": "
+                  << rename_error.message() << '\n';
+        return false;
+    }
+    std::cout << "RECORDED {\"role\":\"" << role << "\",\"recordCount\":" << recorder.size()
+              << ",\"capacity\":" << recorder.capacity()
+              << ",\"overwrittenCount\":" << recorder.overwritten_count() << "}\n"
+              << std::flush;
+    return true;
+}
+
 int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
-                 const std::string_view role)
+                 const std::string_view role, const std::optional<RecordingConfig> &recording)
 {
     TransferWorker transfer_worker;
+    std::optional<robotweax::srt::telemetry::BoundedRecorder> recorder;
+    if (recording.has_value())
+    {
+        recorder.emplace(recording->capacity);
+    }
     std::string line;
     while (std::getline(std::cin, line))
     {
@@ -390,6 +466,10 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
         command >> operation;
         if (operation == "DONE" && no_extra_input(command) && !transfer_worker.active())
         {
+            if (recording.has_value() && !export_recording(*recorder, *recording, role))
+            {
+                return EXIT_FAILURE;
+            }
             return EXIT_SUCCESS;
         }
         if (operation == "SAMPLE")
@@ -407,6 +487,10 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
             if (!sample_at(session, unix_nano, monotonic_nano, result))
             {
                 return EXIT_FAILURE;
+            }
+            if (recorder.has_value())
+            {
+                recorder->push(result.raw, result.delta);
             }
             emit_sample(role, sample_index, result);
             continue;
@@ -450,8 +534,7 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
             std::uint64_t transfer_id = 0;
             std::uint64_t message_count = 0;
             if (!(command >> transfer_id >> message_count) || message_count == 0 ||
-                !no_extra_input(command) ||
-                !transfer_worker.finish(transfer_id, message_count))
+                !no_extra_input(command) || !transfer_worker.finish(transfer_id, message_count))
             {
                 std::cerr << "FAIL: invalid or failed WAIT_TRANSFER command\n";
                 return EXIT_FAILURE;
@@ -468,7 +551,7 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
     return EXIT_FAILURE;
 }
 
-int run_listener()
+int run_listener(const Options &options)
 {
     Runtime runtime;
     Socket listener(srt_create_socket());
@@ -498,7 +581,7 @@ int run_listener()
         return EXIT_FAILURE;
     }
     std::cout << "CONNECTED\n" << std::flush;
-    return run_commands(accepted.get(), session, false, "receiver");
+    return run_commands(accepted.get(), session, false, "receiver", options.recording);
 }
 
 int parse_port(const char *text)
@@ -509,7 +592,7 @@ int parse_port(const char *text)
                                                                        : 0;
 }
 
-int run_caller(const int port)
+int run_caller(const Options &options)
 {
     Runtime runtime;
     Socket caller(srt_create_socket());
@@ -521,7 +604,7 @@ int run_caller(const int port)
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = htons(static_cast<std::uint16_t>(port));
+    address.sin_port = htons(static_cast<std::uint16_t>(options.port));
     if (!srt_ok(srt_connect(caller.get(), reinterpret_cast<const sockaddr *>(&address),
                             static_cast<int>(sizeof(address))),
                 "incident connect"))
@@ -535,24 +618,119 @@ int run_caller(const int port)
         return EXIT_FAILURE;
     }
     std::cout << "CONNECTED\n" << std::flush;
-    return run_commands(caller.get(), session, true, "sender");
+    return run_commands(caller.get(), session, true, "sender", options.recording);
+}
+
+bool parse_size(const char *text, std::size_t &result)
+{
+    char *end = nullptr;
+    const auto value = std::strtoull(text, &end, 10);
+    if (end == text || *end != '\0' || value == 0 ||
+        value > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max()))
+    {
+        return false;
+    }
+    result = static_cast<std::size_t>(value);
+    return true;
+}
+
+bool parse_options(const int argc, char **argv, Options &options)
+{
+    std::optional<RecordingConfig> recording;
+    bool saw_recording_option = false;
+    for (int index = 1; index < argc; ++index)
+    {
+        const std::string_view option(argv[index]);
+        if (index + 1 >= argc)
+        {
+            return false;
+        }
+        const char *value = argv[++index];
+        if (option == "--role")
+        {
+            options.role = value;
+        }
+        else if (option == "--port")
+        {
+            options.port = parse_port(value);
+        }
+        else
+        {
+            saw_recording_option = true;
+            if (!recording.has_value())
+            {
+                recording.emplace();
+            }
+            if (option == "--jsonl-output")
+            {
+                recording->output = value;
+            }
+            else if (option == "--flow-id")
+            {
+                recording->flow_id = value;
+            }
+            else if (option == "--provider-version")
+            {
+                recording->provider_version = value;
+            }
+            else if (option == "--provider-revision")
+            {
+                recording->provider_revision = value;
+            }
+            else if (option == "--build-profile")
+            {
+                recording->build_profile = value;
+            }
+            else if (option == "--recorder-capacity")
+            {
+                if (!parse_size(value, recording->capacity))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+    if ((options.role != "listener" && options.role != "caller") ||
+        (options.role == "listener" && options.port != 0) ||
+        (options.role == "caller" && options.port == 0))
+    {
+        return false;
+    }
+    if (saw_recording_option &&
+        (recording->output.empty() || recording->flow_id.empty() ||
+         recording->provider_version.empty() || recording->provider_revision.empty() ||
+         recording->build_profile.empty()))
+    {
+        return false;
+    }
+    options.recording = std::move(recording);
+    return true;
 }
 
 } // namespace
 
 int main(const int argc, char **argv)
 {
-    if (argc == 3 && std::string_view(argv[1]) == "--role" &&
-        std::string_view(argv[2]) == "listener")
+    try
     {
-        return run_listener();
+        Options options;
+        if (!parse_options(argc, argv, options))
+        {
+            std::cerr << "usage: incident-peer --role listener|caller [--port PORT] "
+                         "[--jsonl-output PATH --flow-id ID --provider-version VERSION "
+                         "--provider-revision REVISION --build-profile PROFILE "
+                         "[--recorder-capacity RECORDS]]\n";
+            return EXIT_FAILURE;
+        }
+        return options.role == "listener" ? run_listener(options) : run_caller(options);
     }
-    if (argc == 5 && std::string_view(argv[1]) == "--role" &&
-        std::string_view(argv[2]) == "caller" && std::string_view(argv[3]) == "--port")
+    catch (const std::exception &error)
     {
-        const auto port = parse_port(argv[4]);
-        return port == 0 ? EXIT_FAILURE : run_caller(port);
+        std::cerr << "FAIL: incident peer exception: " << error.what() << '\n';
+        return EXIT_FAILURE;
     }
-    std::cerr << "usage: incident-peer --role listener | --role caller --port PORT\n";
-    return EXIT_FAILURE;
 }

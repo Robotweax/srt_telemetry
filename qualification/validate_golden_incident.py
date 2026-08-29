@@ -224,6 +224,75 @@ def validate_capture(manifest: dict, by_key: dict) -> None:
             fail(f"fault proxy did not observe retransmission attempts at sample {index}")
 
 
+def validate_recordings(manifest_path: Path, manifest: dict) -> None:
+    recordings = manifest.get("recordings")
+    if recordings is None:
+        return
+    if not isinstance(recordings, dict):
+        fail("recordings metadata is not an object")
+    require_keys(
+        recordings,
+        {"schemaVersion", "format", "flowId", "sender", "receiver", "analysis"},
+        "recordings",
+    )
+    if recordings["schemaVersion"] != "1alpha1" or recordings["format"] != (
+        "robotweax-srt-telemetry-jsonl-v1"
+    ):
+        fail("unsupported retained recording format")
+    if recordings["flowId"] != manifest["incidentId"]:
+        fail("retained recording flow id does not match the incident id")
+    providers = {provider["role"]: provider["provider"] for provider in manifest["providers"]}
+    expected_records = manifest["dataset"]["rows"] // len(manifest["dataset"]["roles"])
+    artifact_hashes = {}
+    for role in ["sender", "receiver"]:
+        metadata = recordings.get(role)
+        if not isinstance(metadata, dict):
+            fail(f"retained {role} recording metadata is missing")
+        path = resolve_dataset(manifest_path, metadata["file"])
+        contents = path.read_bytes()
+        digest = hashlib.sha256(contents).hexdigest()
+        if digest != metadata["sha256"]:
+            fail(f"retained {role} recording digest mismatch")
+        lines = contents.decode("utf-8").splitlines()
+        if len(lines) != expected_records + 1 or metadata["records"] != expected_records:
+            fail(f"retained {role} recording count mismatch")
+        header = json.loads(lines[0])
+        expected_header = {
+            "kind": "robotweax-srt-telemetry-recording",
+            "schemaVersion": "1alpha1",
+            "flowId": manifest["incidentId"],
+            "role": role,
+            "configuredProvider": providers[role],
+            "recordCount": expected_records,
+            "overwrittenCount": 0,
+        }
+        for field, expected in expected_header.items():
+            if header.get(field) != expected:
+                fail(f"retained {role} recording header {field} mismatch")
+        artifact_hashes[metadata["file"]] = digest
+
+    analysis_metadata = recordings.get("analysis")
+    if not isinstance(analysis_metadata, dict):
+        fail("retained recording analysis metadata is missing")
+    analysis_path = resolve_dataset(manifest_path, analysis_metadata["file"])
+    analysis_digest = hashlib.sha256(analysis_path.read_bytes()).hexdigest()
+    if analysis_digest != analysis_metadata["sha256"]:
+        fail("retained recording analysis digest mismatch")
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    if analysis.get("schemaVersion") != analysis_metadata["schemaVersion"]:
+        fail("retained recording analysis schema mismatch")
+    source = analysis.get("source", {})
+    if source.get("format") != recordings["format"] or source.get("flowId") != (
+        manifest["incidentId"]
+    ):
+        fail("retained recording analysis source mismatch")
+    analysis_artifacts = {
+        artifact.get("path"): artifact.get("sha256") for artifact in source.get("artifacts", [])
+    }
+    if analysis_artifacts != artifact_hashes:
+        fail("retained recording analysis artifact hashes do not match the JSONL files")
+
+
 def validate_manifest(manifest_path: Path) -> None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
@@ -274,6 +343,7 @@ def validate_manifest(manifest_path: Path) -> None:
             fail(f"fault plan is outside the dataset for role {role}")
     validate_expectations(manifest, fieldnames, by_key)
     validate_capture(manifest, by_key)
+    validate_recordings(manifest_path, manifest)
     print(f"golden incident valid: {manifest['incidentId']} ({len(rows)} rows)")
 
 

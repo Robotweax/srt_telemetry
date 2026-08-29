@@ -69,10 +69,35 @@ def main() -> int:
     analyzer = load_analyzer(arguments.analyzer.resolve())
 
     manifest_results = []
+    retained_recording_count = 0
     for manifest in arguments.manifest:
-        result = analyzer.build_analysis(analyzer.load_manifest(manifest.resolve()))
+        manifest = manifest.resolve()
+        result = analyzer.build_analysis(analyzer.load_manifest(manifest))
         validate_loss_result(result, "robotweax-srt-telemetry-csv-v1")
         manifest_results.append(result)
+        manifest_document = json.loads(manifest.read_text(encoding="utf-8"))
+        recordings = manifest_document.get("recordings")
+        if recordings is not None:
+            retained_recording_count += 1
+            jsonl_result = analyzer.build_analysis(
+                analyzer.load_jsonl(
+                    [
+                        manifest.parent / recordings["sender"]["file"],
+                        manifest.parent / recordings["receiver"]["file"],
+                    ]
+                )
+            )
+            validate_loss_result(jsonl_result, "robotweax-srt-telemetry-jsonl-v1")
+            retained = json.loads(
+                (manifest.parent / recordings["analysis"]["file"]).read_text(
+                    encoding="utf-8"
+                )
+            )
+            if jsonl_result != retained:
+                fail(f"retained JSONL analysis is not reproducible: {manifest}")
+            for field in ["timeline", "totals", "hypotheses", "selectedHypothesis"]:
+                if jsonl_result[field] != result[field]:
+                    fail(f"CSV and JSONL analysis disagree on {field}: {manifest}")
     expected = json.loads(arguments.expected_analysis.read_text(encoding="utf-8"))
     if manifest_results[0] != expected:
         fail("retained synthetic incident analysis is not reproducible")
@@ -116,7 +141,8 @@ def main() -> int:
     if misaligned["selectedHypothesis"]["assessment"] != "insufficient-evidence":
         fail("non-overlapping sender and receiver loss must not count as paired evidence")
     print(
-        f"incident analyzer valid: {len(arguments.manifest)} golden incidents and JSONL path"
+        f"incident analyzer valid: {len(arguments.manifest)} golden incidents, "
+        f"{retained_recording_count} retained recordings, and generated JSONL path"
     )
     return 0
 

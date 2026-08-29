@@ -8,12 +8,14 @@ import io
 import json
 import platform
 import queue
+import re
 import selectors
 import socket
 import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Optional
 
 
 FIRST_ACTIVE_SAMPLE = 3
@@ -21,6 +23,7 @@ LAST_ACTIVE_SAMPLE = 6
 LAST_SAMPLE = 8
 LOGICAL_INTERVAL_NANO = 1_000_000_000
 PAYLOAD_BYTES = 1_316
+INCIDENT_PATTERN = re.compile(r"^incident-[0-9]{3,}-[a-z0-9-]+$")
 
 COUNTER_FIELDS = [
     ("sent_packet_total", "sent_packet_delta", 1 << 0),
@@ -378,6 +381,36 @@ def sample_pair(
     return [sender, receiver]
 
 
+def peer_recording_arguments(role: str, recording: dict) -> list:
+    endpoint = recording[role]
+    return [
+        "--jsonl-output",
+        str(endpoint["output"]),
+        "--flow-id",
+        recording["flow_id"],
+        "--provider-version",
+        endpoint["version"],
+        "--provider-revision",
+        endpoint["revision"],
+        "--build-profile",
+        endpoint["build_profile"],
+        "--recorder-capacity",
+        str(recording["capacity"]),
+    ]
+
+
+def validate_recorded(line: str, role: str, capacity: int) -> None:
+    observation = parse_prefixed_json(line, "RECORDED")
+    expected = {
+        "role": role,
+        "recordCount": LAST_SAMPLE + 1,
+        "capacity": capacity,
+        "overwrittenCount": 0,
+    }
+    if observation != expected:
+        raise RuntimeError(f"unexpected recording observation: {observation}")
+
+
 def run_capture(
     receiver_peer: Path,
     sender_peer: Path,
@@ -388,8 +421,12 @@ def run_capture(
     drop_every: int,
     burst_start: int,
     burst_length: int,
+    recording: Optional[dict] = None,
 ) -> tuple:
-    listener = Peer(receiver_peer, ["--role", "listener"])
+    listener_arguments = ["--role", "listener"]
+    if recording is not None:
+        listener_arguments.extend(peer_recording_arguments("receiver", recording))
+    listener = Peer(receiver_peer, listener_arguments)
     caller = None
     proxy = None
     primary_error = None
@@ -405,7 +442,10 @@ def run_capture(
             burst_start,
             burst_length,
         )
-        caller = Peer(sender_peer, ["--role", "caller", "--port", str(proxy.port)])
+        caller_arguments = ["--role", "caller", "--port", str(proxy.port)]
+        if recording is not None:
+            caller_arguments.extend(peer_recording_arguments("sender", recording))
+        caller = Peer(sender_peer, caller_arguments)
         listener.wait_for("CONNECTED")
         caller.wait_for("CONNECTED")
 
@@ -452,6 +492,13 @@ def run_capture(
         proxy = None
         listener.send("DONE")
         caller.send("DONE")
+        if recording is not None:
+            validate_recorded(
+                listener.wait_for("RECORDED"), "receiver", recording["capacity"]
+            )
+            validate_recorded(
+                caller.wait_for("RECORDED"), "sender", recording["capacity"]
+            )
         listener.finish()
         caller.finish()
         return samples, stages
@@ -573,7 +620,7 @@ def capture_direction(arguments: argparse.Namespace) -> dict:
         else:
             incident_id = "incident-005-captured-burst-loss-haivision-robotweax"
     return {
-        "incident_id": incident_id,
+        "incident_id": arguments.incident_id or incident_id,
         "topology": (
             f"{sender['name']} sender through a deterministic UDP fault proxy "
             f"to a {receiver['name']} receiver"
@@ -638,7 +685,12 @@ def require_incident_evidence(samples: list) -> None:
             raise RuntimeError(f"receiver loss leaked outside fault window: {receiver}")
 
 
-def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) -> bytes:
+def manifest_bytes(
+    arguments: argparse.Namespace,
+    samples: bytes,
+    stages: list,
+    recordings: Optional[dict] = None,
+) -> bytes:
     loss = loss_configuration(arguments)
     direction = capture_direction(arguments)
     sender = direction["sender"]
@@ -782,7 +834,89 @@ def manifest_bytes(arguments: argparse.Namespace, samples: bytes, stages: list) 
         ],
         "contradictions": contradictions,
     }
+    if recordings is not None:
+        manifest["recordings"] = recordings
     return (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def recording_config(direction: dict, output_dir: Path) -> dict:
+    return {
+        "flow_id": direction["incident_id"],
+        "capacity": LAST_SAMPLE + 1,
+        "sender": {
+            "output": output_dir / "sender.jsonl",
+            "version": direction["sender"]["version"],
+            "revision": direction["sender"]["revision"],
+            "build_profile": direction["sender"]["build_profile"],
+        },
+        "receiver": {
+            "output": output_dir / "receiver.jsonl",
+            "version": direction["receiver"]["version"],
+            "revision": direction["receiver"]["revision"],
+            "build_profile": direction["receiver"]["build_profile"],
+        },
+    }
+
+
+def analyze_recordings(output_dir: Path, direction: dict) -> dict:
+    analyzer = Path(__file__).resolve().parents[1] / "tools" / "analyze_incident.py"
+    analysis_path = output_dir / "analysis.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(analyzer),
+            "--jsonl",
+            str(output_dir / "sender.jsonl"),
+            str(output_dir / "receiver.jsonl"),
+            "--output",
+            str(analysis_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if not completed.stdout.startswith("incident analysis written:"):
+        raise RuntimeError(f"unexpected analyzer result: {completed.stdout!r}")
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    expected_timeline = {
+        "sampleCount": LAST_SAMPLE + 1,
+        "firstDeviationSample": FIRST_ACTIVE_SAMPLE,
+        "lastDeviationSample": LAST_ACTIVE_SAMPLE,
+        "recoverySample": LAST_ACTIVE_SAMPLE + 1,
+    }
+    for field, expected in expected_timeline.items():
+        if analysis["timeline"].get(field) != expected:
+            raise RuntimeError(f"analysis {field} expected {expected}: {analysis['timeline']}")
+    selected = analysis.get("selectedHypothesis", {})
+    if selected.get("id") != "transmission-path-loss-with-recovery" or selected.get(
+        "assessment"
+    ) != "supported":
+        raise RuntimeError(f"real recording did not support path-loss hypothesis: {selected}")
+    streams = {stream["role"]: stream for stream in analysis["source"]["streams"]}
+    for role in ["sender", "receiver"]:
+        expected_provider = direction[role]["provider"]
+        if streams.get(role, {}).get("provider") != expected_provider:
+            raise RuntimeError(f"analysis provider mismatch for {role}: {streams}")
+    return {
+        "schemaVersion": "1alpha1",
+        "format": "robotweax-srt-telemetry-jsonl-v1",
+        "flowId": direction["incident_id"],
+        "sender": {
+            "file": "sender.jsonl",
+            "sha256": sha256_file(output_dir / "sender.jsonl"),
+            "records": LAST_SAMPLE + 1,
+        },
+        "receiver": {
+            "file": "receiver.jsonl",
+            "sha256": sha256_file(output_dir / "receiver.jsonl"),
+            "records": LAST_SAMPLE + 1,
+        },
+        "analysis": {
+            "file": "analysis.json",
+            "sha256": sha256_file(analysis_path),
+            "schemaVersion": "1alpha1",
+        },
+    }
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -806,6 +940,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--haivision-revision", required=True)
     parser.add_argument("--haivision-build-profile", required=True)
     parser.add_argument("--telemetry-revision", required=True)
+    parser.add_argument("--incident-id", help="optional retained incident identity override")
     parser.add_argument(
         "--loss-pattern",
         choices=["constant", "burst"],
@@ -817,6 +952,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--burst-start", type=int, default=81)
     parser.add_argument("--burst-length", type=int, default=20)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--record-jsonl",
+        action="store_true",
+        help="record both real endpoint streams and run the local analyzer",
+    )
     return parser.parse_args()
 
 
@@ -832,6 +972,10 @@ def main() -> int:
             raise RuntimeError(f"required artifact does not exist: {path}")
     if arguments.messages_per_interval <= 0:
         raise RuntimeError("messages-per-interval must be positive")
+    if arguments.incident_id is not None and not INCIDENT_PATTERN.fullmatch(
+        arguments.incident_id
+    ):
+        raise RuntimeError(f"invalid incident id: {arguments.incident_id}")
     if arguments.loss_pattern == "constant":
         if arguments.drop_every <= 1:
             raise RuntimeError("drop-every must exceed one")
@@ -844,10 +988,19 @@ def main() -> int:
         if burst_last > arguments.messages_per_interval:
             raise RuntimeError("burst range must fit inside messages-per-interval")
     retained_paths = [arguments.output_dir / "manifest.json", arguments.output_dir / "samples.csv"]
+    if arguments.record_jsonl:
+        retained_paths.extend(
+            arguments.output_dir / name
+            for name in ["sender.jsonl", "receiver.jsonl", "analysis.json"]
+        )
     if any(path.exists() for path in retained_paths):
         raise RuntimeError(f"refusing to overwrite retained capture in {arguments.output_dir}")
 
     direction = capture_direction(arguments)
+    recording = None
+    if arguments.record_jsonl:
+        arguments.output_dir.mkdir(parents=True, exist_ok=True)
+        recording = recording_config(direction, arguments.output_dir)
     samples, stages = run_capture(
         direction["receiver"]["peer"],
         direction["sender"]["peer"],
@@ -858,10 +1011,12 @@ def main() -> int:
         arguments.drop_every,
         arguments.burst_start,
         arguments.burst_length,
+        recording,
     )
     require_incident_evidence(samples)
     samples_contents = samples_csv(samples)
-    manifest_contents = manifest_bytes(arguments, samples_contents, stages)
+    recordings = analyze_recordings(arguments.output_dir, direction) if recording else None
+    manifest_contents = manifest_bytes(arguments, samples_contents, stages, recordings)
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     (arguments.output_dir / "samples.csv").write_bytes(samples_contents)
     (arguments.output_dir / "manifest.json").write_bytes(manifest_contents)

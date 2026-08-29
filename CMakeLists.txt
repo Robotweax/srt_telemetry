@@ -154,6 +154,21 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests)
             add_test(NAME robotweax_srt_telemetry_public_srt_lifecycle_tests
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --lifecycle)
+            find_package(Python3 COMPONENTS Interpreter QUIET)
+            if(Python3_Interpreter_FOUND)
+                add_test(NAME robotweax_srt_telemetry_public_srt_jsonl_recording_test
+                    COMMAND "${Python3_EXECUTABLE}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_jsonl_peer_recording.py"
+                        --peer $<TARGET_FILE:robotweax_srt_telemetry_public_srt_incident_peer>
+                        --provider "${ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER}"
+                        --analyzer "${CMAKE_CURRENT_SOURCE_DIR}/tools/analyze_incident.py"
+                        --work-dir "${CMAKE_CURRENT_BINARY_DIR}/jsonl-peer-recording")
+                set_tests_properties(robotweax_srt_telemetry_public_srt_jsonl_recording_test
+                    PROPERTIES
+                        TIMEOUT 30
+                        ENVIRONMENT
+                            "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
+            endif()
             set_tests_properties(robotweax_srt_telemetry_public_srt_runtime_tests
                 PROPERTIES TIMEOUT 15)
             set_tests_properties(robotweax_srt_telemetry_public_srt_lifecycle_tests
