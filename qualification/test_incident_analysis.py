@@ -120,18 +120,12 @@ def validate_rtt_result(result: dict, expected_format: str) -> None:
 
 def validate_receiver_pressure_result(result: dict, expected_format: str) -> None:
     validate_common_result(result, expected_format)
-    expected_timeline = {
-        "sampleCount": 9,
-        "firstDeviationSample": 3,
-        "lastDeviationSample": 6,
-        "recoverySample": 7,
-    }
-    for field, expected in expected_timeline.items():
-        actual = result["timeline"][field]
-        if actual != expected:
-            fail(
-                f"receiver-pressure timeline {field} expected {expected}, got {actual}"
-            )
+    timeline = result["timeline"]
+    if timeline["sampleCount"] != 9 or timeline["firstDeviationSample"] != 3:
+        fail(f"receiver-pressure timeline identity is invalid: {timeline}")
+    last_deviation = timeline["lastDeviationSample"]
+    if last_deviation not in {6, 7} or timeline["recoverySample"] != last_deviation + 1:
+        fail(f"receiver-pressure recovery boundary is invalid: {timeline}")
     if result["selectedHypothesis"] != {
         "id": "receiver-side-pressure",
         "assessment": "supported",
@@ -145,19 +139,17 @@ def validate_receiver_pressure_result(result: dict, expected_format: str) -> Non
             f"{result['selectedHypothesis']}"
         )
     receiver_hypothesis = next(
-        item
-        for item in result["hypotheses"]
-        if item["id"] == "receiver-side-pressure"
+        item for item in result["hypotheses"] if item["id"] == "receiver-side-pressure"
     )
-    support_ids = {
-        item["id"] for item in receiver_hypothesis["supportingEvidence"]
-    }
+    support_ids = {item["id"] for item in receiver_hypothesis["supportingEvidence"]}
     if receiver_hypothesis["assessment"] != "supported" or not {
         "receiver-buffer-growth",
         "upstream-backpressure",
         "receiver-buffer-recovery",
     }.issubset(support_ids):
-        fail(f"retained receiver-pressure evidence is incomplete: {receiver_hypothesis}")
+        fail(
+            f"retained receiver-pressure evidence is incomplete: {receiver_hypothesis}"
+        )
     totals = result["totals"]
     if (
         totals["senderLossPackets"] != 0
@@ -365,15 +357,15 @@ def main() -> int:
             "after the deviation without a supported path-loss explanation."
         ),
     }:
-        fail(f"unexpected receiver-pressure hypothesis: {pressure['selectedHypothesis']}")
+        fail(
+            f"unexpected receiver-pressure hypothesis: {pressure['selectedHypothesis']}"
+        )
     receiver_hypothesis = next(
         item
         for item in pressure["hypotheses"]
         if item["id"] == "receiver-side-pressure"
     )
-    if {
-        item["id"] for item in receiver_hypothesis["supportingEvidence"]
-    } != {
+    if {item["id"] for item in receiver_hypothesis["supportingEvidence"]} != {
         "receiver-buffer-growth",
         "upstream-backpressure",
         "receiver-buffer-recovery",

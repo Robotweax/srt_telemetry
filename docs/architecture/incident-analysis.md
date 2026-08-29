@@ -23,8 +23,11 @@ maximum of warm samples 1 and 2; byte gauges must rise by at least 65,536 bytes
 and packet gauges by at least eight packets as well as doubling the baseline.
 Supported receiver pressure is a competing endpoint explanation and therefore
 prevents an overlapping RTT step from being selected as a path-delay incident.
-Otherwise the selection is `insufficient-evidence`. Unavailable values are
-never interpreted as observed zero.
+An RTT estimator may remain above its threshold for a bounded sample after the
+receiver buffer has drained; that observation remains in the overall timeline
+instead of being relabeled as continuing buffer pressure. Otherwise the
+selection is `insufficient-evidence`. Unavailable values are never interpreted
+as observed zero.
 
 ## Inputs and correlation contract
 

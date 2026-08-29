@@ -385,17 +385,20 @@ def analyze_recordings(output_dir: Path, direction: dict, evidence: dict) -> dic
     if not completed.stdout.startswith("incident analysis written:"):
         raise RuntimeError(f"unexpected analyzer result: {completed.stdout!r}")
     analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
-    expected_timeline = {
-        "sampleCount": LAST_SAMPLE + 1,
-        "firstDeviationSample": evidence["firstDeviationSample"],
-        "lastDeviationSample": evidence["lastDeviationSample"],
-        "recoverySample": evidence["recoverySample"],
-    }
-    for field, value in expected_timeline.items():
-        if analysis["timeline"].get(field) != value:
-            raise RuntimeError(
-                f"analysis {field} expected {value}: {analysis['timeline']}"
-            )
+    timeline = analysis["timeline"]
+    if timeline.get("sampleCount") != LAST_SAMPLE + 1:
+        raise RuntimeError(f"analysis sample count is invalid: {timeline}")
+    if timeline.get("firstDeviationSample") != evidence["firstDeviationSample"]:
+        raise RuntimeError(f"analysis first deviation is invalid: {timeline}")
+    last_deviation = timeline.get("lastDeviationSample")
+    recovery_sample = timeline.get("recoverySample")
+    if (
+        not isinstance(last_deviation, int)
+        or last_deviation < evidence["lastDeviationSample"]
+        or last_deviation >= LAST_SAMPLE
+        or recovery_sample != last_deviation + 1
+    ):
+        raise RuntimeError(f"analysis recovery boundary is invalid: {timeline}")
     selected = analysis.get("selectedHypothesis", {})
     if (
         selected.get("id") != "receiver-side-pressure"
