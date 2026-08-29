@@ -112,6 +112,7 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
             COMMAND robotweax_srt_telemetry_public_srt_adapter_tests)
 
         if(ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY)
+            find_package(Threads REQUIRED)
             if(NOT ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER STREQUAL "robotweax-srt" AND
                NOT ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER STREQUAL "haivision-srt")
                 message(FATAL_ERROR
@@ -130,7 +131,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                         ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY})
             target_link_libraries(robotweax_srt_telemetry_public_srt_incident_peer
                 PRIVATE RobotweaxSRTTelemetry::public_srt_adapter
-                        ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY})
+                        ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY}
+                        Threads::Threads)
             target_compile_features(robotweax_srt_telemetry_public_srt_runtime_tests
                 PRIVATE cxx_std_20)
             target_compile_features(robotweax_srt_telemetry_public_srt_incident_peer
@@ -241,6 +243,12 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_golden_incident.py"
                 "${ROBOTWEAX_SRT_TELEMETRY_REVERSE_BURST_CAPTURED_GOLDEN_INCIDENT_DIR}/manifest.json")
+        add_test(NAME robotweax_srt_telemetry_loss_shape_observability_result_test
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/validate_loss_shape_observability.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/results/2026-08-29-macos-arm64-loss-shape-observability.json"
+                --runtime-qualification
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json")
     endif()
 endif()
 

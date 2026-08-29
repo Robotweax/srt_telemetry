@@ -208,17 +208,31 @@ class FaultProxy:
         with self.lock:
             if self.stage is not None:
                 raise RuntimeError("fault proxy stage already active")
-            self.stage = {
-                "sampleIndex": sample_index,
-                "active": active,
-                "originalDataPackets": 0,
-                "repeatedDataPackets": 0,
-                "droppedOriginalDataPackets": 0,
-                "forwardedDataPackets": 0,
-                "forwardedControlPackets": 0,
-                "reversePackets": 0,
-            }
+            self.stage = self._new_stage(sample_index, active)
             self.reverse_control_packet_types = {}
+
+    @staticmethod
+    def _new_stage(sample_index: int, active: bool) -> dict:
+        return {
+            "sampleIndex": sample_index,
+            "active": active,
+            "originalDataPackets": 0,
+            "repeatedDataPackets": 0,
+            "droppedOriginalDataPackets": 0,
+            "forwardedDataPackets": 0,
+            "forwardedControlPackets": 0,
+            "reversePackets": 0,
+        }
+
+    def advance_stage(self, sample_index: int, active: bool) -> dict:
+        with self.lock:
+            if self.stage is None:
+                raise RuntimeError("fault proxy stage is not active")
+            result = dict(self.stage)
+            self.stage = self._new_stage(sample_index, active)
+            self.reverse_control_packet_types = {}
+        self.raise_if_failed()
+        return result
 
     def finish_stage(self) -> dict:
         with self.lock:

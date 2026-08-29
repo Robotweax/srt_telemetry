@@ -16,6 +16,7 @@
 #endif
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <iomanip>
@@ -23,6 +24,8 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <thread>
 
 namespace
 {
@@ -218,7 +221,8 @@ bool sample_at(Session &session, const std::uint64_t unix_nano, const std::uint6
 }
 
 bool transfer_messages(const SRTSOCKET socket, const bool sender, const std::uint64_t sample_index,
-                       const std::uint64_t message_count)
+                       const std::uint64_t message_count,
+                       const std::uint64_t pacing_microseconds = 0)
 {
     std::array<char, 1'316> payload{};
     payload.fill(static_cast<char>('A' + sample_index % 26));
@@ -232,6 +236,10 @@ bool transfer_messages(const SRTSOCKET socket, const bool sender, const std::uin
             {
                 return srt_ok(sent, "incident send") && false;
             }
+            if (pacing_microseconds != 0 && message + 1 < message_count)
+            {
+                std::this_thread::sleep_for(std::chrono::microseconds(pacing_microseconds));
+            }
             continue;
         }
         std::array<char, 1'316> received{};
@@ -243,6 +251,70 @@ bool transfer_messages(const SRTSOCKET socket, const bool sender, const std::uin
     }
     return true;
 }
+
+class TransferWorker final
+{
+  public:
+    ~TransferWorker()
+    {
+        if (thread_.joinable())
+        {
+            thread_.join();
+        }
+    }
+
+    TransferWorker(const TransferWorker &) = delete;
+    TransferWorker &operator=(const TransferWorker &) = delete;
+    TransferWorker() = default;
+
+    [[nodiscard]] bool active() const noexcept
+    {
+        return thread_.joinable();
+    }
+
+    bool start(const SRTSOCKET socket, const bool sender, const std::uint64_t transfer_id,
+               const std::uint64_t message_count, const std::uint64_t pacing_microseconds)
+    {
+        if (active())
+        {
+            return false;
+        }
+        transfer_id_ = transfer_id;
+        message_count_ = message_count;
+        success_ = false;
+        try
+        {
+            thread_ = std::thread(
+                [this, socket, sender, transfer_id, message_count, pacing_microseconds]()
+                {
+                    success_ = transfer_messages(socket, sender, transfer_id, message_count,
+                                                 pacing_microseconds);
+                });
+        }
+        catch (const std::system_error &error)
+        {
+            std::cerr << "FAIL: transfer worker startup: " << error.what() << '\n';
+            return false;
+        }
+        return true;
+    }
+
+    bool finish(const std::uint64_t transfer_id, const std::uint64_t message_count)
+    {
+        if (!active() || transfer_id != transfer_id_ || message_count != message_count_)
+        {
+            return false;
+        }
+        thread_.join();
+        return success_;
+    }
+
+  private:
+    std::thread thread_;
+    std::uint64_t transfer_id_ = 0;
+    std::uint64_t message_count_ = 0;
+    bool success_ = false;
+};
 
 void emit_sample(const std::string_view role, const std::uint64_t sample_index,
                  const robotweax_srt_telemetry_public_srt_result_v1 &result)
@@ -309,13 +381,14 @@ bool no_extra_input(std::istringstream &command)
 int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
                  const std::string_view role)
 {
+    TransferWorker transfer_worker;
     std::string line;
     while (std::getline(std::cin, line))
     {
         std::istringstream command(line);
         std::string operation;
         command >> operation;
-        if (operation == "DONE" && no_extra_input(command))
+        if (operation == "DONE" && no_extra_input(command) && !transfer_worker.active())
         {
             return EXIT_SUCCESS;
         }
@@ -350,6 +423,40 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
                 return EXIT_FAILURE;
             }
             std::cout << "TRANSFERRED {\"sampleIndex\":" << sample_index
+                      << ",\"messages\":" << message_count << "}\n"
+                      << std::flush;
+            continue;
+        }
+        if (operation == "START_TRANSFER")
+        {
+            std::uint64_t transfer_id = 0;
+            std::uint64_t message_count = 0;
+            std::uint64_t pacing_microseconds = 0;
+            if (!(command >> transfer_id >> message_count >> pacing_microseconds) ||
+                message_count == 0 || !no_extra_input(command) ||
+                !transfer_worker.start(socket, sender, transfer_id, message_count,
+                                       pacing_microseconds))
+            {
+                std::cerr << "FAIL: invalid or failed START_TRANSFER command\n";
+                return EXIT_FAILURE;
+            }
+            std::cout << "TRANSFER_STARTED {\"transferId\":" << transfer_id
+                      << ",\"messages\":" << message_count << "}\n"
+                      << std::flush;
+            continue;
+        }
+        if (operation == "WAIT_TRANSFER")
+        {
+            std::uint64_t transfer_id = 0;
+            std::uint64_t message_count = 0;
+            if (!(command >> transfer_id >> message_count) || message_count == 0 ||
+                !no_extra_input(command) ||
+                !transfer_worker.finish(transfer_id, message_count))
+            {
+                std::cerr << "FAIL: invalid or failed WAIT_TRANSFER command\n";
+                return EXIT_FAILURE;
+            }
+            std::cout << "TRANSFERRED {\"transferId\":" << transfer_id
                       << ",\"messages\":" << message_count << "}\n"
                       << std::flush;
             continue;

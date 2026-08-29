@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/loss-shape-observability-result-v1alpha1.json",
+  "title": "Public SRT loss-shape observability qualification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "generatedAt",
+    "operatorQuestion",
+    "telemetry",
+    "environment",
+    "workload",
+    "providers",
+    "scenarios",
+    "costProjection",
+    "decision"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1alpha1" },
+    "kind": { "const": "public-srt-loss-shape-observability" },
+    "status": { "const": "pass" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "operatorQuestion": { "type": "string", "minLength": 1 },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "adapterVersion"],
+      "properties": {
+        "revision": { "type": "string", "minLength": 7 },
+        "adapterVersion": { "const": "0.1.0-alpha.0" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "machine",
+        "pythonVersion",
+        "transport",
+        "mode",
+        "sampleRateHz",
+        "sampleIntervalNano",
+        "wallClockPaced",
+        "sampleTimestampSource"
+      ],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1 },
+        "machine": { "type": "string", "minLength": 1 },
+        "pythonVersion": { "type": "string", "minLength": 1 },
+        "transport": { "const": "ipv4-loopback-udp-proxy" },
+        "mode": { "const": "live-message" },
+        "sampleRateHz": { "const": 20 },
+        "sampleIntervalNano": { "const": 50000000 },
+        "wallClockPaced": { "const": true },
+        "sampleTimestampSource": { "const": "host-monotonic-clock" }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "samples",
+        "continuousTransfer",
+        "sendPacingMicroseconds",
+        "payloadBytesPerMessage",
+        "payloadSha256",
+        "totalMessagesPerScenario"
+      ],
+      "properties": {
+        "samples": { "const": 26 },
+        "continuousTransfer": { "const": true },
+        "sendPacingMicroseconds": { "const": 2000 },
+        "payloadBytesPerMessage": { "const": 1316 },
+        "payloadSha256": { "$ref": "#/$defs/sha256" },
+        "totalMessagesPerScenario": { "const": 240 }
+      }
+    },
+    "providers": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/provider" }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/scenario" }
+    },
+    "costProjection": { "$ref": "#/$defs/costProjection" },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coarseLossShapeDiscriminated",
+        "aggregateCountersEqual",
+        "selectedApproach",
+        "protocolExtensionRequiredForOperatorQuestion",
+        "releaseCostGatePassed",
+        "reason",
+        "residualLimitation"
+      ],
+      "properties": {
+        "coarseLossShapeDiscriminated": { "const": true },
+        "aggregateCountersEqual": { "const": true },
+        "selectedApproach": { "const": "incident-mode-20hz-sdk-sampling" },
+        "protocolExtensionRequiredForOperatorQuestion": { "const": false },
+        "releaseCostGatePassed": { "const": false },
+        "reason": { "type": "string", "minLength": 1 },
+        "residualLimitation": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "providerName": {
+      "enum": ["robotweax-srt", "haivision-srt"]
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "version", "revision", "buildProfile", "artifacts"],
+      "properties": {
+        "provider": { "$ref": "#/$defs/providerName" },
+        "version": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 7 },
+        "buildProfile": { "type": "string", "minLength": 1 },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["peerExecutableSha256", "providerLibrarySha256"],
+          "properties": {
+            "peerExecutableSha256": { "$ref": "#/$defs/sha256" },
+            "providerLibrarySha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    },
+    "fault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activeSamples", "dropsPerActiveSample", "totalDrops"],
+      "properties": {
+        "activeSamples": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 26 }
+        },
+        "dropsPerActiveSample": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "totalDrops": { "const": 8 }
+      }
+    },
+    "scheduleEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sampleIndex",
+        "targetOffsetNano",
+        "startLatenessNano",
+        "completionLatenessNano"
+      ],
+      "properties": {
+        "sampleIndex": { "type": "integer", "minimum": 1, "maximum": 26 },
+        "targetOffsetNano": { "type": "integer", "minimum": 50000000 },
+        "startLatenessNano": { "type": "integer", "minimum": 0 },
+        "completionLatenessNano": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetIntervalNano",
+        "deadlineMisses",
+        "minimumIntervalNano",
+        "meanIntervalNano",
+        "maximumIntervalNano",
+        "schedule"
+      ],
+      "properties": {
+        "targetIntervalNano": { "const": 50000000 },
+        "deadlineMisses": { "const": 0 },
+        "minimumIntervalNano": { "type": "integer", "minimum": 1 },
+        "meanIntervalNano": { "type": "number", "exclusiveMinimum": 0 },
+        "maximumIntervalNano": {
+          "type": "integer",
+          "minimum": 1,
+          "exclusiveMaximum": 80000000
+        },
+        "schedule": {
+          "type": "array",
+          "minItems": 26,
+          "maxItems": 26,
+          "items": { "$ref": "#/$defs/scheduleEntry" }
+        }
+      }
+    },
+    "proxyStage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sampleIndex",
+        "active",
+        "originalDataPackets",
+        "repeatedDataPackets",
+        "droppedOriginalDataPackets",
+        "forwardedDataPackets",
+        "forwardedControlPackets",
+        "reversePackets"
+      ],
+      "properties": {
+        "sampleIndex": { "type": "integer", "minimum": 1, "maximum": 26 },
+        "active": { "type": "boolean" },
+        "originalDataPackets": { "type": "integer", "minimum": 0 },
+        "repeatedDataPackets": { "type": "integer", "minimum": 0 },
+        "droppedOriginalDataPackets": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "forwardedDataPackets": { "type": "integer", "minimum": 0 },
+        "forwardedControlPackets": { "type": "integer", "minimum": 0 },
+        "reversePackets": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "timelineEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sampleIndex",
+        "lossPacketDelta",
+        "retransmittedPacketDelta",
+        "sentPacketDelta",
+        "receivedPacketDelta",
+        "uniqueSentPacketDelta",
+        "uniqueReceivedPacketDelta"
+      ],
+      "properties": {
+        "sampleIndex": { "type": "integer", "minimum": 1, "maximum": 26 },
+        "lossPacketDelta": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "retransmittedPacketDelta": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "sentPacketDelta": { "type": "integer", "minimum": 0 },
+        "receivedPacketDelta": { "type": "integer", "minimum": 0 },
+        "uniqueSentPacketDelta": { "type": "integer", "minimum": 0 },
+        "uniqueReceivedPacketDelta": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "totalLossPackets",
+        "maximumLossPacketsPerSample",
+        "positiveLossSamples",
+        "totalRetransmittedPackets",
+        "totalSentPackets",
+        "totalReceivedPackets",
+        "totalUniqueSentPackets",
+        "totalUniqueReceivedPackets",
+        "timeline"
+      ],
+      "properties": {
+        "role": { "enum": ["sender", "receiver"] },
+        "totalLossPackets": { "const": 8 },
+        "maximumLossPacketsPerSample": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "positiveLossSamples": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 26 }
+        },
+        "totalRetransmittedPackets": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "totalSentPackets": { "type": "integer", "minimum": 0, "maximum": 248 },
+        "totalReceivedPackets": { "type": "integer", "minimum": 0, "maximum": 240 },
+        "totalUniqueSentPackets": { "type": "integer", "minimum": 0, "maximum": 240 },
+        "totalUniqueReceivedPackets": { "type": "integer", "minimum": 0, "maximum": 240 },
+        "timeline": {
+          "type": "array",
+          "minItems": 26,
+          "maxItems": 26,
+          "items": { "$ref": "#/$defs/timelineEntry" }
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direction",
+        "senderProvider",
+        "receiverProvider",
+        "scenario",
+        "fault",
+        "sampling",
+        "proxyStages",
+        "roles"
+      ],
+      "properties": {
+        "direction": {
+          "enum": ["robotweax-to-haivision", "haivision-to-robotweax"]
+        },
+        "senderProvider": { "$ref": "#/$defs/providerName" },
+        "receiverProvider": { "$ref": "#/$defs/providerName" },
+        "scenario": { "enum": ["distributed-8x1", "concentrated-1x8"] },
+        "fault": { "$ref": "#/$defs/fault" },
+        "sampling": { "$ref": "#/$defs/sampling" },
+        "proxyStages": {
+          "type": "array",
+          "minItems": 26,
+          "maxItems": 26,
+          "items": { "$ref": "#/$defs/proxyStage" }
+        },
+        "roles": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/role" }
+        }
+      }
+    },
+    "costProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "sourceAdapterP50Nanoseconds",
+        "projectedSamplingNanosecondsPerSecond",
+        "projectedOneCorePercent"
+      ],
+      "properties": {
+        "provider": { "$ref": "#/$defs/providerName" },
+        "sourceAdapterP50Nanoseconds": { "type": "number", "exclusiveMinimum": 0 },
+        "projectedSamplingNanosecondsPerSecond": { "type": "number", "exclusiveMinimum": 0 },
+        "projectedOneCorePercent": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "costProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceResultSha256",
+        "sourceTelemetryRevision",
+        "benchmarkIsReleaseGate",
+        "sampleRateHz",
+        "providers",
+        "combinedProjectedOneCorePercent"
+      ],
+      "properties": {
+        "sourceResultSha256": { "$ref": "#/$defs/sha256" },
+        "sourceTelemetryRevision": { "type": "string", "minLength": 7 },
+        "benchmarkIsReleaseGate": { "const": false },
+        "sampleRateHz": { "const": 20 },
+        "providers": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/costProvider" }
+        },
+        "combinedProjectedOneCorePercent": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    }
+  }
+}
