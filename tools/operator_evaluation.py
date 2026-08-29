@@ -86,9 +86,7 @@ MISSING_EVIDENCE_BY_TEXT = {
         "one-way-delay",
         "exact-failing-hop",
     },
-    "Sender application scheduling is unavailable.": {
-        "sender-application-scheduling"
-    },
+    "Sender application scheduling is unavailable.": {"sender-application-scheduling"},
     (
         "Receiver application-consumption timing is unavailable from public "
         "SRT statistics."
@@ -331,8 +329,8 @@ def prepare_study(
 ) -> Path:
     if not STUDY_PATTERN.fullmatch(study_id):
         fail("study id must use lowercase letters, digits, and hyphens")
-    if len(manifest_paths) != 2:
-        fail("the crossover candidate requires exactly two incident manifests")
+    if len(manifest_paths) < 2:
+        fail("the crossover candidate requires at least two incident manifests")
     if output_dir.exists():
         fail(f"refusing to overwrite study packet: {output_dir}")
     analyzer = load_analyzer(analyzer_path.resolve())
@@ -375,32 +373,45 @@ def prepare_study(
                 }
             )
 
-        first, second = scenario_ids
+        arm_a = [
+            {
+                "scenarioId": scenario_id,
+                "condition": (
+                    "raw-statistics" if index % 2 == 0 else "incident-report"
+                ),
+            }
+            for index, scenario_id in enumerate(scenario_ids)
+        ]
+        arm_b = [
+            {
+                "scenarioId": assignment["scenarioId"],
+                "condition": (
+                    "incident-report"
+                    if assignment["condition"] == "raw-statistics"
+                    else "raw-statistics"
+                ),
+            }
+            for assignment in arm_a
+        ]
         study = {
             "schemaVersion": SCHEMA_VERSION,
             "kind": STUDY_KIND,
             "studyId": study_id,
             "status": "candidate",
             "design": {
-                "type": "two-scenario-counterbalanced-crossover",
+                "type": "alternating-condition-counterbalanced-crossover",
                 "allocation": (
                     "SHA-256(studyId:participantId) first-byte parity; even selects "
                     "arm-a and odd selects arm-b"
                 ),
                 "rationale": (
-                    "Each participant sees each incident once, preventing direct "
-                    "answer recall while balancing scenario and condition across arms."
+                    "Each participant sees each incident once. Conditions alternate "
+                    "within an arm and reverse for every scenario in the other arm."
                 ),
             },
             "arms": {
-                "arm-a": [
-                    {"scenarioId": first, "condition": "raw-statistics"},
-                    {"scenarioId": second, "condition": "incident-report"},
-                ],
-                "arm-b": [
-                    {"scenarioId": first, "condition": "incident-report"},
-                    {"scenarioId": second, "condition": "raw-statistics"},
-                ],
+                "arm-a": arm_a,
+                "arm-b": arm_b,
             },
             "questions": {
                 "failureDomains": sorted(FAILURE_DOMAINS),
@@ -422,7 +433,7 @@ def prepare_study(
                 "automaticProductClaim": False,
                 "note": (
                     "The strategy requires at least five reproducible failure classes "
-                    "and faster operator understanding. This two-scenario packet "
+                    "and faster operator understanding. This candidate packet "
                     "validates the method but cannot close that gate alone."
                 ),
             },
@@ -473,15 +484,24 @@ def validate_study(study_path: Path) -> Tuple[dict, Path]:
                 raise RuntimeError(f"study artifact escapes packet: {path}") from error
             if not path.is_file() or sha256_file(path) != entry.get("sha256"):
                 fail(f"study artifact is missing or changed: {path}")
-    if len(scenario_ids) != 2:
-        fail("study must contain exactly two scenarios")
+    if len(scenario_ids) < 2:
+        fail("study must contain at least two scenarios")
     for arm, assignments in study["arms"].items():
-        if len(assignments) != 2:
-            fail(f"{arm} must contain two tasks")
+        if len(assignments) != len(scenario_ids):
+            fail(f"{arm} must contain one task per scenario")
         if {item.get("scenarioId") for item in assignments} != scenario_ids:
             fail(f"{arm} does not cover each scenario once")
+        if not all(item.get("condition") in CONDITIONS for item in assignments):
+            fail(f"{arm} contains an unsupported condition")
         if {item.get("condition") for item in assignments} != CONDITIONS:
-            fail(f"{arm} does not cover each condition once")
+            fail(f"{arm} must expose both conditions")
+    assignments_a = study["arms"]["arm-a"]
+    assignments_b = study["arms"]["arm-b"]
+    for first, second in zip(assignments_a, assignments_b):
+        if first.get("scenarioId") != second.get("scenarioId") or first.get(
+            "condition"
+        ) == second.get("condition"):
+            fail("study arms do not counterbalance each scenario")
     return study, base
 
 
@@ -802,7 +822,9 @@ def collect_interactive_response(
     for position, assignment in enumerate(study["arms"][arm], start=1):
         scenario = scenario_by_id(study, assignment["scenarioId"])
         view = load_study_artifact(base, scenario["views"][assignment["condition"]])
-        input(f"\nPress Enter to reveal task {position} of 2.")
+        input(
+            f"\nPress Enter to reveal task {position} of " f"{len(study['arms'][arm])}."
+        )
         start = time.monotonic_ns()
         print(
             "\n"
@@ -984,18 +1006,17 @@ def summarize_sessions(study_path: Path, session_paths: List[Path]) -> dict:
         if evidence_class not in EVIDENCE_CLASSES:
             fail(f"session has unsupported evidence class: {evidence_class!r}")
         evidence_counts[evidence_class] += 1
-        participant_tasks = {}
+        participant_tasks = {condition: [] for condition in CONDITIONS}
         for task in session.get("tasks", []):
             condition = task.get("condition")
-            if condition not in CONDITIONS or condition in participant_tasks:
+            if condition not in CONDITIONS:
                 fail(
-                    "session does not contain one task per condition: "
-                    + current_participant
+                    f"session contains an unsupported condition: {current_participant}"
                 )
             by_condition[condition].append(task)
-            participant_tasks[condition] = task
+            participant_tasks[condition].append(task)
             failure_classes.add(task["failureClass"])
-        if set(participant_tasks) != CONDITIONS:
+        if any(not participant_tasks[condition] for condition in CONDITIONS):
             fail(f"session does not cover both conditions: {session['participantId']}")
         raw = participant_tasks["raw-statistics"]
         report = participant_tasks["incident-report"]
@@ -1003,23 +1024,30 @@ def summarize_sessions(study_path: Path, session_paths: List[Path]) -> dict:
             {
                 "participantId": session["participantId"],
                 "rawMinusReportTimeToFirstDeviationMillis": (
-                    raw["timing"]["timeToFirstDeviationMillis"]
-                    - report["timing"]["timeToFirstDeviationMillis"]
+                    mean(task["timing"]["timeToFirstDeviationMillis"] for task in raw)
+                    - mean(
+                        task["timing"]["timeToFirstDeviationMillis"] for task in report
+                    )
                 ),
                 "rawMinusReportTimeToFailureDomainMillis": (
-                    raw["timing"]["timeToFailureDomainMillis"]
-                    - report["timing"]["timeToFailureDomainMillis"]
+                    mean(task["timing"]["timeToFailureDomainMillis"] for task in raw)
+                    - mean(
+                        task["timing"]["timeToFailureDomainMillis"] for task in report
+                    )
                 ),
                 "reportMinusRawFailureDomainCorrect": (
-                    int(report["score"]["failureDomainCorrect"])
-                    - int(raw["score"]["failureDomainCorrect"])
+                    mean(int(task["score"]["failureDomainCorrect"]) for task in report)
+                    - mean(int(task["score"]["failureDomainCorrect"]) for task in raw)
                 ),
                 "rawMinusReportUnsupportedHypothesisCount": (
-                    len(raw["score"]["unsupportedHypotheses"])
-                    - len(report["score"]["unsupportedHypotheses"])
+                    mean(len(task["score"]["unsupportedHypotheses"]) for task in raw)
+                    - mean(
+                        len(task["score"]["unsupportedHypotheses"]) for task in report
+                    )
                 ),
                 "reportMinusRawConfidence": (
-                    report["answer"]["confidence"] - raw["answer"]["confidence"]
+                    mean(task["answer"]["confidence"] for task in report)
+                    - mean(task["answer"]["confidence"] for task in raw)
                 ),
             }
         )

@@ -1,0 +1,233 @@
+{
+  "capture": {
+    "applicationPause": {
+      "clock": "time.monotonic_ns",
+      "measuredPauseNano": 418444084,
+      "pauseSampleIntervalMillis": 100,
+      "pausedRole": "receiver",
+      "pausedTransferMessages": 7000,
+      "payloadBytesPerMessage": 1316,
+      "samples": [
+        {
+          "elapsedMonotonicNano": 105313959,
+          "sampleIndex": 3
+        },
+        {
+          "elapsedMonotonicNano": 210599375,
+          "sampleIndex": 4
+        },
+        {
+          "elapsedMonotonicNano": 311815125,
+          "sampleIndex": 5
+        },
+        {
+          "elapsedMonotonicNano": 418075125,
+          "sampleIndex": 6
+        }
+      ],
+      "settleMillis": 100,
+      "steadyMessagesPerInterval": 100,
+      "transferId": 3
+    },
+    "artifacts": [
+      {
+        "peerExecutableSha256": "ca6c624cdcf91acda7b767eb7e130fe9a4396c985ebe69c4592fd02dd799e07a",
+        "providerLibrarySha256": "f5db9ca66be4d681c3271664c6f25ae269a7ad62ae75c815e0fb521f991cff04",
+        "role": "sender"
+      },
+      {
+        "peerExecutableSha256": "e1064fdf4feaf1060faa463058bce760ce48b256fc1a99347f1cd4715f6db9e4",
+        "providerLibrarySha256": "1377a61d159856f7785bcc6c6fd9af74d1f11e78804c8e6db7b8bc6cb8e95f6a",
+        "role": "receiver"
+      }
+    ],
+    "environment": {
+      "machine": "arm64",
+      "platform": "macOS-26.5.2-arm64-arm-64bit",
+      "pythonVersion": "3.9.6",
+      "timingSource": "orchestrator-logical-one-second",
+      "transport": "ipv4-loopback-direct"
+    },
+    "generatedAt": "2026-08-29T13:07:24.725703+00:00",
+    "telemetryRevision": "571220c"
+  },
+  "contradictions": [
+    "Logical sample timestamps make rate columns deterministic but do not measure wall-clock throughput.",
+    "Public SRT gauges localize receiver-side pressure but do not expose exact application scheduling or consumption timing.",
+    "IPv4 loopback does not qualify physical network devices, wide-area paths, encryption, FEC, groups, or other deployment profiles."
+  ],
+  "dataset": {
+    "format": "robotweax-srt-telemetry-csv-v1",
+    "roles": [
+      "sender",
+      "receiver"
+    ],
+    "rows": 18,
+    "sampleIntervalNano": 1000000000,
+    "samplesFile": "samples.csv",
+    "sha256": "8594f4eef46b81fa4149b4e82020db44cf6095021f09f9c5ba7efa080b752812"
+  },
+  "direction": "sender-to-receiver",
+  "expectedEvidence": [
+    "receiver buffer occupancy rises from a warm zero baseline",
+    "sender buffer or flight growth overlaps the receiver buffer growth",
+    "receiver buffer occupancy returns to zero after application resume",
+    "all application messages arrive without public loss or drop evidence"
+  ],
+  "failureClass": "receiver-application-pause",
+  "faultPlan": {
+    "description": "Start 7000 sender messages, withhold all receiver application reads during samples 3 through 6, then drain and resume.",
+    "firstActiveSample": 3,
+    "lastActiveSample": 6,
+    "seed": 0
+  },
+  "incidentId": "incident-011-receiver-pause-haivision-robotweax",
+  "machineExpectations": [
+    {
+      "field": "receive_buffer_bytes",
+      "id": "receiver-receive-buffer-bytes-elevated",
+      "operator": "greater-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 3,
+        "last": 6
+      },
+      "source": "raw",
+      "value": 65536
+    },
+    {
+      "field": "send_buffer_bytes",
+      "id": "sender-send-buffer-bytes-elevated",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 3
+      },
+      "source": "raw",
+      "value": 65536
+    },
+    {
+      "field": "flight_size_packets",
+      "id": "sender-flight-size-packets-elevated",
+      "operator": "greater-than",
+      "role": "sender",
+      "sampleRange": {
+        "first": 3,
+        "last": 3
+      },
+      "source": "raw",
+      "value": 8
+    },
+    {
+      "field": "receive_buffer_bytes",
+      "id": "receiver-buffer-recovered",
+      "operator": "less-than",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 7,
+        "last": 7
+      },
+      "source": "raw",
+      "value": 65536
+    },
+    {
+      "field": "sender_loss_packet_delta",
+      "id": "sender-sender-loss-packet-delta-zero",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "sender_drop_packet_delta",
+      "id": "sender-sender-drop-packet-delta-zero",
+      "operator": "equals",
+      "role": "sender",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_loss_packet_delta",
+      "id": "receiver-receiver-loss-packet-delta-zero",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    },
+    {
+      "field": "receiver_drop_packet_delta",
+      "id": "receiver-receiver-drop-packet-delta-zero",
+      "operator": "equals",
+      "role": "receiver",
+      "sampleRange": {
+        "first": 1,
+        "last": 8
+      },
+      "value": 0
+    }
+  ],
+  "payloadDigest": "32b30ec66fc8d6603debec31ceaf8bcafeb53c5aba2dd4a00f4ddd198c8216f9",
+  "provenance": {
+    "capturedFromProvider": true,
+    "description": "Public srt_bistats buffer and flight gauges captured from exact provider-linked peers across a controlled receiver application pause.",
+    "generator": "qualification/run_receiver_pause_capture.py",
+    "kind": "captured-provider-run",
+    "telemetryVersion": "0.1.0-alpha.0"
+  },
+  "providers": [
+    {
+      "buildProfile": "release-shared-openssl-generated-install",
+      "provider": "haivision-srt",
+      "revision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+      "role": "sender",
+      "version": "1.5.5"
+    },
+    {
+      "buildProfile": "clean-release-shared-openssl",
+      "provider": "robotweax-srt",
+      "revision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+      "role": "receiver",
+      "version": "0.2.0-4-g271f832"
+    }
+  ],
+  "recordings": {
+    "analysis": {
+      "file": "analysis.json",
+      "schemaVersion": "1alpha1",
+      "sha256": "82aaf74a9bab771ad887dbde74071ca02c9c3c01b64dbd70ae5a926717f43bd7"
+    },
+    "flowId": "incident-011-receiver-pause-haivision-robotweax",
+    "format": "robotweax-srt-telemetry-jsonl-v1",
+    "receiver": {
+      "file": "receiver.jsonl",
+      "records": 9,
+      "sha256": "5e82763e847608e893ac848c283c09c3f172f1a224dd32d9ccf20982585a766c"
+    },
+    "schemaVersion": "1alpha1",
+    "sender": {
+      "file": "sender.jsonl",
+      "records": 9,
+      "sha256": "c01a2e699055fafb569e94bf1b7afbb0b57a24af4ba41996922fb83ad74da983"
+    }
+  },
+  "schemaVersion": "1alpha1",
+  "topology": "Haivision SRT sender directly connected over IPv4 loopback to a paused Robotweax SRT application receiver",
+  "transportProfile": {
+    "addressFamily": "ipv4",
+    "api": "message",
+    "encryption": "none",
+    "fec": "none",
+    "group": "none",
+    "mode": "live"
+  }
+}

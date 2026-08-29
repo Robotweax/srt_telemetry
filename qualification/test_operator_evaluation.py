@@ -125,8 +125,8 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, action="append", required=True)
     parser.add_argument("--work-dir", type=Path, required=True)
     arguments = parser.parse_args()
-    if len(arguments.manifest) != 2:
-        fail("test requires exactly two retained JSONL incident manifests")
+    if len(arguments.manifest) < 2:
+        fail("test requires at least two retained JSONL incident manifests")
 
     arguments.work_dir.mkdir(parents=True, exist_ok=True)
     temporary = Path(
@@ -139,7 +139,7 @@ def main() -> int:
             str(arguments.tool.resolve()),
             "prepare",
             "--study-id",
-            "loss-rtt-comparison-candidate",
+            "loss-rtt-pressure-comparison-candidate",
             "--analyzer",
             str(arguments.analyzer.resolve()),
             "--output-dir",
@@ -156,6 +156,21 @@ def main() -> int:
             fail("prepared study has the wrong identity")
         if set(study["arms"]) != {"arm-a", "arm-b"}:
             fail("prepared study does not expose both counterbalanced arms")
+        scenario_ids = {scenario["scenarioId"] for scenario in study["scenarios"]}
+        if len(scenario_ids) != len(arguments.manifest):
+            fail("prepared study does not retain every requested scenario")
+        for arm, assignments in study["arms"].items():
+            if {assignment["scenarioId"] for assignment in assignments} != scenario_ids:
+                fail(f"{arm} does not cover every scenario once")
+        for scenario_id in scenario_ids:
+            conditions = {
+                assignment["condition"]
+                for assignments in study["arms"].values()
+                for assignment in assignments
+                if assignment["scenarioId"] == scenario_id
+            }
+            if conditions != {"raw-statistics", "incident-report"}:
+                fail(f"scenario is not counterbalanced: {scenario_id}")
         if study["gateLimits"]["minimumDistinctFailureClasses"] != 5:
             fail("study does not preserve the strategy's five-failure-class gate")
 
@@ -242,6 +257,13 @@ def main() -> int:
         if summary["distinctFailureClasses"] != expected_failure_classes:
             fail("summary failure-class accounting is incorrect")
         comparison = summary["comparison"]
+        if comparison["pairedParticipantCount"] != 2:
+            fail("summary does not retain both paired participants")
+        if any(
+            statistics["taskCount"] != len(arguments.manifest)
+            for statistics in summary["statistics"].values()
+        ):
+            fail("summary condition task accounting is incorrect")
         if comparison["medianRawMinusReportTimeToFailureDomainMillis"] <= 0:
             fail("paired timing comparison has the wrong direction")
         if comparison["meanReportMinusRawFailureDomainCorrect"] < 0:

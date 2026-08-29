@@ -115,7 +115,7 @@
         "reference"
       ],
       "properties": {
-        "position": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "position": { "type": "integer", "minimum": 1 },
         "scenarioId": { "type": "string", "minLength": 1 },
         "failureClass": { "type": "string", "minLength": 1 },
         "condition": { "enum": ["raw-statistics", "incident-report"] },
@@ -158,7 +158,6 @@
         "tasks": {
           "type": "array",
           "minItems": 2,
-          "maxItems": 2,
           "items": { "$ref": "#/$defs/task" }
         }
       }

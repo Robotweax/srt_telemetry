@@ -1,0 +1,444 @@
+{
+  "baselines": {
+    "pressure": {
+      "receiverReceiveBufferBytes": 0,
+      "receiverReceiveBufferStepThreshold": 65536,
+      "rule": "maximum warm sample 1/2 baseline; byte threshold=max(2x, baseline+65536); packet threshold=max(2x, baseline+8)",
+      "senderFlightSizePackets": 0,
+      "senderFlightStepThreshold": 8,
+      "senderSendBufferBytes": 0,
+      "senderSendBufferStepThreshold": 65536
+    },
+    "rttSeconds": {
+      "receiver": 0.002153,
+      "receiverStepThreshold": 0.022153,
+      "rule": "minimum warm sample 1/2 baseline; threshold=max(2x, baseline+0.020s)",
+      "sender": 0.002221,
+      "senderStepThreshold": 0.022221
+    }
+  },
+  "hypotheses": [
+    {
+      "assessment": "insufficient-evidence",
+      "contradictoryEvidence": [],
+      "failureDomain": "sender-to-receiver transmission path",
+      "id": "transmission-path-loss-with-recovery",
+      "missingEvidence": [
+        "Packet sequence adjacency and the exact failing network hop are unavailable."
+      ],
+      "summary": "Paired loss and retransmission evidence localizes the deviation to the transmission path and shows recovery, but not the exact failing hop.",
+      "supportingEvidence": [
+        {
+          "id": "recovery-boundary",
+          "samples": [
+            7
+          ],
+          "summary": "Loss and retransmission return to zero after the deviation window."
+        }
+      ]
+    },
+    {
+      "assessment": "insufficient-evidence",
+      "contradictoryEvidence": [
+        "Receiver buffer pressure provides a competing endpoint explanation."
+      ],
+      "failureDomain": "sender-to-receiver transmission path",
+      "id": "transmission-path-rtt-step-with-recovery",
+      "missingEvidence": [
+        "Paired RTT does not cross the candidate step thresholds.",
+        "One-way delay and the exact failing network hop are unavailable."
+      ],
+      "summary": "Paired RTT step and recovery evidence localizes added round-trip delay to the transmission path, but not to one direction or hop.",
+      "supportingEvidence": []
+    },
+    {
+      "assessment": "insufficient-evidence",
+      "contradictoryEvidence": [],
+      "failureDomain": "sender endpoint",
+      "id": "sender-side-pressure",
+      "missingEvidence": [
+        "Sender application scheduling is unavailable."
+      ],
+      "summary": "Sender pressure requires drop, queue, or flight-window evidence.",
+      "supportingEvidence": []
+    },
+    {
+      "assessment": "supported",
+      "contradictoryEvidence": [],
+      "failureDomain": "receiver endpoint",
+      "id": "receiver-side-pressure",
+      "missingEvidence": [
+        "Receiver application-consumption timing is unavailable from public SRT statistics."
+      ],
+      "summary": "Receiver pressure requires drop, buffer, or backpressure evidence.",
+      "supportingEvidence": [
+        {
+          "id": "receiver-buffer-growth",
+          "samples": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "summary": "Receiver buffer occupancy exceeds its warm candidate baseline threshold."
+        },
+        {
+          "id": "upstream-backpressure",
+          "samples": [
+            3,
+            4,
+            5
+          ],
+          "summary": "Sender buffer or flight growth overlaps elevated receiver buffer occupancy."
+        },
+        {
+          "id": "receiver-buffer-recovery",
+          "samples": [
+            7
+          ],
+          "summary": "Receiver buffer occupancy returns below its candidate threshold."
+        }
+      ]
+    }
+  ],
+  "kind": "robotweax-srt-local-incident-analysis",
+  "nonClaims": [
+    "The analysis does not identify the exact failing network hop.",
+    "RTT evidence does not isolate one-way delay or its direction.",
+    "Public SRT buffer gauges do not expose exact application scheduling or consumption timing.",
+    "The analysis does not infer unavailable endpoint-pressure metrics as zero."
+  ],
+  "schemaVersion": "1alpha1",
+  "selectedHypothesis": {
+    "assessment": "supported",
+    "id": "receiver-side-pressure",
+    "rationale": "Receiver buffer growth overlaps upstream sender pressure and recovers after the deviation without a supported path-loss explanation."
+  },
+  "source": {
+    "artifacts": [
+      {
+        "path": "sender.jsonl",
+        "sha256": "ebc8c08874e96c1b9b632986f61229401923526dd1845d349e28e53b39c65159"
+      },
+      {
+        "path": "receiver.jsonl",
+        "sha256": "efcd2ab87328be22218e7f3a42813c6ce2aac3334e3a840b160bc43d8131899e"
+      }
+    ],
+    "declaredFailureClass": null,
+    "flowId": "incident-010-receiver-pause-robotweax-haivision",
+    "format": "robotweax-srt-telemetry-jsonl-v1",
+    "incidentId": null,
+    "streams": [
+      {
+        "buildProfile": "clean-release-shared-openssl",
+        "overwrittenCount": 0,
+        "provider": "robotweax-srt",
+        "providerRevision": "271f832ef4bb96fab13777a313a0af9d7e20af7e",
+        "providerVersion": "0.2.0-4-g271f832",
+        "recordCount": 9,
+        "role": "sender",
+        "streamId": "incident-010-receiver-pause-robotweax-haivision-sender"
+      },
+      {
+        "buildProfile": "release-shared-openssl-generated-install",
+        "overwrittenCount": 0,
+        "provider": "haivision-srt",
+        "providerRevision": "b6b4ae990daa8193625a4ddeaeaed03023b23125",
+        "providerVersion": "1.5.5",
+        "recordCount": 9,
+        "role": "receiver",
+        "streamId": "incident-010-receiver-pause-robotweax-haivision-receiver"
+      }
+    ]
+  },
+  "status": "pass",
+  "timeline": {
+    "firstDeviationSample": 3,
+    "lastDeviationSample": 6,
+    "observations": [
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000001000000000,
+          "sender": 1800000001000000000
+        },
+        "qualityBoundaries": [
+          {
+            "flags": [
+              "first-sample"
+            ],
+            "role": "sender"
+          },
+          {
+            "flags": [
+              "first-sample"
+            ],
+            "role": "receiver"
+          }
+        ],
+        "sampleIndex": 0,
+        "signals": {
+          "physicalSentPackets": null,
+          "receiverDropPackets": null,
+          "receiverLossPackets": null,
+          "receiverReceiveBufferBytes": 0,
+          "receiverReceiveBufferSeconds": 0,
+          "receiverRttSeconds": 0.1,
+          "receiverUndecryptablePackets": null,
+          "retransmittedPackets": null,
+          "senderDropPackets": null,
+          "senderFlightSizePackets": 0,
+          "senderLossPackets": null,
+          "senderRttSeconds": 0.1,
+          "senderSendBufferBytes": 0,
+          "senderSendBufferSeconds": 0,
+          "uniqueReceivedPackets": null,
+          "uniqueSentPackets": null
+        }
+      },
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000002000000000,
+          "sender": 1800000002000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 1,
+        "signals": {
+          "physicalSentPackets": 100,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": 0,
+          "receiverReceiveBufferSeconds": 0,
+          "receiverRttSeconds": 0.002221,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderFlightSizePackets": 0,
+          "senderLossPackets": 0,
+          "senderRttSeconds": 0.1,
+          "senderSendBufferBytes": 0,
+          "senderSendBufferSeconds": 0,
+          "uniqueReceivedPackets": 100,
+          "uniqueSentPackets": 100
+        }
+      },
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000003000000000,
+          "sender": 1800000003000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 2,
+        "signals": {
+          "physicalSentPackets": 100,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": 0,
+          "receiverReceiveBufferSeconds": 0,
+          "receiverRttSeconds": 0.002153,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderFlightSizePackets": 0,
+          "senderLossPackets": 0,
+          "senderRttSeconds": 0.002221,
+          "senderSendBufferBytes": 0,
+          "senderSendBufferSeconds": 0,
+          "uniqueReceivedPackets": 100,
+          "uniqueSentPackets": 100
+        }
+      },
+      {
+        "deviating": true,
+        "observedAtUnixNano": {
+          "receiver": 1800000004000000000,
+          "sender": 1800000004000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 3,
+        "signals": {
+          "physicalSentPackets": 2214,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": 2899148,
+          "receiverReceiveBufferSeconds": 0.098,
+          "receiverRttSeconds": 0.000605,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderFlightSizePackets": 34,
+          "senderLossPackets": 0,
+          "senderRttSeconds": 0.0006850000000000001,
+          "senderSendBufferBytes": 159120,
+          "senderSendBufferSeconds": 0.008,
+          "uniqueReceivedPackets": 2203,
+          "uniqueSentPackets": 2214
+        }
+      },
+      {
+        "deviating": true,
+        "observedAtUnixNano": {
+          "receiver": 1800000005000000000,
+          "sender": 1800000005000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 4,
+        "signals": {
+          "physicalSentPackets": 2093,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": 5616688,
+          "receiverReceiveBufferSeconds": 0.124,
+          "receiverRttSeconds": 0.000201,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderFlightSizePackets": 31,
+          "senderLossPackets": 0,
+          "senderRttSeconds": 0.000224,
+          "senderSendBufferBytes": 3704640,
+          "senderSendBufferSeconds": 0.027,
+          "uniqueReceivedPackets": 2065,
+          "uniqueSentPackets": 2093
+        }
+      },
+      {
+        "deviating": true,
+        "observedAtUnixNano": {
+          "receiver": 1800000006000000000,
+          "sender": 1800000006000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 5,
+        "signals": {
+          "physicalSentPackets": 2612,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": 9096192,
+          "receiverReceiveBufferSeconds": 0.15,
+          "receiverRttSeconds": 8.9e-05,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderFlightSizePackets": 50,
+          "senderLossPackets": 0,
+          "senderRttSeconds": 9.2e-05,
+          "senderSendBufferBytes": 178160,
+          "senderSendBufferSeconds": 0.001,
+          "uniqueReceivedPackets": 2644,
+          "uniqueSentPackets": 2612
+        }
+      },
+      {
+        "deviating": true,
+        "observedAtUnixNano": {
+          "receiver": 1800000007000000000,
+          "sender": 1800000007000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 6,
+        "signals": {
+          "physicalSentPackets": 81,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": 9212000,
+          "receiverReceiveBufferSeconds": 0.151,
+          "receiverRttSeconds": 0.000283,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderFlightSizePackets": 0,
+          "senderLossPackets": 0,
+          "senderRttSeconds": 8.9e-05,
+          "senderSendBufferBytes": 0,
+          "senderSendBufferSeconds": 0,
+          "uniqueReceivedPackets": 88,
+          "uniqueSentPackets": 81
+        }
+      },
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000008000000000,
+          "sender": 1800000008000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 7,
+        "signals": {
+          "physicalSentPackets": 100,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": 0,
+          "receiverReceiveBufferSeconds": 0,
+          "receiverRttSeconds": 0.000442,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderFlightSizePackets": 0,
+          "senderLossPackets": 0,
+          "senderRttSeconds": 0.000253,
+          "senderSendBufferBytes": 0,
+          "senderSendBufferSeconds": 0,
+          "uniqueReceivedPackets": 100,
+          "uniqueSentPackets": 100
+        }
+      },
+      {
+        "deviating": false,
+        "observedAtUnixNano": {
+          "receiver": 1800000009000000000,
+          "sender": 1800000009000000000
+        },
+        "qualityBoundaries": [],
+        "sampleIndex": 8,
+        "signals": {
+          "physicalSentPackets": 100,
+          "receiverDropPackets": 0,
+          "receiverLossPackets": 0,
+          "receiverReceiveBufferBytes": 0,
+          "receiverReceiveBufferSeconds": 0,
+          "receiverRttSeconds": 0.000666,
+          "receiverUndecryptablePackets": 0,
+          "retransmittedPackets": 0,
+          "senderDropPackets": 0,
+          "senderFlightSizePackets": 0,
+          "senderLossPackets": 0,
+          "senderRttSeconds": 0.000397,
+          "senderSendBufferBytes": 0,
+          "senderSendBufferSeconds": 0,
+          "uniqueReceivedPackets": 100,
+          "uniqueSentPackets": 100
+        }
+      }
+    ],
+    "qualityBoundaries": [
+      {
+        "flags": [
+          "first-sample"
+        ],
+        "role": "sender",
+        "sampleIndex": 0
+      },
+      {
+        "flags": [
+          "first-sample"
+        ],
+        "role": "receiver",
+        "sampleIndex": 0
+      }
+    ],
+    "recoverySample": 7,
+    "sampleCount": 9
+  },
+  "totals": {
+    "physicalSentPackets": 7400,
+    "receiverLossPackets": 0,
+    "retransmittedPackets": 0,
+    "senderLossPackets": 0,
+    "uniqueReceivedPackets": 7400,
+    "uniqueSentPackets": 7400
+  }
+}

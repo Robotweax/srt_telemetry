@@ -240,6 +240,11 @@ the common public SRT statistics profile for both providers. They localize
 receiver-side pressure but do not reveal exact application-consumption timing;
 no Robotweax-only protocol extension is required for this candidate.
 
+Retained captures:
+
+- [2026-08-29 Robotweax sender to paused Haivision receiver](../testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender to paused Robotweax receiver](../testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/manifest.json)
+
 ## Operator comparison
 
 `tools/operator_evaluation.py` prepares and runs the counterbalanced comparison

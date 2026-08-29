@@ -131,6 +131,25 @@ adjacency inside a window and a controlled release cost gate remain open.
 
 - [2026-08-29 macOS arm64 20 Hz loss-shape observability](../../qualification/results/2026-08-29-macos-arm64-loss-shape-observability.json)
 
+## Receiver-pressure field candidate evidence
+
+The exact peers were directly connected over IPv4 loopback while receiver
+application reads were withheld for approximately 417–418 ms. Each direction
+sent 7,000 messages during the pause plus 400 warm and recovery messages. Both
+receivers reached 9,212,000 bytes of public receive-buffer occupancy during
+samples 3–6. Sender flight or send-buffer growth overlapped that window, and
+the receiver buffer recovered at sample 7.
+
+All 7,400 messages arrived in both captures without public loss, endpoint drop,
+undecryptable, or retransmission evidence. The paired public gauges therefore
+support a receiver-endpoint pressure hypothesis in both provider directions.
+They do not reveal exact application-consumption timing, and loopback does not
+qualify production schedulers or physical network profiles. No Robotweax-only
+signal is selected for this operator question.
+
+- [2026-08-29 Robotweax sender to paused Haivision receiver](../../testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/manifest.json)
+- [2026-08-29 Haivision sender to paused Robotweax receiver](../../testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/manifest.json)
+
 ## Remaining release qualification
 
 - live caller-to-listener and listener-to-caller sampling for the remaining

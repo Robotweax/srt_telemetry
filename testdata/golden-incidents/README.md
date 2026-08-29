@@ -26,3 +26,5 @@ Current incidents:
 - [Incident 007: real Haivision-to-Robotweax JSONL analysis](incident-007-jsonl-constant-loss-haivision-robotweax/README.md)
 - [Incident 008: Robotweax-to-Haivision RTT step](incident-008-rtt-step-robotweax-haivision/README.md)
 - [Incident 009: Haivision-to-Robotweax RTT step](incident-009-rtt-step-haivision-robotweax/README.md)
+- [Incident 010: Robotweax sender to paused Haivision receiver](incident-010-receiver-pause-robotweax-haivision/README.md)
+- [Incident 011: Haivision sender to paused Robotweax receiver](incident-011-receiver-pause-haivision-robotweax/README.md)

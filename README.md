@@ -25,25 +25,30 @@ deterministic timeline, four bounded hypotheses, and an explicit
 insufficient-evidence outcome. Exact provider-linked peers now record real
 adapter samples directly through the bounded recorder and JSONL exporter;
 retained constant-loss and RTT-step captures complete that path through the
-analyzer in both cross-provider sender directions. The first deterministic
-constant-loss fixture preserves paired sender/receiver evidence and explicit
+analyzer in both cross-provider sender directions. Paired receiver-pause
+captures now also retain public receive-buffer growth, overlapping sender
+flight/send-buffer pressure, lossless recovery, and a supported receiver
+endpoint hypothesis in both directions. Exact application-consumption timing
+remains a non-claim, and no Robotweax-only extension is required for this
+operator question. The first deterministic constant-loss fixture preserves
+paired sender/receiver evidence and explicit
 non-claims for future diagnostic work. Captured constant- and burst-loss runs
 in both sender directions additionally retain exact public loss,
-retransmission, and recovery
-observations through a deterministic user-space fault boundary. The captures
+retransmission, and recovery observations through a deterministic user-space
+fault boundary. The captures
 qualify exposed gaps; finite flight-tail recovery without later DATA remains
 open. A retained 20 Hz incident-mode experiment now distinguishes eight losses
 in one 50 ms window from the same aggregate loss distributed across eight
 windows in both cross-provider directions. Therefore no Robotweax-only signal
 is currently required for that coarse operator question. Exact within-window
 packet adjacency and a controlled release cost budget remain open.
-An executable, counterbalanced operator-evaluation candidate now compares the
-two real cross-provider recordings as inference-free normalized public SRT
+An executable, counterbalanced operator-evaluation candidate now compares four
+real cross-provider recordings as inference-free normalized public SRT
 statistics versus deterministic incident reports. It records pseudonymous
 timing, accuracy, unsupported hypotheses, missing-evidence recognition, and
-confidence. The automated comparison now exercises constant loss and an RTT
-step. Automated answers are explicitly harness-only; no design-partner
-or diagnostic-value product claim has been made.
+confidence. The automated comparison now exercises constant loss, an RTT step,
+and receiver pause/backpressure. Automated answers are explicitly harness-only;
+no design-partner or diagnostic-value product claim has been made.
 
 The first product claim to prove is:
 
@@ -168,5 +173,9 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Captured Haivision-to-Robotweax burst-loss incident](testdata/golden-incidents/incident-005-captured-burst-loss-haivision-robotweax/README.md)
 - [Direct Robotweax-to-Haivision JSONL analysis](testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/README.md)
 - [Direct Haivision-to-Robotweax JSONL analysis](testdata/golden-incidents/incident-007-jsonl-constant-loss-haivision-robotweax/README.md)
+- [Robotweax-to-Haivision RTT-step analysis](testdata/golden-incidents/incident-008-rtt-step-robotweax-haivision/README.md)
+- [Haivision-to-Robotweax RTT-step analysis](testdata/golden-incidents/incident-009-rtt-step-haivision-robotweax/README.md)
+- [Robotweax sender to paused Haivision receiver](testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/README.md)
+- [Haivision sender to paused Robotweax receiver](testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/README.md)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)

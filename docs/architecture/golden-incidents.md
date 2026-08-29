@@ -103,3 +103,11 @@ recovery. Both public endpoints cross conservative warm-baseline thresholds,
 all 12,000 application messages arrive, and public loss remains zero. The
 captures prove round-trip observability, not one-way delay, direction, or an
 exact failing hop.
+
+Incidents 010 and 011 directly connect the provider peers and withhold receiver
+application reads during samples 3 through 6. In both directions the public
+receiver buffer reaches 9,212,000 bytes, overlaps sender flight or send-buffer
+growth, and returns below the warm-baseline threshold at sample 7. All 7,400
+messages arrive without public loss, drop, undecryptable, or retransmission
+evidence. This localizes receiver-side pressure through common public fields;
+exact application-consumption timing remains unavailable.

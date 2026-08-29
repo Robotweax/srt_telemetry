@@ -35,7 +35,9 @@ IPv6, FEC, group, remaining-field, and multi-platform gates.
 3. RTT step — deterministic public-API capture and diagnostic candidate
    retained in both cross-provider directions; RTT ramp open;
 4. bandwidth reduction with queue growth;
-5. receiver pause/backpressure;
+5. receiver pause/backpressure — public receiver-buffer plus upstream sender
+   flight/send-buffer diagnostic candidates retained in both provider
+   directions; physical-network and production-scheduler profiles open;
 6. hard path outage;
 7. reconnect loop; and
 8. key-management or decrypt failure where the provider exposes evidence.
@@ -65,6 +67,13 @@ new failure-class experiment cannot discriminate through public fields. Then
 compare the public fallback against a versioned Robotweax event or maximum-run
 metric and coordinate the selected contract with the Robotweax SRT coding
 agent.
+
+The receiver-pause captures provide a second extension-gate decision. Common
+public receiver-buffer, sender-buffer, and flight gauges localize the receiver
+endpoint and its recovery in both provider directions. They do not expose the
+exact application-consumption schedule, but that missing precision is not
+required for the current operator question. No Robotweax extension is selected
+for this failure class.
 
 Use this request template when coordination with the Robotweax SRT coding agent
 is necessary:
@@ -107,9 +116,10 @@ with raw SRT statistics for real or representative incidents. Measure:
 The first local analyzer candidate now establishes the machine-testable side of
 this gate: a paired timeline, four explicit hypotheses, supporting,
 contradictory, and missing evidence, plus an insufficient-evidence outcome. It
-passes the synthetic and captured loss incidents. Two retained cross-provider
+passes the synthetic and captured loss incidents. Six retained cross-provider
 runs now also prove the real public-adapter → recorder → JSONL → analyzer path
-in both directions. This does not close the product claim. A design-partner
+for three failure classes in both directions. This does not close the product
+claim. A design-partner
 comparison must still measure the operator outcomes above, and real
 cross-endpoint correlation must declare clock-synchronization quality before
 wall-clock ordering is used as RCA evidence.
@@ -119,8 +129,9 @@ counterbalanced raw-statistics and incident-report tasks from retained
 recordings, captures the two timing milestones and bounded operator answers,
 and emits paired aggregate statistics. Its automated end-to-end test uses only
 `synthetic-harness` responses and cannot satisfy this gate. The updated
-automated packet contains constant loss and an RTT step, so the harness now
-exercises two of the five real or representative failure classes required by
-strategy Gate B. The next evidence step is an internal facilitation rehearsal
-followed by controlled design-partner sessions and additional fault classes.
+automated packet contains constant loss, an RTT step, and receiver
+pause/backpressure in both provider directions, so the harness now exercises
+three of the five real or representative failure classes required by strategy
+Gate B. The next evidence step is an internal facilitation rehearsal followed
+by controlled design-partner sessions and additional fault classes.
 None should use cross-host wall-clock ordering until clock quality is declared.

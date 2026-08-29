@@ -13,20 +13,22 @@ partner use `design-partner`.
 
 ## Study design
 
-The initial packet requires exactly two retained JSONL incidents. The automated
-packet uses one constant-loss and one RTT-step scenario so the harness
-exercises multiple failure classes. It creates two counterbalanced arms:
+The packet requires at least two retained JSONL incidents. The automated packet
+uses constant loss, an RTT step, and receiver pause/backpressure in both
+provider directions. It creates two counterbalanced arms by alternating the
+condition and reversing it for every scenario in the other arm:
 
-| Arm | First task | Second task |
-| --- | --- | --- |
-| A | Incident 1, raw statistics | Incident 2, incident report |
-| B | Incident 1, incident report | Incident 2, raw statistics |
+| Arm | Task 1 | Task 2 | Task 3 | Task 4 |
+| --- | --- | --- | --- | --- |
+| A | Loss, raw | RTT, report | Robotweax→Haivision pressure, raw | Haivision→Robotweax pressure, report |
+| B | Loss, report | RTT, raw | Robotweax→Haivision pressure, report | Haivision→Robotweax pressure, raw |
 
-Each participant sees an incident only once. Across the arms, both incidents
-appear under both conditions and both condition orders occur. Automatic arm
+Each participant sees an incident only once. Across the arms, every scenario
+appears under both conditions and both condition orders occur. Automatic arm
 selection hashes the pseudonymous participant ID with the study ID; a
 facilitator may select an arm explicitly when a pre-registered allocation
-requires it.
+requires it. Paired participant comparisons use each participant's mean within
+each condition, while the aggregate statistics retain every individual task.
 
 The raw view contains the direct normalized public SRT snapshot and delta
 fields, their roles, and provider identities. It contains no deviation marker,
@@ -51,13 +53,15 @@ session artifact is retained in the repository.
 
 ```sh
 python3 tools/operator_evaluation.py prepare \
-  --study-id loss-rtt-comparison-candidate \
+  --study-id loss-rtt-pressure-comparison-candidate \
   --manifest testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json \
   --manifest testdata/golden-incidents/incident-008-rtt-step-robotweax-haivision/manifest.json \
+  --manifest testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/manifest.json \
+  --manifest testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/manifest.json \
   --output-dir /new/operator-evaluation-packet
 ```
 
-Preparation reproduces both retained analyses, verifies every input digest,
+Preparation reproduces every retained analysis, verifies every input digest,
 and writes hashed raw, report, and reference artifacts. It refuses to overwrite
 an existing packet. Every subsequent command verifies the packet hashes before
 using it.
@@ -105,10 +109,11 @@ Claim status is deliberately bounded:
 - satisfying the machine checks only makes a result eligible for human gate
   review. It never automatically proves the product claim.
 
-The current automated packet uses Incidents 006 and 008. It validates the
-counterbalanced method across constant-loss and RTT-step cases, but covers only
-two of the five real or representative failure classes required by strategy
-Gate B. Incidents 007 and 009 separately retain the reverse provider direction.
+The current automated packet uses Incidents 006, 008, 010, and 011. It validates
+the counterbalanced method across constant-loss, RTT-step, and receiver-pressure
+cases, but covers only three of the five real or representative failure classes
+required by strategy Gate B. Incidents 007 and 009 separately retain the
+reverse provider direction for the first two classes.
 
 ## Versioned contracts
 
