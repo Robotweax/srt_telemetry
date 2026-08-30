@@ -60,6 +60,8 @@ struct RecordingConfig final
 struct Options final
 {
     std::string role;
+    std::string bind_address = "127.0.0.1";
+    std::string remote_address = "127.0.0.1";
     int port = 0;
     std::optional<RecordingConfig> recording;
 };
@@ -151,9 +153,52 @@ bool configure_caller(const SRTSOCKET socket)
            configure_io_timeouts(socket);
 }
 
-bool bind_ephemeral_udp(const SRTSOCKET listener, sockaddr_in &address)
+int parse_ip_address(const std::string &text, const std::uint16_t port, sockaddr_storage &address)
 {
-    const auto native_socket = ::socket(AF_INET, SOCK_DGRAM, 0);
+    address = {};
+    auto *ipv4 = reinterpret_cast<sockaddr_in *>(&address);
+    ipv4->sin_family = AF_INET;
+    ipv4->sin_port = htons(port);
+    if (inet_pton(AF_INET, text.c_str(), &ipv4->sin_addr) == 1)
+    {
+        return static_cast<int>(sizeof(*ipv4));
+    }
+
+    address = {};
+    auto *ipv6 = reinterpret_cast<sockaddr_in6 *>(&address);
+    ipv6->sin6_family = AF_INET6;
+    ipv6->sin6_port = htons(port);
+    if (inet_pton(AF_INET6, text.c_str(), &ipv6->sin6_addr) == 1)
+    {
+        return static_cast<int>(sizeof(*ipv6));
+    }
+    address = {};
+    return 0;
+}
+
+int address_port(const sockaddr_storage &address)
+{
+    if (address.ss_family == AF_INET)
+    {
+        return ntohs(reinterpret_cast<const sockaddr_in *>(&address)->sin_port);
+    }
+    if (address.ss_family == AF_INET6)
+    {
+        return ntohs(reinterpret_cast<const sockaddr_in6 *>(&address)->sin6_port);
+    }
+    return 0;
+}
+
+bool bind_ephemeral_udp(const SRTSOCKET listener, const std::string &bind_address, int &port)
+{
+    sockaddr_storage address{};
+    const auto address_size = parse_ip_address(bind_address, 0, address);
+    if (address_size == 0)
+    {
+        std::cerr << "FAIL: invalid listener IP bind address\n";
+        return false;
+    }
+    const auto native_socket = ::socket(address.ss_family, SOCK_DGRAM, 0);
 #if defined(_WIN32)
     if (native_socket == INVALID_SOCKET)
 #else
@@ -171,25 +216,29 @@ bool bind_ephemeral_udp(const SRTSOCKET listener, sockaddr_in &address)
         static_cast<void>(close(native_socket));
 #endif
     };
-    address = {};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = 0;
-    if (::bind(native_socket, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0)
+    if (::bind(native_socket, reinterpret_cast<const sockaddr *>(&address), address_size) != 0)
     {
         std::cerr << "FAIL: native UDP bind\n";
         close_native();
         return false;
     }
 #if defined(_WIN32)
-    int address_size = sizeof(address);
+    int acquired_address_size = sizeof(address);
 #else
-    socklen_t address_size = sizeof(address);
+    socklen_t acquired_address_size = sizeof(address);
 #endif
-    if (::getsockname(native_socket, reinterpret_cast<sockaddr *>(&address), &address_size) != 0 ||
+    if (::getsockname(native_socket, reinterpret_cast<sockaddr *>(&address),
+                      &acquired_address_size) != 0 ||
         srt_bind_acquire(listener, native_socket) == SRT_ERROR)
     {
         std::cerr << "FAIL: acquire ephemeral UDP socket\n";
+        close_native();
+        return false;
+    }
+    port = address_port(address);
+    if (port == 0)
+    {
+        std::cerr << "FAIL: acquired listener port is invalid\n";
         close_native();
         return false;
     }
@@ -359,8 +408,7 @@ void emit_sample(const std::string_view role, const std::uint64_t sample_index,
               << ",\"flow_window_packets\":" << raw.flow_window_packets
               << ",\"congestion_window_packets\":" << raw.congestion_window_packets
               << ",\"available_send_buffer_bytes\":" << raw.available_send_buffer_bytes
-              << ",\"available_receive_buffer_bytes\":"
-              << raw.available_receive_buffer_bytes
+              << ",\"available_receive_buffer_bytes\":" << raw.available_receive_buffer_bytes
               << ",\"send_buffer_bytes\":" << raw.send_buffer_bytes
               << ",\"send_buffer_seconds\":" << raw.send_buffer_seconds
               << ",\"receive_buffer_bytes\":" << raw.receive_buffer_bytes
@@ -558,13 +606,13 @@ int run_listener(const Options &options)
         std::cerr << "FAIL: listener startup\n";
         return EXIT_FAILURE;
     }
-    sockaddr_in address{};
-    if (!bind_ephemeral_udp(listener.get(), address) ||
+    int port = 0;
+    if (!bind_ephemeral_udp(listener.get(), options.bind_address, port) ||
         !srt_ok(srt_listen(listener.get(), 1), "incident listen"))
     {
         return EXIT_FAILURE;
     }
-    std::cout << "READY {\"port\":" << ntohs(address.sin_port) << "}\n" << std::flush;
+    std::cout << "READY {\"port\":" << port << "}\n" << std::flush;
     Socket accepted(srt_accept(listener.get(), nullptr, nullptr));
     if (accepted.get() == SRT_INVALID_SOCK || !configure_io_timeouts(accepted.get()))
     {
@@ -598,13 +646,17 @@ int run_caller(const Options &options)
         std::cerr << "FAIL: caller startup\n";
         return EXIT_FAILURE;
     }
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = htons(static_cast<std::uint16_t>(options.port));
-    if (!srt_ok(srt_connect(caller.get(), reinterpret_cast<const sockaddr *>(&address),
-                            static_cast<int>(sizeof(address))),
-                "incident connect"))
+    sockaddr_storage address{};
+    const auto address_size =
+        parse_ip_address(options.remote_address, static_cast<std::uint16_t>(options.port), address);
+    if (address_size == 0)
+    {
+        std::cerr << "FAIL: invalid caller IP remote address\n";
+        return EXIT_FAILURE;
+    }
+    if (!srt_ok(
+            srt_connect(caller.get(), reinterpret_cast<const sockaddr *>(&address), address_size),
+            "incident connect"))
     {
         return EXIT_FAILURE;
     }
@@ -651,6 +703,14 @@ bool parse_options(const int argc, char **argv, Options &options)
         {
             options.port = parse_port(value);
         }
+        else if (option == "--bind-address")
+        {
+            options.bind_address = value;
+        }
+        else if (option == "--remote-address")
+        {
+            options.remote_address = value;
+        }
         else
         {
             saw_recording_option = true;
@@ -693,7 +753,9 @@ bool parse_options(const int argc, char **argv, Options &options)
     }
     if ((options.role != "listener" && options.role != "caller") ||
         (options.role == "listener" && options.port != 0) ||
-        (options.role == "caller" && options.port == 0))
+        (options.role == "caller" && options.port == 0) ||
+        (options.role == "listener" && options.remote_address != "127.0.0.1") ||
+        (options.role == "caller" && options.bind_address != "127.0.0.1"))
     {
         return false;
     }
@@ -717,7 +779,8 @@ int main(const int argc, char **argv)
         Options options;
         if (!parse_options(argc, argv, options))
         {
-            std::cerr << "usage: incident-peer --role listener|caller [--port PORT] "
+            std::cerr << "usage: incident-peer --role listener|caller "
+                         "[--bind-address IP | --remote-address IP --port PORT] "
                          "[--jsonl-output PATH --flow-id ID --provider-version VERSION "
                          "--provider-revision REVISION --build-profile PROFILE "
                          "[--recorder-capacity RECORDS]]\n";

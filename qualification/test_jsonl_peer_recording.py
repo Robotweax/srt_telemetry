@@ -52,7 +52,8 @@ def run(arguments: argparse.Namespace, directory: Path) -> None:
         arguments.peer,
         recording_arguments(
             "listener", receiver_path, flow_id, arguments.provider, sample_count
-        ),
+        )
+        + ["--bind-address", "::1"],
     )
     caller = None
     try:
@@ -63,7 +64,9 @@ def run(arguments: argparse.Namespace, directory: Path) -> None:
         caller_arguments = recording_arguments(
             "caller", sender_path, flow_id, arguments.provider, sample_count
         )
-        caller_arguments.extend(["--port", str(port)])
+        caller_arguments.extend(
+            ["--remote-address", "::1", "--port", str(port)]
+        )
         caller = Peer(arguments.peer, caller_arguments)
         listener.wait_for("CONNECTED")
         caller.wait_for("CONNECTED")
