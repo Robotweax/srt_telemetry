@@ -16,6 +16,7 @@
 #include <unistd.h>
 #endif
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -46,6 +47,7 @@ constexpr std::string_view runtime_provider_name = "haivision-srt";
 
 constexpr std::uint64_t incident_fields =
     ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_V1_5_5_CANDIDATE_FIELDS;
+constexpr std::size_t maximum_message_bytes = 1'316;
 
 struct RecordingConfig final
 {
@@ -62,6 +64,7 @@ struct Options final
     std::string role;
     std::string bind_address = "127.0.0.1";
     std::string remote_address = "127.0.0.1";
+    std::size_t message_bytes = maximum_message_bytes;
     int port = 0;
     std::optional<RecordingConfig> recording;
 };
@@ -277,18 +280,18 @@ bool sample_at(Session &session, const std::uint64_t unix_nano, const std::uint6
 }
 
 bool transfer_messages(const SRTSOCKET socket, const bool sender, const std::uint64_t sample_index,
-                       const std::uint64_t message_count,
+                       const std::uint64_t message_count, const std::size_t message_bytes,
                        const std::uint64_t pacing_microseconds = 0)
 {
-    std::array<char, 1'316> payload{};
+    std::array<char, maximum_message_bytes> payload{};
     payload.fill(static_cast<char>('A' + sample_index % 26));
     for (std::uint64_t message = 0; message < message_count; ++message)
     {
         if (sender)
         {
             const auto sent =
-                srt_sendmsg(socket, payload.data(), static_cast<int>(payload.size()), -1, 1);
-            if (sent != static_cast<int>(payload.size()))
+                srt_sendmsg(socket, payload.data(), static_cast<int>(message_bytes), -1, 1);
+            if (sent != static_cast<int>(message_bytes))
             {
                 return srt_ok(sent, "incident send") && false;
             }
@@ -298,9 +301,10 @@ bool transfer_messages(const SRTSOCKET socket, const bool sender, const std::uin
             }
             continue;
         }
-        std::array<char, 1'316> received{};
+        std::array<char, maximum_message_bytes> received{};
         const auto size = srt_recvmsg(socket, received.data(), static_cast<int>(received.size()));
-        if (size != static_cast<int>(received.size()) || received != payload)
+        if (size != static_cast<int>(message_bytes) ||
+            !std::equal(payload.begin(), payload.begin() + message_bytes, received.begin()))
         {
             return srt_ok(size, "incident receive") && false;
         }
@@ -329,7 +333,8 @@ class TransferWorker final
     }
 
     bool start(const SRTSOCKET socket, const bool sender, const std::uint64_t transfer_id,
-               const std::uint64_t message_count, const std::uint64_t pacing_microseconds)
+               const std::uint64_t message_count, const std::size_t message_bytes,
+               const std::uint64_t pacing_microseconds)
     {
         if (active())
         {
@@ -341,10 +346,11 @@ class TransferWorker final
         try
         {
             thread_ = std::thread(
-                [this, socket, sender, transfer_id, message_count, pacing_microseconds]()
+                [this, socket, sender, transfer_id, message_count, message_bytes,
+                 pacing_microseconds]()
                 {
                     success_ = transfer_messages(socket, sender, transfer_id, message_count,
-                                                 pacing_microseconds);
+                                                 message_bytes, pacing_microseconds);
                 });
         }
         catch (const std::system_error &error)
@@ -495,7 +501,8 @@ bool export_recording(const robotweax::srt::telemetry::BoundedRecorder &recorder
 }
 
 int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
-                 const std::string_view role, const std::optional<RecordingConfig> &recording)
+                 const std::string_view role, const std::size_t message_bytes,
+                 const std::optional<RecordingConfig> &recording)
 {
     TransferWorker transfer_worker;
     std::optional<robotweax::srt::telemetry::BoundedRecorder> recorder;
@@ -546,7 +553,7 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
             std::uint64_t message_count = 0;
             if (!(command >> sample_index >> message_count) || message_count == 0 ||
                 !no_extra_input(command) ||
-                !transfer_messages(socket, sender, sample_index, message_count))
+                !transfer_messages(socket, sender, sample_index, message_count, message_bytes))
             {
                 std::cerr << "FAIL: invalid or failed TRANSFER command\n";
                 return EXIT_FAILURE;
@@ -563,7 +570,7 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
             std::uint64_t pacing_microseconds = 0;
             if (!(command >> transfer_id >> message_count >> pacing_microseconds) ||
                 message_count == 0 || !no_extra_input(command) ||
-                !transfer_worker.start(socket, sender, transfer_id, message_count,
+                !transfer_worker.start(socket, sender, transfer_id, message_count, message_bytes,
                                        pacing_microseconds))
             {
                 std::cerr << "FAIL: invalid or failed START_TRANSFER command\n";
@@ -626,7 +633,8 @@ int run_listener(const Options &options)
         return EXIT_FAILURE;
     }
     std::cout << "CONNECTED\n" << std::flush;
-    return run_commands(accepted.get(), session, false, "receiver", options.recording);
+    return run_commands(accepted.get(), session, false, "receiver", options.message_bytes,
+                        options.recording);
 }
 
 int parse_port(const char *text)
@@ -667,7 +675,8 @@ int run_caller(const Options &options)
         return EXIT_FAILURE;
     }
     std::cout << "CONNECTED\n" << std::flush;
-    return run_commands(caller.get(), session, true, "sender", options.recording);
+    return run_commands(caller.get(), session, true, "sender", options.message_bytes,
+                        options.recording);
 }
 
 bool parse_size(const char *text, std::size_t &result)
@@ -710,6 +719,14 @@ bool parse_options(const int argc, char **argv, Options &options)
         else if (option == "--remote-address")
         {
             options.remote_address = value;
+        }
+        else if (option == "--message-bytes")
+        {
+            if (!parse_size(value, options.message_bytes) ||
+                options.message_bytes > maximum_message_bytes)
+            {
+                return false;
+            }
         }
         else
         {
@@ -781,6 +798,7 @@ int main(const int argc, char **argv)
         {
             std::cerr << "usage: incident-peer --role listener|caller "
                          "[--bind-address IP | --remote-address IP --port PORT] "
+                         "[--message-bytes 1..1316] "
                          "[--jsonl-output PATH --flow-id ID --provider-version VERSION "
                          "--provider-revision REVISION --build-profile PROFILE "
                          "[--recorder-capacity RECORDS]]\n";

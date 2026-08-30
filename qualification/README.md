@@ -118,8 +118,10 @@ provider. The peer accepts `--bind-address IP` for its listener and
 `--remote-address IP --port PORT` for its caller; both default to IPv4 loopback,
 while the JSONL recorder test exercises explicit IPv6 loopback. This lets an
 external qualification coordinator place the unchanged provider-linked peer on
-a declared interface such as a FIPS TUN address. The runner starts the selected
-sender/receiver pair and a user-space UDP proxy between them.
+a declared interface such as a FIPS TUN address. `--message-bytes 1..1316`
+retains the 1,316-byte default while allowing an external coordinator to freeze
+a smaller payload against a declared path-MTU budget. The runner starts the
+selected sender/receiver pair and a user-space UDP proxy between them.
 Robotweax-to-Haivision remains the default direction:
 
 ```sh
