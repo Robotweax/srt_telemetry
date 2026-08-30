@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1alpha1",
+  "provider": "robotweax-srt",
+  "providerVersion": "0.2.0-11-ge3d61f7",
+  "publicApiProfile": "srt-1.5.5",
+  "adapterVersion": "0.1.0-alpha.0",
+  "buildProfile": "clean-release-shared-openssl",
+  "providerRevision": "e3d61f77e852001224b6586c63bcff46a3200223",
+  "capabilities": [],
+  "qualifiedProfiles": [
+    "public-header-and-bistats-signature",
+    "deterministic-adapter-mapping",
+    "bidirectional-self-loopback-common-subset",
+    "robotweax-haivision-bidirectional-loopback-common-subset",
+    "sampling-and-lifecycle-macos-arm64-candidate",
+    "provider-linked-jsonl-recorder-self-loopback-candidate"
+  ],
+  "notes": [
+    "Candidate record only; full-field and deployment-profile qualification have not been completed.",
+    "The exact Robotweax SRT revision pinned by Intelligent Media Fabric built against telemetry revision 9c49648dda59231f3c1bd8dfa4fc9fbeea1eceb2 and passed all 42 adapter, runtime, lifecycle, recorder, incident, and operator-harness tests on macOS arm64.",
+    "Bidirectional self-loopback and Robotweax-to-Haivision caller/listener interoperability passed for the common nine-field unencrypted Live/Message IPv4 subset.",
+    "The macOS arm64 sampling and lifecycle result is candidate evidence only; it does not establish a release performance budget or support concurrent socket close and sampling.",
+    "Loss, burst, pressure, recovery-margin, and operator-evaluation evidence retained for Robotweax SRT revision 271f832ef4bb96fab13777a313a0af9d7e20af7e is not inherited by this profile.",
+    "Linux, IPv6, encrypted, FEC, group, fips0, reset, and representative deployment profiles remain unqualified."
+  ]
+}

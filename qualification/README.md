@@ -34,6 +34,7 @@ and payloads.
 Retained results:
 
 - [2026-08-28 macOS arm64 public SRT interop](results/2026-08-28-macos-arm64-public-srt-interop.json)
+- [2026-08-30 Fabric-pinned Robotweax revision interop](results/2026-08-30-macos-arm64-public-srt-interop-e3d61f7.json)
 
 ## Sampling and lifecycle qualification runner
 
@@ -68,6 +69,7 @@ performance gate.
 Retained results:
 
 - [2026-08-28 macOS arm64 sampling and lifecycle](results/2026-08-28-macos-arm64-public-srt-runtime.json)
+- [2026-08-30 Fabric-pinned Robotweax revision sampling and lifecycle](results/2026-08-30-macos-arm64-public-srt-runtime-e3d61f7.json)
 
 ## Loss-shape observability runner
 

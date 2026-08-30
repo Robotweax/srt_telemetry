@@ -20,7 +20,12 @@ sampling overhead and the required session-destroy-before-socket-close
 lifecycle for both providers. Full field, controlled performance, and
 deployment-profile qualification remain open. The project intentionally does
 not yet contain a production agent, backend, dashboard, alert engine, or
-production RCA engine. The local analyzer turns paired evidence into a
+production RCA engine. A second exact macOS arm64 candidate now covers
+Robotweax SRT `e3d61f77e852001224b6586c63bcff46a3200223`, the revision
+pinned by Intelligent Media Fabric, for the common loopback subset, lifecycle,
+and bidirectional Haivision interoperability. It does not inherit the older
+revision's incident-class claims, and Linux/IPv6/`fips0` remain open. The local
+analyzer turns paired evidence into a
 deterministic timeline, five bounded hypotheses, and an explicit
 insufficient-evidence outcome. Exact provider-linked peers now record real
 adapter samples directly through the bounded recorder and JSONL exporter;
@@ -181,6 +186,8 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Provider qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
 - [Retained cross-provider evidence](qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
 - [Retained sampling and lifecycle evidence](qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
+- [Fabric-pinned Robotweax revision interop](qualification/results/2026-08-30-macos-arm64-public-srt-interop-e3d61f7.json)
+- [Fabric-pinned Robotweax revision sampling and lifecycle](qualification/results/2026-08-30-macos-arm64-public-srt-runtime-e3d61f7.json)
 - [Retained 20 Hz loss-shape evidence](qualification/results/2026-08-29-macos-arm64-loss-shape-observability.json)
 - [Constant-loss golden incident](testdata/golden-incidents/incident-001-constant-loss/README.md)
 - [Retained constant-loss analysis](testdata/golden-incidents/incident-001-constant-loss/analysis.json)

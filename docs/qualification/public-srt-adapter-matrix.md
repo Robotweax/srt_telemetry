@@ -1,6 +1,6 @@
 # Public SRT adapter qualification matrix
 
-Date: 2026-08-29
+Date: 2026-08-30
 
 This matrix separates build-time compatibility from live behavioral
 qualification. A pass in the first three columns does not authorize production
@@ -8,6 +8,7 @@ capabilities by itself.
 
 | Provider candidate | Exact source | Public header/signature | Deterministic adapter behavior | Bidirectional self-loopback | Cross-implementation interop | Status |
 | --- | --- | --- | --- | --- | --- | --- |
+| Robotweax SRT `v0.2.0-11-ge3d61f7` | `e3d61f77e852001224b6586c63bcff46a3200223`; clean local clone | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Fabric-pinned interop candidate |
 | Robotweax SRT `v0.2.0-4-g271f832` | `271f832ef4bb96fab13777a313a0af9d7e20af7e`; clean local clone | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Interop candidate |
 | Haivision SRT v1.5.5 | `b6b4ae990daa8193625a4ddeaeaed03023b23125`; tag `v1.5.5`; generated installed headers | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Interop candidate |
 
@@ -29,6 +30,7 @@ revisions, build profiles, participant observations, and SHA-256 digests of the
 provider libraries, peer executables, and payloads:
 
 - [2026-08-28 macOS arm64 public SRT interop](../../qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
+- [2026-08-30 Fabric-pinned Robotweax revision interop](../../qualification/results/2026-08-30-macos-arm64-public-srt-interop-e3d61f7.json)
 
 ## Sampling and lifecycle candidate evidence
 
@@ -53,6 +55,20 @@ The roughly two-orders-of-magnitude provider-call difference is an
 investigation signal for Robotweax SRT, not yet a regression conclusion.
 
 - [2026-08-28 macOS arm64 sampling and lifecycle](../../qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
+- [2026-08-30 Fabric-pinned Robotweax revision sampling and lifecycle](../../qualification/results/2026-08-30-macos-arm64-public-srt-runtime-e3d61f7.json)
+
+The second run qualifies the exact Robotweax SRT revision pinned by Intelligent Media Fabric. All
+42 telemetry tests passed against that build, including the public adapter, live self-loopback,
+supported lifecycle, and provider-linked JSONL recorder path. The cross-provider runner also passed
+with each implementation as caller and listener. Robotweax provider-call p50 fell from the earlier
+26.6 us observation to 100.4 ns after the empty receive-statistics fast path; because neither host
+run controlled scheduling or power management, this remains a strong investigation result rather
+than a release performance claim.
+
+The newer profile does not inherit the loss, burst, pressure, recovery-margin, or operator-study
+claims retained for revision `271f832ef4bb96fab13777a313a0af9d7e20af7e`. Linux, IPv6,
+encryption, FEC, groups, `fips0`, reset behavior, and representative deployment performance remain
+separate qualification work.
 
 ## Constant-loss field candidate evidence
 
