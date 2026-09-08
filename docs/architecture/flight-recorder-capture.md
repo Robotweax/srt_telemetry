@@ -1,5 +1,11 @@
 # Flight Recorder instrumented capture host
 
+This document specifies telemetry's reusable native fixture-host integration.
+The [Flight Recorder product repository](https://github.com/Robotweax/srt_flight_recorder)
+owns the Python capture coordinator, case packages, redaction, view, and product
+experiments. It consumes the telemetry contract and analyzer from this
+repository; it introduces no separate metrics or diagnosis engine.
+
 The existing `public_srt_incident_peer` is the initial integration host. It owns
 its caller/listener sockets, links the chosen provider, and injects that library's
 `srt_bistats` into the existing public SRT adapter. Sampling does not clear the
@@ -102,10 +108,11 @@ sample counts prevent a general performance guarantee.
 ## Reproduce
 
 Build the provider and telemetry into separate directories, point the adapter
-at that exact provider header and shared library, then run:
+at that exact provider header and shared library, then run the capture
+coordinator from a checkout of the Flight Recorder product repository:
 
 ```sh
-python3 qualification/run_flight_recorder_capture.py \
+python3 /absolute/srt_flight_recorder/qualification/run_flight_recorder_capture.py \
   --peer /absolute/build-telemetry/robotweax_srt_telemetry_public_srt_incident_peer \
   --provider-library /absolute/build-srt/libsrt.dylib \
   --provider robotweax-srt --provider-version 0.2.3 \
@@ -125,7 +132,8 @@ or synthetic negative fixtures at the product level.
 
 A separate 11000-message receiver-pause stress attempt reached a full receive
 buffer and failed to drain before the native receive timeout on this build.
-It is retained as unsuccessful experiment evidence; it does not extend the
-1000-message demonstrator's support scope and is not a successful incident
-capture. Existing qualified receiver-pressure fixtures remain the diagnostic
-acceptance evidence. `--pause-messages` permits bounded follow-up experiments.
+It is retained in the product repository as unsuccessful experiment evidence;
+it does not extend the 1000-message demonstrator's support scope and is not a
+successful incident capture. Existing qualified receiver-pressure fixtures
+remain the diagnostic acceptance evidence. `--pause-messages` permits bounded
+follow-up experiments.

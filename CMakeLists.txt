@@ -419,15 +419,6 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
                 DEPENDS robotweax_srt_telemetry_jsonl_incident_fixture_test
                 ENVIRONMENT
                     "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
-        add_test(NAME robotweax_srt_telemetry_flight_recorder_product_tests
-            COMMAND "${Python3_EXECUTABLE}" -m unittest discover
-                -s "${CMAKE_CURRENT_SOURCE_DIR}/qualification"
-                -p "test_flight_recorder*.py" -v)
-        set_tests_properties(robotweax_srt_telemetry_flight_recorder_product_tests
-            PROPERTIES
-                TIMEOUT 60
-                ENVIRONMENT
-                    "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
         add_test(NAME robotweax_srt_telemetry_operator_evaluation_test
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_operator_evaluation.py"
