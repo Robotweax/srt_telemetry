@@ -1,0 +1,122 @@
+{
+  "arms": {
+    "arm-a": {
+      "conditionCounts": {
+        "incident-report": 5,
+        "raw-statistics": 5
+      },
+      "taskCount": 10
+    },
+    "arm-b": {
+      "conditionCounts": {
+        "incident-report": 5,
+        "raw-statistics": 5
+      },
+      "taskCount": 10
+    }
+  },
+  "blockingIssues": [],
+  "checks": [
+    {
+      "id": "packet-integrity",
+      "passed": true,
+      "summary": "Study metadata and every hashed task/reference artifact are intact."
+    },
+    {
+      "id": "source-revision-pinned",
+      "passed": true,
+      "summary": "The packet names the repository revision used to prepare it."
+    },
+    {
+      "id": "portable-source-manifests",
+      "passed": true,
+      "summary": "All retained source-manifest labels are repository-relative."
+    },
+    {
+      "id": "minimum-failure-class-coverage",
+      "passed": true,
+      "summary": "Packet covers 7 distinct failure classes; the configured minimum is 5."
+    },
+    {
+      "id": "within-arm-condition-balance",
+      "passed": true,
+      "summary": "Each arm contains the same number of raw-statistics and report tasks."
+    },
+    {
+      "id": "scenario-counterbalance",
+      "passed": true,
+      "summary": "Every scenario appears under opposite conditions across the two arms."
+    },
+    {
+      "id": "raw-condition-inference-isolation",
+      "passed": true,
+      "summary": "Raw tasks contain no analyzer deviation, domain, or hypothesis labels."
+    },
+    {
+      "id": "interactive-raw-field-surface",
+      "passed": true,
+      "summary": "Interactive raw rendering exposes every public field used by the five diagnostic candidates, including undecryptable and TSBPD data."
+    },
+    {
+      "id": "report-reference-alignment",
+      "passed": true,
+      "summary": "Report timelines and supported hypotheses match their hidden references."
+    },
+    {
+      "id": "interactive-view-rendering",
+      "passed": true,
+      "summary": "Every assigned raw and report task renders a non-empty terminal view."
+    },
+    {
+      "id": "privacy-guardrails",
+      "passed": true,
+      "summary": "Packet forbids identifying, customer, and real stream data."
+    }
+  ],
+  "distinctFailureClasses": [
+    "bandwidth-reduction-with-queue-growth",
+    "constant-packet-loss",
+    "receiver-application-pause",
+    "receiver-recovery-margin-exhaustion",
+    "round-trip-time-step",
+    "synthetic-contradictory-evidence",
+    "synthetic-missing-evidence"
+  ],
+  "facilitatorChecklist": [
+    "Use only pseudonymous participant identifiers created for this study.",
+    "Assign the first two internal sessions explicitly to arm-a and arm-b.",
+    "Keep scenario reference files inaccessible to the participant.",
+    "Reveal one task at a time through the interactive run command.",
+    "Do not coach diagnostic answers or allow backtracking to prior tasks.",
+    "Record protocol deviations separately from timed participant answers.",
+    "Review optional notes for forbidden or identifying data before retention.",
+    "Retain session files unchanged and verify packet hashes before summary.",
+    "Classify all rehearsal sessions as internal-pilot, never design-partner."
+  ],
+  "kind": "robotweax-srt-operator-evaluation-rehearsal-readiness",
+  "nonClaims": [
+    "This readiness artifact contains no participant answers or timings.",
+    "A ready rehearsal packet is not internal-pilot or design-partner evidence.",
+    "Only genuinely conducted interactive sessions may be classified as internal-pilot.",
+    "An internal rehearsal cannot establish the diagnostic-value product claim."
+  ],
+  "runPlan": {
+    "collectionMode": "interactive",
+    "evidenceClass": "internal-pilot",
+    "minimumSessions": 2,
+    "requiredArms": [
+      "arm-a",
+      "arm-b"
+    ],
+    "sessionOutputPattern": "session-internal-<pseudonymous-id>.json"
+  },
+  "scenarioCount": 10,
+  "schemaVersion": "1alpha1",
+  "sourceRevision": "fdb1d8509d02f28b8f54bd5dc856b89319cdf049",
+  "status": "ready",
+  "study": {
+    "file": "study.json",
+    "sha256": "f1f56fda67dad61b4598ec8682c162154916677423f9bdce042dfc5c1a9e6296"
+  },
+  "studyId": "measurement-review-v2"
+}

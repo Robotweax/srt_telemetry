@@ -1,0 +1,28 @@
+{
+  "failureClass": "bandwidth-reduction-with-queue-growth",
+  "failureDomain": "sender-endpoint",
+  "firstDeviationSample": 3,
+  "kind": "robotweax-srt-operator-evaluation-reference",
+  "lastDeviationSample": 6,
+  "missingEvidence": [
+    "exact-egress-capacity",
+    "offered-application-rate",
+    "sender-application-scheduling"
+  ],
+  "nonClaims": [
+    "The analysis does not identify the exact failing network hop.",
+    "RTT evidence does not isolate one-way delay or its direction.",
+    "Public SRT buffer gauges do not expose exact application scheduling or consumption timing.",
+    "Public SRT statistics do not expose the offered application rate or identify an exact egress capacity restriction.",
+    "The analysis does not infer unavailable endpoint-pressure metrics as zero.",
+    "Receiver drops and configured TSBPD delay do not by themselves prove that increasing latency is the correct remediation."
+  ],
+  "recoverySample": 7,
+  "referencePolicy": "robotweax-operator-measurement-rubric-v2",
+  "scenarioId": "incident-013-bandwidth-reduction-haivision-robotweax",
+  "schemaVersion": "1alpha1",
+  "studyId": "measurement-review-v2",
+  "supportedHypotheses": [
+    "sender-side-pressure"
+  ]
+}
