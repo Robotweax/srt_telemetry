@@ -1,4 +1,5 @@
 #include <robotweax/srt_telemetry.hpp>
+#include "trigger_window.hpp"
 #include <robotweax/srt_telemetry_public_srt.h>
 
 #if defined(ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
@@ -20,6 +21,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -477,22 +479,39 @@ bool export_recording(const robotweax::srt::telemetry::BoundedRecorder &recorder
     metadata.configured_provider = runtime_provider;
     const auto jsonl = recorder.export_jsonl(metadata);
 
-    std::ofstream output(partial, std::ios::binary | std::ios::trunc);
-    output.write(jsonl.data(), static_cast<std::streamsize>(jsonl.size()));
-    output.close();
-    if (!output)
+    // C11 exclusive creation closes the exists/open race. Publication through
+    // a same-directory hard link fails if the destination appears meanwhile.
+    auto *output = std::fopen(partial.string().c_str(), "wbx");
+    if (output == nullptr)
+    {
+        std::cerr << "FAIL: exclusively creating incident recording " << partial << '\n';
+        return false;
+    }
+    const bool wrote = std::fwrite(jsonl.data(), 1, jsonl.size(), output) == jsonl.size();
+    const bool closed = std::fclose(output) == 0;
+    const auto remove_partial = [&]()
+    {
+        std::error_code cleanup_error;
+        std::filesystem::remove(partial, cleanup_error);
+        if (cleanup_error)
+            std::cerr << "FAIL: removing owned partial " << cleanup_error.message() << '\n';
+    };
+    if (!wrote || !closed)
     {
         std::cerr << "FAIL: writing incident recording " << partial << '\n';
+        remove_partial();
         return false;
     }
-    std::error_code rename_error;
-    std::filesystem::rename(partial, config.output, rename_error);
-    if (rename_error)
+    std::error_code publish_error;
+    std::filesystem::create_hard_link(partial, config.output, publish_error);
+    if (publish_error)
     {
         std::cerr << "FAIL: publishing incident recording " << config.output << ": "
-                  << rename_error.message() << '\n';
+                  << publish_error.message() << '\n';
+        remove_partial();
         return false;
     }
+    remove_partial();
     std::cout << "RECORDED {\"role\":\"" << role << "\",\"recordCount\":" << recorder.size()
               << ",\"capacity\":" << recorder.capacity()
               << ",\"overwrittenCount\":" << recorder.overwritten_count() << "}\n"
@@ -500,16 +519,60 @@ bool export_recording(const robotweax::srt::telemetry::BoundedRecorder &recorder
     return true;
 }
 
+std::uint64_t monotonic_now()
+{
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+std::uint64_t unix_now()
+{
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+void emit_window(const TriggerWindow &window)
+{
+    std::cout << "WINDOW_STATE {\"triggerCount\":" << window.trigger_count()
+              << ",\"triggerMonotonicNano\":" << window.trigger_nano()
+              << ",\"deadlineMonotonicNano\":" << window.deadline_nano()
+              << ",\"preRecordCount\":" << window.pre_count()
+              << ",\"preOverwrittenCount\":" << window.pre_overwrites()
+              << ",\"recordCount\":" << window.recording().size()
+              << ",\"allocatedRecords\":" << window.allocated_records()
+              << ",\"allocatedRecordBytes\":"
+              << window.allocated_records() * sizeof(robotweax_srt_telemetry_record_v1)
+              << ",\"frozen\":" << (window.frozen() ? "true" : "false")
+              << ",\"finishReason\":\"" << window.reason() << "\"}\n" << std::flush;
+}
+
 int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
                  const std::string_view role, const std::size_t message_bytes,
                  const std::optional<RecordingConfig> &recording)
 {
     TransferWorker transfer_worker;
+    bool message_api = false;
+    SRT_TRANSTYPE transport = SRTT_FILE;
+    int message_size = sizeof(message_api);
+    int transport_size = sizeof(transport);
+    if (!srt_ok(srt_getsockflag(socket, SRTO_MESSAGEAPI, &message_api, &message_size),
+                "profile message API") ||
+        !srt_ok(srt_getsockflag(socket, SRTO_TRANSTYPE, &transport, &transport_size),
+                "profile transport type") || !message_api || transport != SRTT_LIVE)
+    {
+        std::cerr << "FAIL: incident peer requires live/message profile\n";
+        return EXIT_FAILURE;
+    }
+    std::cout << "PROFILE {\"provider\":\"" << runtime_provider_name
+              << "\",\"publicApiVersionHex\":" << srt_getversion()
+              << ",\"messageApi\":true,\"transport\":\"live\",\"recordBytes\":"
+              << sizeof(robotweax_srt_telemetry_record_v1) << "}\n" << std::flush;
     std::optional<robotweax::srt::telemetry::BoundedRecorder> recorder;
     if (recording.has_value())
     {
         recorder.emplace(recording->capacity);
     }
+    std::optional<TriggerWindow> window;
     std::string line;
     while (std::getline(std::cin, line))
     {
@@ -518,32 +581,67 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
         command >> operation;
         if (operation == "DONE" && no_extra_input(command) && !transfer_worker.active())
         {
-            if (recording.has_value() && !export_recording(*recorder, *recording, role))
+            if (window.has_value())
+            {
+                window->finish(window->trigger_count() == 0 ? "untriggered-end" : "connection-ended");
+                emit_window(*window);
+            }
+            if (recording.has_value() &&
+                !export_recording(window.has_value() ? window->recording() : *recorder,
+                                  *recording, role))
             {
                 return EXIT_FAILURE;
             }
             return EXIT_SUCCESS;
         }
-        if (operation == "SAMPLE")
+        if (operation == "ARM")
+        {
+            std::size_t pre_records = 0;
+            std::uint64_t post_ms = 0;
+            if (!recording.has_value() || window.has_value() ||
+                !(command >> pre_records >> post_ms) || !no_extra_input(command))
+                throw std::invalid_argument("invalid ARM command (requires recording; once per epoch)");
+            recorder.reset();
+            window.emplace(pre_records, recording->capacity, post_ms);
+            emit_window(*window);
+            continue;
+        }
+        if (operation == "TRIGGER" || operation == "TRIGGER_NOW")
+        {
+            std::uint64_t trigger_nano = 0;
+            if (!window.has_value() ||
+                (operation == "TRIGGER" && !(command >> trigger_nano)) ||
+                !no_extra_input(command))
+                throw std::invalid_argument("invalid TRIGGER command");
+            if (operation == "TRIGGER_NOW") trigger_nano = monotonic_now();
+            window->trigger(trigger_nano);
+            emit_window(*window);
+            continue;
+        }
+        if (operation == "SAMPLE" || operation == "SAMPLE_NOW")
         {
             std::uint64_t sample_index = 0;
             std::uint64_t unix_nano = 0;
             std::uint64_t monotonic_nano = 0;
-            if (!(command >> sample_index >> unix_nano >> monotonic_nano) ||
+            if (!(command >> sample_index) ||
+                (operation == "SAMPLE" && !(command >> unix_nano >> monotonic_nano)) ||
                 !no_extra_input(command))
             {
                 std::cerr << "FAIL: invalid SAMPLE command\n";
                 return EXIT_FAILURE;
+            }
+            if (operation == "SAMPLE_NOW")
+            {
+                unix_nano = unix_now();
+                monotonic_nano = monotonic_now();
             }
             robotweax_srt_telemetry_public_srt_result_v1 result{};
             if (!sample_at(session, unix_nano, monotonic_nano, result))
             {
                 return EXIT_FAILURE;
             }
-            if (recorder.has_value())
-            {
-                recorder->push(result.raw, result.delta);
-            }
+            if (window.has_value()) window->push(result.raw, result.delta);
+            else if (recorder.has_value()) recorder->push(result.raw, result.delta);
             emit_sample(role, sample_index, result);
             continue;
         }

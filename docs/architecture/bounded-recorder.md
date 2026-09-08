@@ -36,6 +36,13 @@ operation. It allocates a snapshot plus serialized lines. The caller owns
 persistence, retry, and sink backpressure behavior; a failed callback may have
 already accepted earlier complete lines. No disk spool is implied.
 
-The recorder is still not a persistent recorder. Streaming sample callbacks,
-protobuf export, trigger windows, a bounded disk spool, and persistent data-loss
-accounting remain open.
+A [host-owned Flight Recorder window](flight-recorder-capture.md) now composes
+these rings for bounded manual trigger capture without changing the SDK API.
+The native window and fixture peer remain telemetry integration infrastructure;
+the [Flight Recorder product repository](https://github.com/Robotweax/srt_flight_recorder)
+owns capture orchestration, case packaging, redaction, and the case view. It
+reuses this SDK's JSONL contract and incident analyzer.
+
+The SDK recorder is still not a persistent recorder. Streaming sample callbacks,
+protobuf export, an SDK-level trigger API, a bounded disk spool, and persistent
+data-loss accounting remain open.

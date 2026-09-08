@@ -23,6 +23,16 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     enable_testing()
 endif()
 
+if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
+    add_executable(robotweax_srt_telemetry_trigger_window_tests
+        adapters/public_srt/tests/test_trigger_window.cpp)
+    target_link_libraries(robotweax_srt_telemetry_trigger_window_tests
+        PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_trigger_window_tests PRIVATE cxx_std_20)
+    add_test(NAME robotweax_srt_telemetry_trigger_window_tests
+        COMMAND robotweax_srt_telemetry_trigger_window_tests)
+endif()
+
 add_library(robotweax_srt_telemetry
     sdk/src/delta_engine.cpp
     sdk/src/recorder.cpp
@@ -156,6 +166,14 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --lifecycle)
             find_package(Python3 COMPONENTS Interpreter QUIET)
             if(Python3_Interpreter_FOUND)
+                add_test(NAME robotweax_srt_telemetry_public_srt_trigger_recording_test
+                    COMMAND "${Python3_EXECUTABLE}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_triggered_peer_recording.py"
+                        --peer $<TARGET_FILE:robotweax_srt_telemetry_public_srt_incident_peer>
+                        --provider "${ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER}")
+                set_tests_properties(robotweax_srt_telemetry_public_srt_trigger_recording_test
+                    PROPERTIES TIMEOUT 30
+                        ENVIRONMENT "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
                 add_test(NAME robotweax_srt_telemetry_public_srt_jsonl_recording_test
                     COMMAND "${Python3_EXECUTABLE}"
                         "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_jsonl_peer_recording.py"

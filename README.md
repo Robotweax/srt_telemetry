@@ -5,6 +5,21 @@ qualified Robotweax SRT and Haivision SRT versions. It preserves the semantics
 of the shared public SRT API while allowing capability-gated Robotweax
 extensions to expose additional diagnostic evidence.
 
+## Flight Recorder integration
+
+[Robotweax SRT Flight Recorder](https://github.com/Robotweax/srt_flight_recorder)
+owns the local capture workflow, digest-verified `.frcase` packages, support
+redaction, offline case view, and product acceptance tests. It consumes this
+SDK's versioned JSONL and existing incident analyzer; it does not define a
+second metric contract or analysis engine. Follow the product repository's
+guide for its demo and fresh instrumented sender/receiver captures.
+
+This repository retains the [native capture host contract](docs/architecture/flight-recorder-capture.md),
+bounded trigger-window helper, provider-linked fixture peer, and their tests as
+reusable telemetry integration and qualification infrastructure. The peer is an
+instrumented fixture host, not a production recorder agent. Human diagnostic
+value remains to be measured.
+
 ## Status
 
 **Pre-alpha / evidence foundation.** The repository currently contains the

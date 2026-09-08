@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import copy
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -46,6 +48,111 @@ def keys_recursive(value):
     elif isinstance(value, list):
         for child in value:
             yield from keys_recursive(child)
+
+
+def test_adversarial_references(arguments, temporary: Path) -> None:
+    """Retained-data derivatives are synthetic tests, never participant evidence."""
+    spec = importlib.util.spec_from_file_location("operator_evaluation", arguments.tool)
+    operator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(operator)
+    analyzer = operator.load_analyzer(arguments.analyzer.resolve())
+    original_path = arguments.manifest[0].resolve()
+    original = read_json(original_path)
+    manifests = []
+    for index, mode in enumerate(("missing", "contradictory"), start=900):
+        incident_dir = temporary / f"incident-{index}-synthetic-{mode}"
+        incident_dir.mkdir()
+        manifest = copy.deepcopy(original)
+        manifest["incidentId"] = incident_dir.name
+        manifest["failureClass"] = f"synthetic-{mode}-evidence"
+        manifest["contradictions"] = [
+            "Synthetic mutation of retained statistics for evaluation harness testing."
+        ]
+        recordings = manifest["recordings"]
+        paths = []
+        for role in ("sender", "receiver"):
+            source = original_path.parent / recordings[role]["file"]
+            documents = [json.loads(line) for line in source.read_text().splitlines()]
+            for sample in documents[1:]:
+                raw, delta = sample["raw"], sample["delta"]
+                if mode == "missing":
+                    for field in (
+                        "sender_loss_packet",
+                        "receiver_loss_packet",
+                        "retransmitted_packet",
+                    ):
+                        raw[field + "_total"] = None
+                        delta[field + "_delta"] = None
+                    raw["available_fields"] &= ~((1 << 4) | (1 << 5) | (1 << 6))
+                    delta["available_delta_fields"] &= ~((1 << 4) | (1 << 5) | (1 << 6))
+                elif role == "receiver" and sample["sampleIndex"] >= 3:
+                    # Positive receiver drops contradict the retained all-delivered
+                    # counters and the recoverable-path-only interpretation.
+                    raw["receiver_drop_packet_total"] += 7
+                    if sample["sampleIndex"] == 3:
+                        delta["receiver_drop_packet_delta"] += 7
+            destination = incident_dir / f"{role}.jsonl"
+            destination.write_text("".join(json.dumps(row) + "\n" for row in documents))
+            recordings[role] = {
+                "file": destination.name,
+                "sha256": operator.sha256_file(destination),
+            }
+            paths.append(destination)
+        analysis = analyzer.build_analysis(analyzer.load_jsonl(paths))
+        if analysis["selectedHypothesis"] != {
+            "id": None,
+            "assessment": "insufficient-evidence",
+            "rationale": analysis["selectedHypothesis"]["rationale"],
+        }:
+            fail(f"{mode} fixture did not exercise an insufficient selection")
+        analysis_path = incident_dir / "analysis.json"
+        write_json(analysis_path, analysis)
+        recordings["analysis"] = {
+            "file": analysis_path.name,
+            "sha256": operator.sha256_file(analysis_path),
+        }
+        manifest_path = incident_dir / "manifest.json"
+        write_json(manifest_path, manifest)
+        manifests.append(manifest_path)
+
+    packet = temporary / "adversarial-packet"
+    operator.prepare_study(
+        "adversarial-harness", manifests, arguments.analyzer, packet, "synthetic-test"
+    )
+    study = read_json(packet / "study.json")
+    readiness = operator.build_rehearsal_readiness(packet / "study.json")
+    alignment = next(
+        check
+        for check in readiness["checks"]
+        if check["id"] == "report-reference-alignment"
+    )
+    if not alignment["passed"]:
+        fail("rehearsal rejected an evidence-consistent abstention reference")
+    for scenario in study["scenarios"]:
+        reference = read_json(packet / scenario["reference"]["file"])
+        report_view = read_json(packet / scenario["views"]["incident-report"]["file"])
+        report = report_view["report"]
+        if reference["failureDomain"] != "insufficient-evidence":
+            fail("adversarial reference must reward abstention")
+        expected_supported = sorted(
+            hypothesis["id"]
+            for hypothesis in report["hypotheses"]
+            if hypothesis["assessment"] == "supported"
+        )
+        if reference["supportedHypotheses"] != expected_supported:
+            fail("abstention discarded separately supported candidate evidence")
+        answer = {
+            "firstDeviationSample": reference["firstDeviationSample"],
+            "failureDomain": "insufficient-evidence",
+            "supportedHypotheses": reference["supportedHypotheses"],
+            "missingEvidence": reference["missingEvidence"],
+            "confidence": 1,
+        }
+        if not operator.score_task(answer, reference)["failureDomainCorrect"]:
+            fail("abstention was not scored as the supported reference answer")
+        answer["failureDomain"] = "transmission-path"
+        if operator.score_task(answer, reference)["failureDomainCorrect"]:
+            fail("unsupported localization was rewarded on an adversarial case")
 
 
 def build_response(study: dict, packet_dir: Path, participant: str, arm: str) -> dict:
@@ -135,6 +242,7 @@ def main() -> int:
         tempfile.mkdtemp(prefix="operator-evaluation-", dir=arguments.work_dir)
     )
     try:
+        test_adversarial_references(arguments, temporary)
         packet_dir = temporary / "packet"
         prepare = [
             sys.executable,

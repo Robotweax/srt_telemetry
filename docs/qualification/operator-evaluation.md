@@ -153,6 +153,24 @@ the human evidence gate.
 Incidents 007 and 009 separately retain the reverse provider direction for the
 first two classes.
 
+The harness also accepts reproduced `insufficient-evidence` analyses as
+reference answers. Missing observations and contradictory evidence can require
+abstention even when individual candidate hypotheses have supporting signals.
+These candidates remain visible and scoreable; the reference failure domain
+is `insufficient-evidence` when the analyzer cannot select one explanation.
+The qualification test derives synthetic missing-loss and contradictory-drop
+cases from a retained recording and checks preparation, rehearsal alignment,
+and that unsupported localization is not rewarded. These are harness
+regressions, not new provider qualification or human participant evidence.
+
+For a blinded terminal session, the facilitator retains the entire study
+packet, including cause-bearing source filenames and references. Participants
+see only the timed `run` presentation, which does not print those identifiers.
+Before using task JSON with another UI, neutralize source labels and review
+the presentation for answer leakage. A comparison of a new Flight Recorder
+HTML view requires its own controlled presentation with the same underlying
+statistics and the existing response/scoring contract.
+
 ## Versioned contracts
 
 - `schema/operator-evaluation-study.schema.json` describes `study.json`.
