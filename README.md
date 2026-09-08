@@ -5,6 +5,21 @@ qualified Robotweax SRT and Haivision SRT versions. It preserves the semantics
 of the shared public SRT API while allowing capability-gated Robotweax
 extensions to expose additional diagnostic evidence.
 
+## Local Flight Recorder milestone
+
+The [local Flight Recorder workflow](docs/architecture/flight-recorder.md) adds
+host-owned trigger windows, digest-verified `.frcase` packages, support redaction
+and an offline case view on top of this SDK and its existing analyzer:
+
+```sh
+python3 tools/flight_recorder_demo.py --output /tmp/flight-recorder-demo
+```
+
+Choose a new output directory and open its HTML files locally. The guide also
+describes fresh instrumented sender/receiver captures. Retained captures,
+synthetic negative fixtures and newly executed experiments are distinguished.
+This is a development milestone; human diagnostic value remains to be measured.
+
 ## Status
 
 **Pre-alpha / evidence foundation.** The repository currently contains the

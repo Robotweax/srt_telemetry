@@ -1,0 +1,919 @@
+{
+  "clock": {
+    "brackets": [
+      {
+        "beginMonotonicNano": 13979580618916,
+        "beginUnixNano": 1788862286320119000,
+        "endMonotonicNano": 13979580761750,
+        "endUnixNano": 1788862286320262000,
+        "endpointMonotonicNano": {
+          "receiver": 36664752516750,
+          "sender": 36664752520500
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171897834,
+            -22685171755000
+          ],
+          "sender": [
+            -22685171901584,
+            -22685171758750
+          ]
+        },
+        "sampleIndex": 0
+      },
+      {
+        "beginMonotonicNano": 13979766706916,
+        "beginUnixNano": 1788862286506202000,
+        "endMonotonicNano": 13979767280916,
+        "endUnixNano": 1788862286506778000,
+        "endpointMonotonicNano": {
+          "receiver": 36664938665958,
+          "sender": 36664938684333
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171959042,
+            -22685171385042
+          ],
+          "sender": [
+            -22685171977417,
+            -22685171403417
+          ]
+        },
+        "sampleIndex": 1
+      },
+      {
+        "beginMonotonicNano": 13979821034791,
+        "beginUnixNano": 1788862286560528000,
+        "endMonotonicNano": 13979821633083,
+        "endUnixNano": 1788862286561129000,
+        "endpointMonotonicNano": {
+          "receiver": 36664993064250,
+          "sender": 36664993064166
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685172029459,
+            -22685171431167
+          ],
+          "sender": [
+            -22685172029375,
+            -22685171431083
+          ]
+        },
+        "sampleIndex": 2
+      },
+      {
+        "beginMonotonicNano": 13979877370083,
+        "beginUnixNano": 1788862286616862000,
+        "endMonotonicNano": 13979877713583,
+        "endUnixNano": 1788862286617208000,
+        "endpointMonotonicNano": {
+          "receiver": 36665049344958,
+          "sender": 36665049344916
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171974875,
+            -22685171631375
+          ],
+          "sender": [
+            -22685171974833,
+            -22685171631333
+          ]
+        },
+        "sampleIndex": 3
+      },
+      {
+        "beginMonotonicNano": 13979934060958,
+        "beginUnixNano": 1788862286673552000,
+        "endMonotonicNano": 13979934586416,
+        "endUnixNano": 1788862286674080000,
+        "endpointMonotonicNano": {
+          "receiver": 36665106031500,
+          "sender": 36665106063291
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171970542,
+            -22685171445084
+          ],
+          "sender": [
+            -22685172002333,
+            -22685171476875
+          ]
+        },
+        "sampleIndex": 4
+      },
+      {
+        "beginMonotonicNano": 13980119521791,
+        "beginUnixNano": 1788862286859010000,
+        "endMonotonicNano": 13980120068333,
+        "endUnixNano": 1788862286859558000,
+        "endpointMonotonicNano": {
+          "receiver": 36665291474541,
+          "sender": 36665291494375
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171952750,
+            -22685171406208
+          ],
+          "sender": [
+            -22685171972584,
+            -22685171426042
+          ]
+        },
+        "sampleIndex": 5
+      },
+      {
+        "beginMonotonicNano": 13980173707375,
+        "beginUnixNano": 1788862286913194000,
+        "endMonotonicNano": 13980174313041,
+        "endUnixNano": 1788862286913801000,
+        "endpointMonotonicNano": {
+          "receiver": 36665345681166,
+          "sender": 36665345703000
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171973791,
+            -22685171368125
+          ],
+          "sender": [
+            -22685171995625,
+            -22685171389959
+          ]
+        },
+        "sampleIndex": 6
+      },
+      {
+        "beginMonotonicNano": 13980227311458,
+        "beginUnixNano": 1788862286966796000,
+        "endMonotonicNano": 13980227897750,
+        "endUnixNano": 1788862286967385000,
+        "endpointMonotonicNano": {
+          "receiver": 36665399288791,
+          "sender": 36665399287250
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171977333,
+            -22685171391041
+          ],
+          "sender": [
+            -22685171975792,
+            -22685171389500
+          ]
+        },
+        "sampleIndex": 7
+      },
+      {
+        "beginMonotonicNano": 13980278378791,
+        "beginUnixNano": 1788862287017863000,
+        "endMonotonicNano": 13980278786208,
+        "endUnixNano": 1788862287018272000,
+        "endpointMonotonicNano": {
+          "receiver": 36665450382458,
+          "sender": 36665450414958
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685172003667,
+            -22685171596250
+          ],
+          "sender": [
+            -22685172036167,
+            -22685171628750
+          ]
+        },
+        "sampleIndex": 8
+      },
+      {
+        "beginMonotonicNano": 13980457534500,
+        "beginUnixNano": 1788862287197015000,
+        "endMonotonicNano": 13980458099875,
+        "endUnixNano": 1788862287197582000,
+        "endpointMonotonicNano": {
+          "receiver": 36665629487500,
+          "sender": 36665629501375
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171953000,
+            -22685171387625
+          ],
+          "sender": [
+            -22685171966875,
+            -22685171401500
+          ]
+        },
+        "sampleIndex": 9
+      },
+      {
+        "beginMonotonicNano": 13980511320458,
+        "beginUnixNano": 1788862287250799000,
+        "endMonotonicNano": 13980511878166,
+        "endUnixNano": 1788862287251359000,
+        "endpointMonotonicNano": {
+          "receiver": 36665683333083,
+          "sender": 36665683349458
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685172012625,
+            -22685171454917
+          ],
+          "sender": [
+            -22685172029000,
+            -22685171471292
+          ]
+        },
+        "sampleIndex": 10
+      },
+      {
+        "beginMonotonicNano": 13980562603958,
+        "beginUnixNano": 1788862287302082000,
+        "endMonotonicNano": 13980563206083,
+        "endUnixNano": 1788862287302686000,
+        "endpointMonotonicNano": {
+          "receiver": 36665734615208,
+          "sender": 36665734688583
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685172011250,
+            -22685171409125
+          ],
+          "sender": [
+            -22685172084625,
+            -22685171482500
+          ]
+        },
+        "sampleIndex": 11
+      },
+      {
+        "beginMonotonicNano": 13980672915541,
+        "beginUnixNano": 1788862287412392000,
+        "endMonotonicNano": 13980673093750,
+        "endUnixNano": 1788862287412571000,
+        "endpointMonotonicNano": {
+          "receiver": 36665844828291,
+          "sender": 36665844829291
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171912750,
+            -22685171734541
+          ],
+          "sender": [
+            -22685171913750,
+            -22685171735541
+          ]
+        },
+        "sampleIndex": 12
+      },
+      {
+        "beginMonotonicNano": 13980723895583,
+        "beginUnixNano": 1788862287463371000,
+        "endMonotonicNano": 13980724064000,
+        "endUnixNano": 1788862287463541000,
+        "endpointMonotonicNano": {
+          "receiver": 36665895804958,
+          "sender": 36665895809250
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171909375,
+            -22685171740958
+          ],
+          "sender": [
+            -22685171913667,
+            -22685171745250
+          ]
+        },
+        "sampleIndex": 13
+      },
+      {
+        "beginMonotonicNano": 13980784169791,
+        "beginUnixNano": 1788862287523642000,
+        "endMonotonicNano": 13980784962958,
+        "endUnixNano": 1788862287524439000,
+        "endpointMonotonicNano": {
+          "receiver": 36665956204583,
+          "sender": 36665956204541
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685172034792,
+            -22685171241625
+          ],
+          "sender": [
+            -22685172034750,
+            -22685171241583
+          ]
+        },
+        "sampleIndex": 14
+      },
+      {
+        "beginMonotonicNano": 13980844538166,
+        "beginUnixNano": 1788862287584010000,
+        "endMonotonicNano": 13980845071583,
+        "endUnixNano": 1788862287584546000,
+        "endpointMonotonicNano": {
+          "receiver": 36666016536166,
+          "sender": 36666016549083
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171998000,
+            -22685171464583
+          ],
+          "sender": [
+            -22685172010917,
+            -22685171477500
+          ]
+        },
+        "sampleIndex": 15
+      },
+      {
+        "beginMonotonicNano": 13980904072791,
+        "beginUnixNano": 1788862287643544000,
+        "endMonotonicNano": 13980904538458,
+        "endUnixNano": 1788862287644011000,
+        "endpointMonotonicNano": {
+          "receiver": 36666076066875,
+          "sender": 36666076065875
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171994084,
+            -22685171528417
+          ],
+          "sender": [
+            -22685171993084,
+            -22685171527417
+          ]
+        },
+        "sampleIndex": 16
+      },
+      {
+        "beginMonotonicNano": 13980962514333,
+        "beginUnixNano": 1788862287701985000,
+        "endMonotonicNano": 13980963027791,
+        "endUnixNano": 1788862287702500000,
+        "endpointMonotonicNano": {
+          "receiver": 36666134468291,
+          "sender": 36666134467916
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171953958,
+            -22685171440500
+          ],
+          "sender": [
+            -22685171953583,
+            -22685171440125
+          ]
+        },
+        "sampleIndex": 17
+      },
+      {
+        "beginMonotonicNano": 13980964809500,
+        "beginUnixNano": 1788862287704280000,
+        "endMonotonicNano": 13980965127375,
+        "endUnixNano": 1788862287704599000,
+        "endpointMonotonicNano": {
+          "receiver": 36666136752750,
+          "sender": 36666136752833
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171943250,
+            -22685171625375
+          ],
+          "sender": [
+            -22685171943333,
+            -22685171625458
+          ]
+        },
+        "sampleIndex": 18
+      },
+      {
+        "beginMonotonicNano": 13981025196916,
+        "beginUnixNano": 1788862287764666000,
+        "endMonotonicNano": 13981025691958,
+        "endUnixNano": 1788862287765163000,
+        "endpointMonotonicNano": {
+          "receiver": 36666197168041,
+          "sender": 36666197167416
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171971125,
+            -22685171476083
+          ],
+          "sender": [
+            -22685171970500,
+            -22685171475458
+          ]
+        },
+        "sampleIndex": 19
+      },
+      {
+        "beginMonotonicNano": 13981085770416,
+        "beginUnixNano": 1788862287825239000,
+        "endMonotonicNano": 13981086331333,
+        "endUnixNano": 1788862287825800000,
+        "endpointMonotonicNano": {
+          "receiver": 36666257728000,
+          "sender": 36666257733458
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171957584,
+            -22685171396667
+          ],
+          "sender": [
+            -22685171963042,
+            -22685171402125
+          ]
+        },
+        "sampleIndex": 20
+      },
+      {
+        "beginMonotonicNano": 13981137745708,
+        "beginUnixNano": 1788862287877213000,
+        "endMonotonicNano": 13981138247083,
+        "endUnixNano": 1788862287877715000,
+        "endpointMonotonicNano": {
+          "receiver": 36666309767000,
+          "sender": 36666309767000
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685172021292,
+            -22685171519917
+          ],
+          "sender": [
+            -22685172021292,
+            -22685171519917
+          ]
+        },
+        "sampleIndex": 21
+      },
+      {
+        "beginMonotonicNano": 13981198318291,
+        "beginUnixNano": 1788862287937784000,
+        "endMonotonicNano": 13981198796291,
+        "endUnixNano": 1788862287938263000,
+        "endpointMonotonicNano": {
+          "receiver": 36666370280000,
+          "sender": 36666370280041
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171961709,
+            -22685171483709
+          ],
+          "sender": [
+            -22685171961750,
+            -22685171483750
+          ]
+        },
+        "sampleIndex": 22
+      },
+      {
+        "beginMonotonicNano": 13981258928708,
+        "beginUnixNano": 1788862287998393000,
+        "endMonotonicNano": 13981259388583,
+        "endUnixNano": 1788862287998854000,
+        "endpointMonotonicNano": {
+          "receiver": 36666430902333,
+          "sender": 36666430902291
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171973625,
+            -22685171513750
+          ],
+          "sender": [
+            -22685171973583,
+            -22685171513708
+          ]
+        },
+        "sampleIndex": 23
+      },
+      {
+        "beginMonotonicNano": 13981309504791,
+        "beginUnixNano": 1788862288048968000,
+        "endMonotonicNano": 13981310016875,
+        "endUnixNano": 1788862288049481000,
+        "endpointMonotonicNano": {
+          "receiver": 36666481475708,
+          "sender": 36666481486000
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171970917,
+            -22685171458833
+          ],
+          "sender": [
+            -22685171981209,
+            -22685171469125
+          ]
+        },
+        "sampleIndex": 24
+      },
+      {
+        "beginMonotonicNano": 13981360192125,
+        "beginUnixNano": 1788862288099655000,
+        "endMonotonicNano": 13981360764166,
+        "endUnixNano": 1788862288100227000,
+        "endpointMonotonicNano": {
+          "receiver": 36666532161875,
+          "sender": 36666532187583
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171969750,
+            -22685171397709
+          ],
+          "sender": [
+            -22685171995458,
+            -22685171423417
+          ]
+        },
+        "sampleIndex": 25
+      },
+      {
+        "beginMonotonicNano": 13981420802333,
+        "beginUnixNano": 1788862288160264000,
+        "endMonotonicNano": 13981420948416,
+        "endUnixNano": 1788862288160410000,
+        "endpointMonotonicNano": {
+          "receiver": 36666592713208,
+          "sender": 36666592718916
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171910875,
+            -22685171764792
+          ],
+          "sender": [
+            -22685171916583,
+            -22685171770500
+          ]
+        },
+        "sampleIndex": 26
+      },
+      {
+        "beginMonotonicNano": 13981471808750,
+        "beginUnixNano": 1788862288211269000,
+        "endMonotonicNano": 13981472021291,
+        "endUnixNano": 1788862288211482000,
+        "endpointMonotonicNano": {
+          "receiver": 36666643741166,
+          "sender": 36666643741083
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171932416,
+            -22685171719875
+          ],
+          "sender": [
+            -22685171932333,
+            -22685171719792
+          ]
+        },
+        "sampleIndex": 27
+      },
+      {
+        "beginMonotonicNano": 13981532074666,
+        "beginUnixNano": 1788862288271533000,
+        "endMonotonicNano": 13981532279750,
+        "endUnixNano": 1788862288271739000,
+        "endpointMonotonicNano": {
+          "receiver": 36666704006833,
+          "sender": 36666704005458
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171932167,
+            -22685171727083
+          ],
+          "sender": [
+            -22685171930792,
+            -22685171725708
+          ]
+        },
+        "sampleIndex": 28
+      },
+      {
+        "beginMonotonicNano": 13981587509625,
+        "beginUnixNano": 1788862288326967000,
+        "endMonotonicNano": 13981587660833,
+        "endUnixNano": 1788862288327119000,
+        "endpointMonotonicNano": {
+          "receiver": 36666759431541,
+          "sender": 36666759432125
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171921916,
+            -22685171770708
+          ],
+          "sender": [
+            -22685171922500,
+            -22685171771292
+          ]
+        },
+        "sampleIndex": 29
+      },
+      {
+        "beginMonotonicNano": 13981639853083,
+        "beginUnixNano": 1788862288379310000,
+        "endMonotonicNano": 13981640057125,
+        "endUnixNano": 1788862288379514000,
+        "endpointMonotonicNano": {
+          "receiver": 36666811762791,
+          "sender": 36666811766250
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171909708,
+            -22685171705666
+          ],
+          "sender": [
+            -22685171913167,
+            -22685171709125
+          ]
+        },
+        "sampleIndex": 30
+      },
+      {
+        "beginMonotonicNano": 13981700123041,
+        "beginUnixNano": 1788862288439573000,
+        "endMonotonicNano": 13981700665583,
+        "endUnixNano": 1788862288440122000,
+        "endpointMonotonicNano": {
+          "receiver": 36666872102291,
+          "sender": 36666872102250
+        },
+        "endpointToCoordinatorOffsetNano": {
+          "receiver": [
+            -22685171979250,
+            -22685171436708
+          ],
+          "sender": [
+            -22685171979209,
+            -22685171436667
+          ]
+        },
+        "sampleIndex": 31
+      }
+    ],
+    "domainId": "same-host-13977345168125",
+    "endpointDomains": {
+      "receiver": "same-host-13977345168125-epoch-2-receiver",
+      "sender": "same-host-13977345168125-epoch-2-sender"
+    },
+    "kind": "host-monotonic",
+    "mapping": "per-endpoint-offset-intervals-from-command-brackets",
+    "scope": "Empirical within-run command bound, not UTC synchronization accuracy.",
+    "uncertaintyNano": 793167
+  },
+  "configuration": {
+    "api": "message",
+    "capacityRecordsPerEndpoint": 64,
+    "defaultProviderOptions": true,
+    "effectiveOptionsSource": "Connected native PROFILE and initial available public SRT delay gauges; other options were provider defaults, not enumerated.",
+    "effectiveSocketOptions": {
+      "receiver": {
+        "messageApi": true,
+        "receiverTsbpdDelaySeconds": 0.12,
+        "senderTsbpdDelaySeconds": 0.12,
+        "transport": "live"
+      },
+      "sender": {
+        "messageApi": true,
+        "receiverTsbpdDelaySeconds": 0.12,
+        "senderTsbpdDelaySeconds": 0.12,
+        "transport": "live"
+      }
+    },
+    "encryption": "none",
+    "mediaPayloadRetained": false,
+    "payloadBytes": 1316,
+    "postMilliseconds": 1000,
+    "preRecords": 8,
+    "roles": "IPv4 loopback caller sender/listener receiver",
+    "samplingNominalHz": 20,
+    "transport": "live"
+  },
+  "epochId": "epoch-2",
+  "epochs": [
+    {
+      "epochId": "epoch-2",
+      "events": [
+        {
+          "baselineReset": true,
+          "detail": "New sockets, telemetry sessions and rings; no delta crosses the connection boundary.",
+          "epochId": "epoch-2",
+          "kind": "reconnect",
+          "previousEpochId": "epoch-1"
+        },
+        {
+          "beginMonotonicNano": 13980615672791,
+          "beginUnixNano": 1788862287355150000,
+          "endMonotonicNano": 13980616028166,
+          "endUnixNano": 1788862287355507000,
+          "kind": "manual-trigger",
+          "states": {
+            "receiver": {
+              "allocatedRecordBytes": 33984,
+              "allocatedRecords": 72,
+              "deadlineMonotonicNano": 36666787644625,
+              "finishReason": "open",
+              "frozen": false,
+              "preOverwrittenCount": 4,
+              "preRecordCount": 8,
+              "recordCount": 8,
+              "triggerCount": 1,
+              "triggerMonotonicNano": 36665787644625
+            },
+            "sender": {
+              "allocatedRecordBytes": 33984,
+              "allocatedRecords": 72,
+              "deadlineMonotonicNano": 36666787644500,
+              "finishReason": "open",
+              "frozen": false,
+              "preOverwrittenCount": 4,
+              "preRecordCount": 8,
+              "recordCount": 8,
+              "triggerCount": 1,
+              "triggerMonotonicNano": 36665787644500
+            }
+          }
+        },
+        {
+          "beginMonotonicNano": 13980616525125,
+          "durationNano": 346871125,
+          "endMonotonicNano": 13980963396250,
+          "evidenceSource": "harness-only",
+          "kind": "receiver-read-pause",
+          "messages": 1000
+        },
+        {
+          "beginMonotonicNano": 13980964517250,
+          "beginUnixNano": 1788862287703988000,
+          "endMonotonicNano": 13980964746125,
+          "endUnixNano": 1788862287704218000,
+          "kind": "manual-trigger",
+          "states": {
+            "receiver": {
+              "allocatedRecordBytes": 33984,
+              "allocatedRecords": 72,
+              "deadlineMonotonicNano": 36666787644625,
+              "finishReason": "open",
+              "frozen": false,
+              "preOverwrittenCount": 4,
+              "preRecordCount": 8,
+              "recordCount": 14,
+              "triggerCount": 2,
+              "triggerMonotonicNano": 36665787644625
+            },
+            "sender": {
+              "allocatedRecordBytes": 33984,
+              "allocatedRecords": 72,
+              "deadlineMonotonicNano": 36666787644500,
+              "finishReason": "open",
+              "frozen": false,
+              "preOverwrittenCount": 4,
+              "preRecordCount": 8,
+              "recordCount": 14,
+              "triggerCount": 2,
+              "triggerMonotonicNano": 36665787644500
+            }
+          }
+        }
+      ],
+      "receiver": "receiver.jsonl",
+      "retained": {
+        "receiver": {
+          "firstMonotonicNano": 36665106031500,
+          "initialSdkBaselineVerifiedBeforeRingOverwrite": true,
+          "lastMonotonicNano": 36666759431541,
+          "postCoverageNano": 971786916,
+          "preCoverageNano": 681613125
+        },
+        "sender": {
+          "firstMonotonicNano": 36665106063291,
+          "initialSdkBaselineVerifiedBeforeRingOverwrite": true,
+          "lastMonotonicNano": 36666759432125,
+          "postCoverageNano": 971787625,
+          "preCoverageNano": 681581209
+        }
+      },
+      "sender": "sender.jsonl",
+      "trigger": {
+        "beginMonotonicNano": 13980615672791,
+        "beginUnixNano": 1788862287355150000,
+        "endMonotonicNano": 13980616028166,
+        "endUnixNano": 1788862287355507000,
+        "kind": "manual-trigger",
+        "states": {
+          "receiver": {
+            "allocatedRecordBytes": 33984,
+            "allocatedRecords": 72,
+            "deadlineMonotonicNano": 36666787644625,
+            "finishReason": "open",
+            "frozen": false,
+            "preOverwrittenCount": 4,
+            "preRecordCount": 8,
+            "recordCount": 8,
+            "triggerCount": 1,
+            "triggerMonotonicNano": 36665787644625
+          },
+          "sender": {
+            "allocatedRecordBytes": 33984,
+            "allocatedRecords": 72,
+            "deadlineMonotonicNano": 36666787644500,
+            "finishReason": "open",
+            "frozen": false,
+            "preOverwrittenCount": 4,
+            "preRecordCount": 8,
+            "recordCount": 8,
+            "triggerCount": 1,
+            "triggerMonotonicNano": 36665787644500
+          }
+        }
+      },
+      "window": {
+        "receiver": {
+          "allocatedRecordBytes": 33984,
+          "allocatedRecords": 72,
+          "deadlineMonotonicNano": 36666787644625,
+          "finishReason": "deadline",
+          "frozen": true,
+          "preOverwrittenCount": 4,
+          "preRecordCount": 8,
+          "recordCount": 26,
+          "triggerCount": 2,
+          "triggerMonotonicNano": 36665787644625
+        },
+        "sender": {
+          "allocatedRecordBytes": 33984,
+          "allocatedRecords": 72,
+          "deadlineMonotonicNano": 36666787644500,
+          "finishReason": "deadline",
+          "frozen": true,
+          "preOverwrittenCount": 4,
+          "preRecordCount": 8,
+          "recordCount": 26,
+          "triggerCount": 2,
+          "triggerMonotonicNano": 36665787644500
+        }
+      }
+    }
+  ],
+  "evidenceClass": "new-experiment",
+  "experiment": "receiver-pause",
+  "files": {
+    "receiver.jsonl": {
+      "bytes": 48989,
+      "sha256": "5ca7e2e1ca817ac4e63105b0aeae6207e18f4fa456ea95725b89cd423d5e83b3"
+    },
+    "sender.jsonl": {
+      "bytes": 48781,
+      "sha256": "b9878716d35a811e41d3ac307a6ae50e0ddf9ccf4d4beb55d13db1a63788e94e"
+    }
+  },
+  "flowId": "flight-recorder-demo",
+  "provider": {
+    "buildProfile": "release-shared-openssl-aead-off-live-message-ipv4",
+    "librarySha256": "56fadae15ecad9570c12b4c89d5b5c346c41e0ada548844cc8361dd34c20e8c1",
+    "name": "robotweax-srt",
+    "observedRuntimeProfiles": {
+      "receiver": {
+        "messageApi": true,
+        "provider": "robotweax-srt",
+        "publicApiVersionHex": 66823,
+        "recordBytes": 472,
+        "transport": "live"
+      },
+      "sender": {
+        "messageApi": true,
+        "provider": "robotweax-srt",
+        "publicApiVersionHex": 66823,
+        "recordBytes": 472,
+        "transport": "live"
+      }
+    },
+    "peerSha256": "2a85826c241aeb8e4e9530c49a592bd8ec90f304331e4bd84644ffccd9cfdddb",
+    "revision": "ac9c14d7815bfd6f76f8b60308c5465095625eb7",
+    "version": "0.2.3"
+  },
+  "schemaVersion": 1
+}

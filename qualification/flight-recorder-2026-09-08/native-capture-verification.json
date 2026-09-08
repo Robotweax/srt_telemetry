@@ -1,0 +1,382 @@
+{
+  "canonicalCaptureRun": "live-capture-007",
+  "captures": [
+    {
+      "clockUncertaintyNano": 772375,
+      "experiment": "loss-recovery",
+      "files": {
+        "receiver.jsonl": {
+          "bytes": 45263,
+          "sha256": "847e2440fc239cdb3cbdbdda18af146446adca9fc486410b937551814bf505a0"
+        },
+        "sender.jsonl": {
+          "bytes": 45066,
+          "sha256": "99c4f77cd02579e9e32ed80f068c5b972c2d74b3f46064fb1f1603344cb27ef1"
+        }
+      },
+      "manifest": "live-capture-007/loss-recovery/capture-manifest.json",
+      "manifestSha256": "d0e911902deb57876b470c34a1b2c3f7e7ccc1470841809e5c1add7b681e00ca",
+      "retained": {
+        "receiver": {
+          "firstMonotonicNano": 36662879491250,
+          "initialSdkBaselineVerifiedBeforeRingOverwrite": true,
+          "lastMonotonicNano": 36664575849291,
+          "postCoverageNano": 994732125,
+          "preCoverageNano": 701625916
+        },
+        "sender": {
+          "firstMonotonicNano": 36662879510125,
+          "initialSdkBaselineVerifiedBeforeRingOverwrite": true,
+          "lastMonotonicNano": 36664575863291,
+          "postCoverageNano": 994706791,
+          "preCoverageNano": 701646375
+        }
+      },
+      "window": {
+        "receiver": {
+          "allocatedRecordBytes": 33984,
+          "allocatedRecords": 72,
+          "deadlineMonotonicNano": 36664581117166,
+          "finishReason": "deadline",
+          "frozen": true,
+          "preOverwrittenCount": 4,
+          "preRecordCount": 8,
+          "recordCount": 24,
+          "triggerCount": 2,
+          "triggerMonotonicNano": 36663581117166
+        },
+        "sender": {
+          "allocatedRecordBytes": 33984,
+          "allocatedRecords": 72,
+          "deadlineMonotonicNano": 36664581156500,
+          "finishReason": "deadline",
+          "frozen": true,
+          "preOverwrittenCount": 4,
+          "preRecordCount": 8,
+          "recordCount": 24,
+          "triggerCount": 2,
+          "triggerMonotonicNano": 36663581156500
+        }
+      }
+    },
+    {
+      "clockUncertaintyNano": 793167,
+      "experiment": "receiver-pause",
+      "files": {
+        "receiver.jsonl": {
+          "bytes": 48989,
+          "sha256": "5ca7e2e1ca817ac4e63105b0aeae6207e18f4fa456ea95725b89cd423d5e83b3"
+        },
+        "sender.jsonl": {
+          "bytes": 48781,
+          "sha256": "b9878716d35a811e41d3ac307a6ae50e0ddf9ccf4d4beb55d13db1a63788e94e"
+        }
+      },
+      "manifest": "live-capture-007/receiver-pause/capture-manifest.json",
+      "manifestSha256": "72867ad3e5a307f29cd65ff2156913f1f58b32dea530623ee6715de64814e27a",
+      "retained": {
+        "receiver": {
+          "firstMonotonicNano": 36665106031500,
+          "initialSdkBaselineVerifiedBeforeRingOverwrite": true,
+          "lastMonotonicNano": 36666759431541,
+          "postCoverageNano": 971786916,
+          "preCoverageNano": 681613125
+        },
+        "sender": {
+          "firstMonotonicNano": 36665106063291,
+          "initialSdkBaselineVerifiedBeforeRingOverwrite": true,
+          "lastMonotonicNano": 36666759432125,
+          "postCoverageNano": 971787625,
+          "preCoverageNano": 681581209
+        }
+      },
+      "window": {
+        "receiver": {
+          "allocatedRecordBytes": 33984,
+          "allocatedRecords": 72,
+          "deadlineMonotonicNano": 36666787644625,
+          "finishReason": "deadline",
+          "frozen": true,
+          "preOverwrittenCount": 4,
+          "preRecordCount": 8,
+          "recordCount": 26,
+          "triggerCount": 2,
+          "triggerMonotonicNano": 36665787644625
+        },
+        "sender": {
+          "allocatedRecordBytes": 33984,
+          "allocatedRecords": 72,
+          "deadlineMonotonicNano": 36666787644500,
+          "finishReason": "deadline",
+          "frozen": true,
+          "preOverwrittenCount": 4,
+          "preRecordCount": 8,
+          "recordCount": 26,
+          "triggerCount": 2,
+          "triggerMonotonicNano": 36665787644500
+        }
+      }
+    }
+  ],
+  "failedExperiments": [
+    {
+      "followUp": "Keep outside demonstrated 1000-message profile; investigate separately with explicit drop/TTL settings and receive accounting.",
+      "observation": "Receive buffer reached 10780672 bytes, available receive buffer reached zero; exact-message drain timed out. Not a positive captured acceptance case or established transport defect.",
+      "run": "live-capture-006",
+      "scenario": "11000-message receiver read pause",
+      "status": "failed-before-receiver-export"
+    }
+  ],
+  "limits": [
+    "Manual trigger deadline is first trigger plus 1000ms; later triggers coalesce. Freeze is evaluated when sampled or DONE. Coordinator crash can lose RAM state.",
+    "Pre-window is eight records, not guaranteed duration; actual native clocks and coordinator command brackets retained.",
+    "Independent native clocks mapped by per-sample offset intervals. UTC accuracy and cross-host ordering are not qualified.",
+    "New receiver-pause1000 demonstrates capture and observed receiver pressure; retained qualified fixture supplies diagnostic backpressure acceptance.",
+    "Hard-link publication with exclusive partial avoids replacement races; no fsync/crash-durability guarantee, hard-link-capable local filesystem required.",
+    "RSS observed twice per trial, not true peak. IPC/JSON and scheduling included; three repetitions do not resolve isolated SDK cost or guarantee platform performance.",
+    "Media payloads and secrets not retained. No GoSRT adapter or arbitrary unmodified process observer."
+  ],
+  "nativeHostRecordBytes": 472,
+  "overhead": {
+    "budgetChecks": {
+      "measuredMedianRecorderExtraPairRoundTripWithinBudget": true,
+      "observedRssWithinBudget": true
+    },
+    "budgets": {
+      "armedAllocatedRecordsPerEndpoint": 72,
+      "combinedPeerRssKiB": 65536,
+      "finalRecordsPerEndpoint": 64,
+      "medianExtraPairRoundTripMicroseconds": 1000,
+      "scope": "Provisional demo budget, this machine only; large default ring capacity must be budgeted separately."
+    },
+    "conditions": {
+      "messages": 3000,
+      "nominalSamplingHz": 20,
+      "payloadBytes": 1316,
+      "repetitions": 3,
+      "samples": 24,
+      "scope": "Two loopback processes, synthetic traffic, Release build; IPC, JSON stdout and scheduling included. CPU includes startup and two ps probes. RSS sampled twice; not a true peak. Recorder trials remain armed; export cost included in CPU, excluded from transfer wall time. No controlled platform-wide claim.",
+      "sendPacingMicroseconds": 300
+    },
+    "medians": {
+      "sample-and-recorder": {
+        "childCpuSecondsIncludingStartupAndPs": 0.7066239999999997,
+        "observedPeakCombinedPeerRssKiB": 58464,
+        "samplePairRoundTripMedianMicroseconds": 290.375,
+        "wallSeconds": 1.556878417
+      },
+      "sample-only": {
+        "childCpuSecondsIncludingStartupAndPs": 0.7071359999999998,
+        "observedPeakCombinedPeerRssKiB": 58384,
+        "samplePairRoundTripMedianMicroseconds": 282.91700000000003,
+        "wallSeconds": 1.557842666
+      },
+      "sampling-disabled": {
+        "childCpuSecondsIncludingStartupAndPs": 0.7143329999999999,
+        "observedPeakCombinedPeerRssKiB": 58400,
+        "wallSeconds": 1.552505666
+      }
+    },
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "schemaVersion": 1,
+    "trials": [
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.7143329999999999,
+        "mode": "sampling-disabled",
+        "observedPeakCombinedPeerRssKiB": 58368,
+        "repetition": 0,
+        "samplePairRoundTripMedianMicroseconds": null,
+        "wallSeconds": 1.552505666,
+        "window": {}
+      },
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.7071359999999998,
+        "mode": "sample-only",
+        "observedPeakCombinedPeerRssKiB": 58384,
+        "repetition": 0,
+        "samplePairRoundTripMedianMicroseconds": 282.91700000000003,
+        "wallSeconds": 1.557842666,
+        "window": {}
+      },
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.5373669999999999,
+        "mode": "sample-and-recorder",
+        "observedPeakCombinedPeerRssKiB": 58512,
+        "repetition": 0,
+        "samplePairRoundTripMedianMicroseconds": 175.667,
+        "wallSeconds": 1.533672417,
+        "window": {
+          "receiver": {
+            "allocatedRecordBytes": 33984,
+            "allocatedRecords": 72,
+            "deadlineMonotonicNano": 0,
+            "finishReason": "untriggered-end",
+            "frozen": true,
+            "preOverwrittenCount": 16,
+            "preRecordCount": 0,
+            "recordCount": 8,
+            "triggerCount": 0,
+            "triggerMonotonicNano": 0
+          },
+          "sender": {
+            "allocatedRecordBytes": 33984,
+            "allocatedRecords": 72,
+            "deadlineMonotonicNano": 0,
+            "finishReason": "untriggered-end",
+            "frozen": true,
+            "preOverwrittenCount": 16,
+            "preRecordCount": 0,
+            "recordCount": 8,
+            "triggerCount": 0,
+            "triggerMonotonicNano": 0
+          }
+        }
+      },
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.7268380000000005,
+        "mode": "sample-only",
+        "observedPeakCombinedPeerRssKiB": 58400,
+        "repetition": 1,
+        "samplePairRoundTripMedianMicroseconds": 302.72950000000003,
+        "wallSeconds": 1.558566375,
+        "window": {}
+      },
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.7851349999999995,
+        "mode": "sample-and-recorder",
+        "observedPeakCombinedPeerRssKiB": 58464,
+        "repetition": 1,
+        "samplePairRoundTripMedianMicroseconds": 336.54150000000004,
+        "wallSeconds": 1.559784875,
+        "window": {
+          "receiver": {
+            "allocatedRecordBytes": 33984,
+            "allocatedRecords": 72,
+            "deadlineMonotonicNano": 0,
+            "finishReason": "untriggered-end",
+            "frozen": true,
+            "preOverwrittenCount": 16,
+            "preRecordCount": 0,
+            "recordCount": 8,
+            "triggerCount": 0,
+            "triggerMonotonicNano": 0
+          },
+          "sender": {
+            "allocatedRecordBytes": 33984,
+            "allocatedRecords": 72,
+            "deadlineMonotonicNano": 0,
+            "finishReason": "untriggered-end",
+            "frozen": true,
+            "preOverwrittenCount": 16,
+            "preRecordCount": 0,
+            "recordCount": 8,
+            "triggerCount": 0,
+            "triggerMonotonicNano": 0
+          }
+        }
+      },
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.7475750000000003,
+        "mode": "sampling-disabled",
+        "observedPeakCombinedPeerRssKiB": 58400,
+        "repetition": 1,
+        "samplePairRoundTripMedianMicroseconds": null,
+        "wallSeconds": 1.566911958,
+        "window": {}
+      },
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.7066239999999997,
+        "mode": "sample-and-recorder",
+        "observedPeakCombinedPeerRssKiB": 58464,
+        "repetition": 2,
+        "samplePairRoundTripMedianMicroseconds": 290.375,
+        "wallSeconds": 1.556878417,
+        "window": {
+          "receiver": {
+            "allocatedRecordBytes": 33984,
+            "allocatedRecords": 72,
+            "deadlineMonotonicNano": 0,
+            "finishReason": "untriggered-end",
+            "frozen": true,
+            "preOverwrittenCount": 16,
+            "preRecordCount": 0,
+            "recordCount": 8,
+            "triggerCount": 0,
+            "triggerMonotonicNano": 0
+          },
+          "sender": {
+            "allocatedRecordBytes": 33984,
+            "allocatedRecords": 72,
+            "deadlineMonotonicNano": 0,
+            "finishReason": "untriggered-end",
+            "frozen": true,
+            "preOverwrittenCount": 16,
+            "preRecordCount": 0,
+            "recordCount": 8,
+            "triggerCount": 0,
+            "triggerMonotonicNano": 0
+          }
+        }
+      },
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.5712920000000006,
+        "mode": "sampling-disabled",
+        "observedPeakCombinedPeerRssKiB": 58400,
+        "repetition": 2,
+        "samplePairRoundTripMedianMicroseconds": null,
+        "wallSeconds": 1.538490791,
+        "window": {}
+      },
+      {
+        "childCpuSecondsIncludingStartupAndPs": 0.6877170000000006,
+        "mode": "sample-only",
+        "observedPeakCombinedPeerRssKiB": 58384,
+        "repetition": 2,
+        "samplePairRoundTripMedianMicroseconds": 266.167,
+        "wallSeconds": 1.552312209,
+        "window": {}
+      }
+    ]
+  },
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": {
+    "buildProfile": "release-shared-openssl-aead-off-live-message-ipv4",
+    "librarySha256": "56fadae15ecad9570c12b4c89d5b5c346c41e0ada548844cc8361dd34c20e8c1",
+    "name": "robotweax-srt",
+    "observedRuntimeProfiles": {
+      "receiver": {
+        "messageApi": true,
+        "provider": "robotweax-srt",
+        "publicApiVersionHex": 66823,
+        "recordBytes": 472,
+        "transport": "live"
+      },
+      "sender": {
+        "messageApi": true,
+        "provider": "robotweax-srt",
+        "publicApiVersionHex": 66823,
+        "recordBytes": 472,
+        "transport": "live"
+      }
+    },
+    "peerSha256": "2a85826c241aeb8e4e9530c49a592bd8ec90f304331e4bd84644ffccd9cfdddb",
+    "revision": "ac9c14d7815bfd6f76f8b60308c5465095625eb7",
+    "version": "0.2.3"
+  },
+  "schemaVersion": 1,
+  "status": "passed-with-documented-limits",
+  "tests": {
+    "defaultNoSrtDependencySuite": {
+      "failed": 0,
+      "log": "telemetry-default-tests.log",
+      "passed": 40,
+      "seconds": 2.63
+    },
+    "injectedProviderSuite": {
+      "failed": 0,
+      "log": "telemetry-final-full-tests.log",
+      "passed": 45,
+      "seconds": 2.69
+    }
+  }
+}

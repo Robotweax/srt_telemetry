@@ -255,9 +255,7 @@ def load_incident(manifest_path: Path, analyzer) -> dict:
     reproduced = analyzer.build_analysis(analyzer.load_jsonl(recording_paths))
     if reproduced != retained_analysis:
         fail(f"retained incident analysis is not reproducible: {manifest_path}")
-    if retained_analysis.get("selectedHypothesis", {}).get("assessment") != "supported":
-        message = "evaluation scenario has no supported reference hypothesis: "
-        fail(message + str(manifest_path))
+    reference_failure_domain(retained_analysis)
 
     return {
         "manifestPath": manifest_path,
@@ -359,17 +357,32 @@ def missing_evidence_ids(analysis: dict) -> List[str]:
     return sorted(identifiers)
 
 
-def build_reference(study_id: str, incident: dict) -> dict:
-    analysis = incident["analysis"]
-    selected_id = analysis["selectedHypothesis"]["id"]
+def reference_failure_domain(analysis: dict) -> str:
+    selection = analysis.get("selectedHypothesis", {})
+    selected_id = selection.get("id")
+    if selection.get("assessment") == "insufficient-evidence" and selected_id is None:
+        return "insufficient-evidence"
+    if selection.get("assessment") != "supported" or selected_id is None:
+        fail("evaluation scenario has an invalid reference selection")
     selected = next(
-        hypothesis
-        for hypothesis in analysis["hypotheses"]
-        if hypothesis["id"] == selected_id
+        (
+            hypothesis
+            for hypothesis in analysis["hypotheses"]
+            if hypothesis["id"] == selected_id
+        ),
+        None,
     )
+    if selected is None or selected.get("assessment") != "supported":
+        fail("evaluation reference selection has no supported hypothesis")
     domain = DOMAIN_BY_ANALYSIS.get(selected["failureDomain"])
     if domain is None:
         fail(f"unsupported reference failure domain: {selected['failureDomain']}")
+    return domain
+
+
+def build_reference(study_id: str, incident: dict) -> dict:
+    analysis = incident["analysis"]
+    domain = reference_failure_domain(analysis)
     return {
         "schemaVersion": SCHEMA_VERSION,
         "kind": REFERENCE_KIND,
@@ -965,8 +978,7 @@ def build_rehearsal_readiness(study_path: Path) -> dict:
         )
         reports_aligned = reports_aligned and all(
             [
-                report.get("selectedHypothesis", {}).get("assessment")
-                == "supported",
+                reference_failure_domain(report) == reference.get("failureDomain"),
                 timeline.get("firstDeviationSample")
                 == reference.get("firstDeviationSample"),
                 timeline.get("lastDeviationSample")

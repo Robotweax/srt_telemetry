@@ -1,0 +1,162 @@
+{
+  "date": "2026-09-08",
+  "status": "passed-with-documented-limits",
+  "testCommands": [
+    {
+      "command": "ctest --test-dir ../build-telemetry --output-on-failure",
+      "passedEntries": 45,
+      "failedEntries": 0,
+      "log": "telemetry-final-product-ctest.log"
+    },
+    {
+      "command": "ctest --test-dir ../build-telemetry-default --output-on-failure",
+      "passedEntries": 40,
+      "failedEntries": 0,
+      "log": "telemetry-final-default-ctest.log"
+    },
+    {
+      "command": "python3 -m unittest discover -s qualification -p 'test_flight_recorder*.py' -v",
+      "passedTests": 53,
+      "failedTests": 0,
+      "log": "product-tests-final.log"
+    }
+  ],
+  "browserVisualQa": {
+    "status": "not-executed",
+    "reason": "Browser tool denied file:// navigation and prohibited circumvention. HTML structure, CSP, escaping and render content verified with tests."
+  },
+  "acceptanceExamples": [
+    {
+      "name": "retained-loss-recovery",
+      "evidenceClass": "retained-capture",
+      "package": "retained-loss-recovery.frcase",
+      "sha256": "67cdd49e089cc2ba659f8d10743fd9f2ac73a67f472af8408039b16e80faa61a",
+      "view": "retained-loss-recovery.html",
+      "assessment": {
+        "status": "supported",
+        "reasons": [],
+        "timePolicy": "qualified-logical-sample-windows"
+      },
+      "selectedHypothesis": {
+        "id": "transmission-path-loss-with-recovery",
+        "assessment": "supported",
+        "rationale": "Aligned sender loss, receiver loss, and retransmission deltas identify recoverable path loss without sufficient endpoint-pressure evidence."
+      },
+      "bytes": 37407
+    },
+    {
+      "name": "retained-receiver-pressure",
+      "evidenceClass": "retained-capture",
+      "package": "retained-receiver-pressure.frcase",
+      "sha256": "e53598bd42a397ff337631b1d549ec19dc6b0675a017ff9110e4dfe0aee33b28",
+      "view": "retained-receiver-pressure.html",
+      "assessment": {
+        "status": "supported",
+        "reasons": [],
+        "timePolicy": "qualified-logical-sample-windows"
+      },
+      "selectedHypothesis": {
+        "id": "receiver-side-pressure",
+        "assessment": "supported",
+        "rationale": "Receiver buffer growth overlaps upstream sender pressure and recovers after the deviation without a supported path-loss explanation."
+      },
+      "bytes": 37358
+    },
+    {
+      "name": "retained-playout-margin",
+      "evidenceClass": "retained-capture",
+      "package": "retained-playout-margin.frcase",
+      "sha256": "7f3205882eb89bdde0faab774029b449c142bd76d2ab88c66371528737ab2a71",
+      "view": "retained-playout-margin.html",
+      "assessment": {
+        "status": "supported",
+        "reasons": [],
+        "timePolicy": "qualified-logical-sample-windows"
+      },
+      "selectedHypothesis": {
+        "id": "receiver-recovery-margin-exhausted",
+        "assessment": "supported",
+        "rationale": "Paired loss and retransmission are followed by receiver drops that exactly account for the unique delivery gap under a configured TSBPD delay, then recover without security evidence."
+      },
+      "bytes": 37314
+    },
+    {
+      "name": "synthetic-missing-evidence",
+      "evidenceClass": "synthetic-fixture",
+      "package": "synthetic-missing-evidence.frcase",
+      "sha256": "c0e82de1061187680a130fa87216ec8757115b7ed026322693ced4cd8c61518d",
+      "view": "synthetic-missing-evidence.html",
+      "assessment": {
+        "status": "insufficient-evidence",
+        "reasons": [],
+        "timePolicy": "qualified-logical-sample-windows"
+      },
+      "selectedHypothesis": {
+        "id": null,
+        "assessment": "insufficient-evidence",
+        "rationale": "The available signals do not isolate one failure domain without a supported competing explanation."
+      },
+      "bytes": 37432
+    },
+    {
+      "name": "synthetic-contradictory-evidence",
+      "evidenceClass": "synthetic-fixture",
+      "package": "synthetic-contradictory-evidence.frcase",
+      "sha256": "b54ff9e2b3783a086dba3cc086e3b57e4805ed5c8c081a21fe4eeacaf7a405f4",
+      "view": "synthetic-contradictory-evidence.html",
+      "assessment": {
+        "status": "insufficient-evidence",
+        "reasons": [],
+        "timePolicy": "qualified-logical-sample-windows"
+      },
+      "selectedHypothesis": {
+        "id": null,
+        "assessment": "insufficient-evidence",
+        "rationale": "The available signals do not isolate one failure domain without a supported competing explanation."
+      },
+      "bytes": 37408
+    },
+    {
+      "name": "new-loss-recovery",
+      "evidenceClass": "new-experiment",
+      "package": "new-loss-recovery.frcase",
+      "sha256": "39b219cc91a963741244a47baa36e0edc090d54b5b4242ab45a7426414244be0",
+      "view": "new-loss-recovery.html",
+      "assessment": {
+        "status": "supported",
+        "reasons": [],
+        "timePolicy": "coordinator-sample-windows"
+      },
+      "selectedHypothesis": {
+        "id": "transmission-path-loss-with-recovery",
+        "assessment": "supported",
+        "rationale": "Aligned sender loss, receiver loss, and retransmission deltas identify recoverable path loss without sufficient endpoint-pressure evidence."
+      },
+      "bytes": 101519
+    },
+    {
+      "name": "new-receiver-pause",
+      "evidenceClass": "new-experiment",
+      "package": "new-receiver-pause.frcase",
+      "sha256": "445801c8fc21ce95945404c85836d89ac5406659f33f11d6e24c46df7e76f42a",
+      "view": "new-receiver-pause.html",
+      "assessment": {
+        "status": "insufficient-evidence",
+        "reasons": [],
+        "timePolicy": "coordinator-sample-windows"
+      },
+      "selectedHypothesis": {
+        "id": null,
+        "assessment": "insufficient-evidence",
+        "rationale": "The available signals do not isolate one failure domain without a supported competing explanation."
+      },
+      "bytes": 109508
+    }
+  ],
+  "sourceBaselines": {
+    "srt_telemetry": "bf10da0431fdf23772210262755f745b62b6ff58",
+    "srt": "ac9c14d7815bfd6f76f8b60308c5465095625eb7",
+    "srt_expert_analyzer": "7d5e6ed78794e194b42adf462c4e896038f12af3",
+    "srt_knowledge_base": "cda27cd48a8dd921b09924735968226f2c723dd4"
+  }
+}

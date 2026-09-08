@@ -1,0 +1,67 @@
+{
+  "scope": "One sequential seven-case local run; includes Python/importer/analyzer/render. Process RSS high water, not isolated incremental memory; no maximum-size or cross-platform promise.",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "python": "3.14.7",
+  "budgets": {
+    "millisecondsPerCanonicalExample": 1000,
+    "processRssBytes": 134217728
+  },
+  "results": [
+    {
+      "case": "new-loss-recovery.frcase",
+      "inputBytes": 101519,
+      "outputBytes": 200234,
+      "importAnalysisRenderMilliseconds": 8.249458,
+      "processHighWaterRssBytes": 29605888,
+      "withinExampleBudget": true
+    },
+    {
+      "case": "new-receiver-pause.frcase",
+      "inputBytes": 109508,
+      "outputBytes": 213455,
+      "importAnalysisRenderMilliseconds": 6.828125,
+      "processHighWaterRssBytes": 30261248,
+      "withinExampleBudget": true
+    },
+    {
+      "case": "retained-loss-recovery.frcase",
+      "inputBytes": 37407,
+      "outputBytes": 90462,
+      "importAnalysisRenderMilliseconds": 3.072208,
+      "processHighWaterRssBytes": 30294016,
+      "withinExampleBudget": true
+    },
+    {
+      "case": "retained-playout-margin.frcase",
+      "inputBytes": 37314,
+      "outputBytes": 87249,
+      "importAnalysisRenderMilliseconds": 3.148375,
+      "processHighWaterRssBytes": 30310400,
+      "withinExampleBudget": true
+    },
+    {
+      "case": "retained-receiver-pressure.frcase",
+      "inputBytes": 37358,
+      "outputBytes": 86769,
+      "importAnalysisRenderMilliseconds": 3.251333,
+      "processHighWaterRssBytes": 30310400,
+      "withinExampleBudget": true
+    },
+    {
+      "case": "synthetic-contradictory-evidence.frcase",
+      "inputBytes": 37408,
+      "outputBytes": 90602,
+      "importAnalysisRenderMilliseconds": 3.106666,
+      "processHighWaterRssBytes": 30310400,
+      "withinExampleBudget": true
+    },
+    {
+      "case": "synthetic-missing-evidence.frcase",
+      "inputBytes": 37432,
+      "outputBytes": 90422,
+      "importAnalysisRenderMilliseconds": 2.986,
+      "processHighWaterRssBytes": 30310400,
+      "withinExampleBudget": true
+    }
+  ]
+}
