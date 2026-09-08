@@ -59,6 +59,10 @@ MISSING_EVIDENCE_OPTIONS = {
     "exact-egress-capacity",
     "packet-belated-arrival",
     "latency-counterfactual",
+    "receiver-drop-delivery-consistency",
+    "sender-drop-deltas",
+    "receiver-drop-deltas",
+    "receiver-undecryptable-deltas",
 }
 
 DOMAIN_BY_ANALYSIS = {
@@ -69,6 +73,9 @@ DOMAIN_BY_ANALYSIS = {
 }
 
 MISSING_EVIDENCE_BY_TEXT = {
+    "Sender drop deltas are unavailable.": {"sender-drop-deltas"},
+    "Receiver drop deltas are unavailable.": {"receiver-drop-deltas"},
+    "Receiver undecryptable deltas are unavailable.": {"receiver-undecryptable-deltas"},
     "Packet sequence adjacency and the exact failing network hop are unavailable.": {
         "packet-sequence-adjacency",
         "exact-failing-hop",
@@ -413,6 +420,7 @@ def prepare_study(
     analyzer_path: Path,
     output_dir: Path,
     repository_revision: str,
+    reference_review_path: Optional[Path] = None,
 ) -> Path:
     if not STUDY_PATTERN.fullmatch(study_id):
         fail("study id must use lowercase letters, digits, and hyphens")
@@ -424,6 +432,8 @@ def prepare_study(
     if output_dir.exists():
         fail(f"refusing to overwrite study packet: {output_dir}")
     analyzer = load_analyzer(analyzer_path.resolve())
+    reviewer = load_analyzer(Path(__file__).with_name('operator_reference_review.py')) if reference_review_path else None
+    rubric = read_json(reference_review_path) if reference_review_path else None
     incidents = [load_incident(path, analyzer) for path in manifest_paths]
     scenario_ids = [incident["manifest"]["incidentId"] for incident in incidents]
     if len(set(scenario_ids)) != len(scenario_ids):
@@ -444,9 +454,13 @@ def prepare_study(
             raw_path = scenario_dir / "raw-statistics.json"
             report_path = scenario_dir / "incident-report.json"
             reference_path = scenario_dir / "reference.json"
-            write_new_json(raw_path, build_raw_view(study_id, incident))
+            raw_view = build_raw_view(study_id, incident)
+            write_new_json(raw_path, raw_view)
             write_new_json(report_path, build_report_view(study_id, incident))
-            write_new_json(reference_path, build_reference(study_id, incident))
+            reference = build_reference(study_id, incident)
+            if reviewer:
+                reference = reviewer.reviewed_reference(rubric, raw_view, reference)
+            write_new_json(reference_path, reference)
             scenarios.append(
                 {
                     "scenarioId": scenario_id,
@@ -543,6 +557,12 @@ def prepare_study(
             },
             "scenarios": scenarios,
         }
+        if reviewer:
+            review_path = staging / 'reference-review.json'
+            write_new_json(review_path, rubric)
+            study['referenceReview'] = artifact(review_path, staging)
+            study['questions']['missingEvidenceScope'] = rubric['missingEvidenceScope']
+            reviewer.verify_study(rubric, study, staging)
         write_new_json(staging / "study.json", study)
         os.replace(str(staging), str(output_dir))
     except Exception:
@@ -586,6 +606,9 @@ def validate_study(study_path: Path) -> Tuple[dict, Path]:
                 raise RuntimeError(f"study artifact escapes packet: {path}") from error
             if not path.is_file() or sha256_file(path) != entry.get("sha256"):
                 fail(f"study artifact is missing or changed: {path}")
+        reference = read_json(base / scenario['reference']['file'])
+        if reference.get('referencePolicy') == 'robotweax-operator-measurement-rubric-v2' and 'referenceReview' not in study:
+            fail('reviewed reference requires its measurement rubric')
     if len(scenario_ids) < 2:
         fail("study must contain at least two scenarios")
     for arm, assignments in study["arms"].items():
@@ -604,6 +627,18 @@ def validate_study(study_path: Path) -> Tuple[dict, Path]:
             "condition"
         ) == second.get("condition"):
             fail("study arms do not counterbalance each scenario")
+    if 'referenceReview' in study:
+        entry = study['referenceReview']
+        path = contained_file(base, entry.get('file'), 'reference review')
+        validate_digest(path, entry.get('sha256'), 'reference review')
+        reviewer = load_analyzer(Path(__file__).with_name('operator_reference_review.py'))
+        rubric = read_json(path)
+        if study.get('questions', {}).get('missingEvidenceScope') != rubric.get('missingEvidenceScope'):
+            fail('reference review question scope mismatch')
+        reviewer.verify_study(rubric, study, base)
+        for scenario in study['scenarios']:
+            reference = read_json(base / scenario['reference']['file'])
+            score_task(dict(reference, confidence=3, notes='reference format validation'), reference)
     return study, base
 
 
@@ -1463,6 +1498,8 @@ def parse_arguments() -> argparse.Namespace:
     )
     prepare.add_argument("--repository-revision", default="unrecorded")
     prepare.add_argument("--output-dir", type=Path, required=True)
+    prepare.add_argument("--reference-review", type=Path,
+                         help="optional versioned measurement rubric; old packets keep their original references")
 
     rehearsal = subparsers.add_parser(
         "rehearsal", help="create or verify an internal facilitation preflight"
@@ -1502,6 +1539,7 @@ def main() -> int:
             arguments.analyzer,
             arguments.output_dir,
             arguments.repository_revision,
+            arguments.reference_review,
         )
         print(f"operator evaluation study written: {result}")
         return 0

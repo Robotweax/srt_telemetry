@@ -1,0 +1,42 @@
+{
+  "contradictions": [
+    "Not an observed provider run; source capture metadata does not describe these mutated values."
+  ],
+  "expectedEvidence": [
+    "No failure-domain attribution is justified by this synthetic input."
+  ],
+  "failureClass": "synthetic-contradictory-evidence",
+  "incidentId": "incident-901-synthetic-contradictory",
+  "machineExpectations": {
+    "firstDeviationSample": 3,
+    "selectedAssessment": "insufficient-evidence"
+  },
+  "mutation": "Add seven receiver drops at sample 3 and to later totals, preserving all-delivered unique counters.",
+  "provenance": {
+    "capturedFromProvider": false,
+    "generator": "qualification/generate_abstention_fixtures.py",
+    "kind": "synthetic-retained-data-derivative",
+    "sourceManifest": {
+      "file": "testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json",
+      "sha256": "d4348d163af6bd0ea2a5bcdc0ae9e41c5bf2c2e4e1a3f4bbf85bce55efbd16cf"
+    }
+  },
+  "recordings": {
+    "analysis": {
+      "file": "analysis.json",
+      "sha256": "5730df1c43f50b663bf548bcbfbabd2aa8abb1f433c4d86f64565bfa25e1082f"
+    },
+    "flowId": "incident-901-synthetic-contradictory",
+    "format": "robotweax-srt-telemetry-jsonl-v1",
+    "receiver": {
+      "file": "receiver.jsonl",
+      "sha256": "3182ff229dc39b92bd36b643c12d2ea68a6dcc4358a9fcd76e217f4f22478397"
+    },
+    "schemaVersion": "1alpha1",
+    "sender": {
+      "file": "sender.jsonl",
+      "sha256": "5e4eae0bd3747ef812b00bcced2afb44c2732277ad36a4285535708bc8715ed0"
+    }
+  },
+  "schemaVersion": "1alpha1"
+}

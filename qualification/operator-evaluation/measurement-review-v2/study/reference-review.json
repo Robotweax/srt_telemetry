@@ -1,0 +1,2434 @@
+{
+  "humanReview": "pending",
+  "kind": "robotweax-operator-measurement-rubric-v2",
+  "missingEvidenceScope": "Select the additional unavailable or inconsistent evidence needed to substantiate the indicated failure-domain interpretation (or resolve abstention). Do not select observed measurements merely because they do not cross a threshold. Other hypotheses are considered through supportedHypotheses; do not list every gap in every alternative.",
+  "originalStudySha256": "1db1013ff239215b982127c28f3324bbd25710aa16b8b5d2fa4aad31dfd9843d",
+  "reviewClass": "case-specific technical measurement review; not independent human adjudication",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            9,
+            9,
+            9,
+            9,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            9,
+            9,
+            9,
+            9,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            10,
+            10,
+            10,
+            10,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200
+          ]
+        }
+      ],
+      "evidenceClass": "retained-provider-recording",
+      "expected": {
+        "failureDomain": "transmission-path",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 6,
+        "missingEvidence": [
+          "exact-failing-hop",
+          "packet-sequence-adjacency"
+        ],
+        "recoverySample": 7,
+        "supportedHypotheses": [
+          "transmission-path-loss-with-recovery"
+        ]
+      },
+      "observationsSha256": "aa2cc4bbafefe1a4301ef965a5494604edc4d586718290c5a7434602fef5b62e",
+      "rationale": "Both roles show 9 loss packets at samples 3\u20136; sender retransmits 10, then losses/retransmission return to zero at 7. This supports recoverable path loss, not any exact hop or sequence shape.",
+      "scenarioId": "incident-006-jsonl-constant-loss-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json",
+        "sha256": "d4348d163af6bd0ea2a5bcdc0ae9e41c5bf2c2e4e1a3f4bbf85bce55efbd16cf"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            776,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000
+          ]
+        },
+        {
+          "field": "rtt_seconds",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "section": "raw",
+          "values": [
+            0.1,
+            0.000146,
+            0.00040100000000000004,
+            0.016974,
+            0.034511,
+            0.043577,
+            0.048369,
+            0.033753,
+            0.015353,
+            0.007136,
+            0.004001,
+            0.002176,
+            0.001583
+          ]
+        },
+        {
+          "field": "rtt_seconds",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "section": "raw",
+          "values": [
+            0.1,
+            0.000514,
+            0.000375,
+            0.034511,
+            0.043577,
+            0.048369,
+            0.050268,
+            0.029558,
+            0.013804,
+            0.006401,
+            0.003518,
+            0.0022890000000000002,
+            0.001772
+          ]
+        }
+      ],
+      "evidenceClass": "retained-provider-recording",
+      "expected": {
+        "failureDomain": "transmission-path",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 7,
+        "missingEvidence": [
+          "exact-failing-hop",
+          "one-way-delay"
+        ],
+        "recoverySample": 8,
+        "supportedHypotheses": [
+          "transmission-path-rtt-step-with-recovery"
+        ]
+      },
+      "observationsSha256": "c48cd42b67e0c53ab2b4497a40b3a3126593df5b52b92838998bf94ffc6c2c43",
+      "rationale": "Paired RTT rises above its warm baseline at 3 with sender retransmission. Both RTT values exceed 20 ms at 4\u20137 and return below 20 ms at 8. Sample 0 is initialization, not a warm RTT baseline. No one-way timestamp or hop measurement exists.",
+      "scenarioId": "incident-008-rtt-step-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-008-rtt-step-robotweax-haivision/manifest.json",
+        "sha256": "40eee5fa1dceb414b366d9a4cd014c33fa62f8d61b88e7ba8415655d6149bb29"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            2214,
+            2093,
+            2612,
+            81,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            2203,
+            2065,
+            2644,
+            88,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "send_buffer_bytes",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            159120,
+            3704640,
+            178160,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "flight_size_packets",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            34,
+            31,
+            50,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receive_buffer_bytes",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            2899148,
+            5616688,
+            9096192,
+            9212000,
+            0,
+            0
+          ]
+        }
+      ],
+      "evidenceClass": "retained-provider-recording",
+      "expected": {
+        "failureDomain": "receiver-endpoint",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 6,
+        "missingEvidence": [
+          "receiver-application-consumption"
+        ],
+        "recoverySample": 7,
+        "supportedHypotheses": [
+          "receiver-side-pressure"
+        ]
+      },
+      "observationsSha256": "5ab9cb7b527d2d54dcfd1d30cd3e52cb4902631e90a8c6d54a755705bdd5af58",
+      "rationale": "Receiver occupancy rises to 2.9 MB at 3 and 9.2 MB at 6, then zero at 7, without loss/drop. Sender pressure alone does not localize the initiating application. Receiver consumption timing is not observed.",
+      "scenarioId": "incident-010-receiver-pause-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-010-receiver-pause-robotweax-haivision/manifest.json",
+        "sha256": "d3120b2c5b1bdf74eab06129b2748785982a29a105706c6e00beb9d4cebdd816"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            7000,
+            0,
+            0,
+            0,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            4162,
+            2838,
+            0,
+            0,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "send_buffer_bytes",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            3867840,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "flight_size_packets",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            2844,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receive_buffer_bytes",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            5477192,
+            9212000,
+            9212000,
+            9212000,
+            0,
+            0
+          ]
+        }
+      ],
+      "evidenceClass": "retained-provider-recording",
+      "expected": {
+        "failureDomain": "receiver-endpoint",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 6,
+        "missingEvidence": [
+          "receiver-application-consumption"
+        ],
+        "recoverySample": 7,
+        "supportedHypotheses": [
+          "receiver-side-pressure"
+        ]
+      },
+      "observationsSha256": "22d717a23a9c35dbfeca16bd7accd1022cfe3005fbcda4f5484132ea8ea2f1b7",
+      "rationale": "Receiver occupancy rises to 5.48 MB at 3 and stays 9.21 MB at 4\u20136, then zero at 7. RTT and a transient sender backlog coexist; consumption causality is not directly measured.",
+      "scenarioId": "incident-011-receiver-pause-haivision-robotweax",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-011-receiver-pause-haivision-robotweax/manifest.json",
+        "sha256": "e58a6fc33d6dee753988484c9fe62894d17c91909400e1bc15f3c808ad99fe2a"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            2000,
+            0,
+            0,
+            0,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            214,
+            215,
+            215,
+            196,
+            1260,
+            100
+          ]
+        },
+        {
+          "field": "send_buffer_bytes",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            2448000,
+            2150160,
+            1861840,
+            1587120,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "flight_size_packets",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            1800,
+            1581,
+            1369,
+            1167,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receive_buffer_bytes",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            18424,
+            13160,
+            17108,
+            6580,
+            0,
+            0
+          ]
+        }
+      ],
+      "evidenceClass": "retained-provider-recording",
+      "expected": {
+        "failureDomain": "sender-endpoint",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 6,
+        "missingEvidence": [
+          "exact-egress-capacity",
+          "offered-application-rate",
+          "sender-application-scheduling"
+        ],
+        "recoverySample": 7,
+        "supportedHypotheses": [
+          "sender-side-pressure"
+        ]
+      },
+      "observationsSha256": "e84e1d76e366ecd69f2d58babaa29aae17cf6b489a37b9b22076e3e383e93d52",
+      "rationale": "Sender backlog exceeds 1.5 MB and flight size 1100 packets at 3\u20136, both return to zero at 7; receiver occupancy remains below 19 KB and loss/drop zero. Public statistics do not establish why the sender is constrained.",
+      "scenarioId": "incident-012-bandwidth-reduction-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-012-bandwidth-reduction-robotweax-haivision/manifest.json",
+        "sha256": "7396bd530d81386492f50021a1050f6fcbaf4b53bcb67fdf5a5fffcda1230276"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            2000,
+            0,
+            0,
+            0,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            212,
+            206,
+            219,
+            209,
+            1254,
+            100
+          ]
+        },
+        {
+          "field": "send_buffer_bytes",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            2439840,
+            2151520,
+            1860480,
+            1569440,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "flight_size_packets",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            1794,
+            1582,
+            1368,
+            1154,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receive_buffer_bytes",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            2632,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "evidenceClass": "retained-provider-recording",
+      "expected": {
+        "failureDomain": "sender-endpoint",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 6,
+        "missingEvidence": [
+          "exact-egress-capacity",
+          "offered-application-rate",
+          "sender-application-scheduling"
+        ],
+        "recoverySample": 7,
+        "supportedHypotheses": [
+          "sender-side-pressure"
+        ]
+      },
+      "observationsSha256": "5bcdcb037c6425fb2c5a92ca49923fd6999b7363c05aee6e3273c3e5e301eb98",
+      "rationale": "Sender backlog exceeds 1.5 MB and flight size 1100 packets at 3\u20136; receiver occupancy is at most 2632 bytes; both sender signals return to zero at 7. A sampled zero is available evidence, not missing occupancy.",
+      "scenarioId": "incident-013-bandwidth-reduction-haivision-robotweax",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-013-bandwidth-reduction-haivision-robotweax/manifest.json",
+        "sha256": "1c007ad2bd2d3e33e30e3f86b9dd5ce400da4a01e38282b6bbd0c521210d0f10"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            1971,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            1100,
+            0,
+            0,
+            0,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            1000,
+            0,
+            0,
+            0,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "receiver_tsbpd_delay_seconds",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12
+          ]
+        }
+      ],
+      "evidenceClass": "retained-provider-recording",
+      "expected": {
+        "failureDomain": "receiver-endpoint",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 3,
+        "missingEvidence": [
+          "latency-counterfactual",
+          "one-way-delay",
+          "packet-belated-arrival"
+        ],
+        "recoverySample": 4,
+        "supportedHypotheses": [
+          "receiver-recovery-margin-exhausted"
+        ]
+      },
+      "observationsSha256": "26185b9c345df17ad1f1dd5e00b0533d5a65dc3f5e632f0c4a576275776bb7eb",
+      "rationale": "At 3 both loss counters rise by 100, sender retransmits 1971 and receiver drops 100; nonzero configured receive delay is 0.12 s. Unique delivery deficit matches drops. Later drop deltas are zero. This locates an observed recovery boundary, not a measured late-arrival cause or a latency remedy.",
+      "scenarioId": "incident-014-recovery-margin-robotweax-haivision",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-014-recovery-margin-robotweax-haivision/manifest.json",
+        "sha256": "c4093cf48235be43d8c6b02203178cb31f70381577ffbf3faf069b8f834c16b8"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            200,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            200,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            1100,
+            0,
+            0,
+            0,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            100,
+            100,
+            1000,
+            0,
+            0,
+            0,
+            100,
+            100
+          ]
+        },
+        {
+          "field": "receiver_tsbpd_delay_seconds",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12,
+            0.12
+          ]
+        }
+      ],
+      "evidenceClass": "retained-provider-recording",
+      "expected": {
+        "failureDomain": "receiver-endpoint",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 3,
+        "missingEvidence": [
+          "latency-counterfactual",
+          "one-way-delay",
+          "packet-belated-arrival"
+        ],
+        "recoverySample": 4,
+        "supportedHypotheses": [
+          "receiver-recovery-margin-exhausted"
+        ]
+      },
+      "observationsSha256": "2e3620cf126fe153e6671bb1b01cceac697f53fddf5e948c67c3d35f0aef8d2e",
+      "rationale": "At 3 sender loss/retransmission are 200, receiver loss/drop 100 and configured receive delay 0.12 s; unique delivery deficit matches 100 drops. Different loss totals do not prove the exact path mechanism.",
+      "scenarioId": "incident-015-recovery-margin-haivision-robotweax",
+      "sourceManifest": {
+        "file": "testdata/golden-incidents/incident-015-recovery-margin-haivision-robotweax/manifest.json",
+        "sha256": "9bf67dc22db499d193628ed44724995bb55b0f9af4e22e5b9b41d7b2660deac4"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "field": "available_fields",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "raw",
+          "values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "available_delta_fields",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "evidenceClass": "synthetic-retained-data-derivative",
+      "expected": {
+        "failureDomain": "insufficient-evidence",
+        "firstDeviationSample": null,
+        "lastDeviationSample": null,
+        "missingEvidence": [
+          "paired-loss-alignment",
+          "paired-rtt-step-threshold",
+          "receiver-buffer-occupancy",
+          "receiver-drop-deltas",
+          "receiver-undecryptable-deltas",
+          "sender-buffer-occupancy",
+          "sender-drop-deltas",
+          "sender-flight-size",
+          "sender-retransmission-deltas"
+        ],
+        "recoverySample": null,
+        "supportedHypotheses": []
+      },
+      "observationsSha256": "eca28bc8b2be76b6dc2a04bbc0e92f19ee3fd1c735a28fc27346add2ab66b869",
+      "rationale": "All measurement values are null and availability masks cleared. Time and identity alone cannot identify a first deviation, recovery, or failure domain. Null must not be scored as healthy zero.",
+      "scenarioId": "incident-900-synthetic-missing",
+      "sourceManifest": {
+        "file": "qualification/operator-evaluation/measurement-review-v2/fixtures/incident-900-synthetic-missing/manifest.json",
+        "sha256": "e0f717699f5f3f2595937e8fc0032fe70068a322466c88d92b7801f988fdfb19"
+      }
+    },
+    {
+      "assertions": [
+        {
+          "field": "sender_loss_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            9,
+            9,
+            9,
+            9,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_loss_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            9,
+            9,
+            9,
+            9,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "retransmitted_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            10,
+            10,
+            10,
+            10,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "receiver_drop_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            0,
+            0,
+            7,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "field": "unique_sent_packet_delta",
+          "role": "sender",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200
+          ]
+        },
+        {
+          "field": "unique_received_packet_delta",
+          "role": "receiver",
+          "sampleIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "section": "delta",
+          "values": [
+            null,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200,
+            200
+          ]
+        }
+      ],
+      "evidenceClass": "synthetic-retained-data-derivative",
+      "expected": {
+        "failureDomain": "insufficient-evidence",
+        "firstDeviationSample": 3,
+        "lastDeviationSample": 6,
+        "missingEvidence": [
+          "packet-sequence-adjacency",
+          "receiver-drop-delivery-consistency"
+        ],
+        "recoverySample": 7,
+        "supportedHypotheses": []
+      },
+      "observationsSha256": "2c3fc7f70a4b35d1de138d96d407e63647466d06b9fc3c1f81f471c4c4daaa14",
+      "rationale": "The first abnormal sample is 3. Seven receiver drops conflict with preserved all-delivered unique counts, while paired losses persist through 6. Neither loss-with-complete-recovery nor recovery-margin attribution is supported by internally inconsistent observations. Source capture facts cannot repair the mutated input.",
+      "scenarioId": "incident-901-synthetic-contradictory",
+      "sourceManifest": {
+        "file": "qualification/operator-evaluation/measurement-review-v2/fixtures/incident-901-synthetic-contradictory/manifest.json",
+        "sha256": "1388df5224365a7ab91dede11e4b8d574318b11649034361ca9b284bd9016ee7"
+      }
+    }
+  ]
+}

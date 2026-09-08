@@ -1,0 +1,42 @@
+{
+  "contradictions": [
+    "Not an observed provider run; source capture metadata does not describe these mutated values."
+  ],
+  "expectedEvidence": [
+    "No failure-domain attribution is justified by this synthetic input."
+  ],
+  "failureClass": "synthetic-missing-evidence",
+  "incidentId": "incident-900-synthetic-missing",
+  "machineExpectations": {
+    "firstDeviationSample": null,
+    "selectedAssessment": "insufficient-evidence"
+  },
+  "mutation": "All measurements unavailable; masks cleared; clocks, roles and provider labels retained.",
+  "provenance": {
+    "capturedFromProvider": false,
+    "generator": "qualification/generate_abstention_fixtures.py",
+    "kind": "synthetic-retained-data-derivative",
+    "sourceManifest": {
+      "file": "testdata/golden-incidents/incident-006-jsonl-constant-loss-robotweax-haivision/manifest.json",
+      "sha256": "d4348d163af6bd0ea2a5bcdc0ae9e41c5bf2c2e4e1a3f4bbf85bce55efbd16cf"
+    }
+  },
+  "recordings": {
+    "analysis": {
+      "file": "analysis.json",
+      "sha256": "32de09dfe97bd8376ecc1f5de047166eb5f4df162a9b5cd6d4bfda9130a52e36"
+    },
+    "flowId": "incident-900-synthetic-missing",
+    "format": "robotweax-srt-telemetry-jsonl-v1",
+    "receiver": {
+      "file": "receiver.jsonl",
+      "sha256": "7e27cc9e22c596742e17c3e5be854bd84da2f06a8c8cb68c275730cdde5c8324"
+    },
+    "schemaVersion": "1alpha1",
+    "sender": {
+      "file": "sender.jsonl",
+      "sha256": "69ed916faf74dee1b1aa36329bced6fce0c6f79b725c85dc62a552cd1f90aeb2"
+    }
+  },
+  "schemaVersion": "1alpha1"
+}

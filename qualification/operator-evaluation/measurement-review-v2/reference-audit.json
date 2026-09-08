@@ -1,0 +1,273 @@
+{
+  "findings": [
+    "The analyzer-derived union treated below-threshold observed occupancy as missing evidence.",
+    "The new rubric scopes missing evidence to the interpretation or resolution of abstention. No classifier or scoring formula was changed."
+  ],
+  "humanReview": "pending",
+  "kind": "technical-reference-audit",
+  "rubricSha256": "18352955bbbda8ce2c936e33a4c20176cf0f4a940c9e0f470c937d8b75d4856d",
+  "scenarios": [
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "paired-rtt-step-threshold",
+            "receiver-application-consumption",
+            "receiver-buffer-occupancy",
+            "sender-application-scheduling",
+            "sender-buffer-occupancy",
+            "sender-flight-size"
+          ],
+          "measurementRubric": [
+            "exact-failing-hop",
+            "packet-sequence-adjacency"
+          ]
+        }
+      },
+      "scenarioId": "incident-006-jsonl-constant-loss-robotweax-haivision"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "receiver-application-consumption",
+            "receiver-buffer-occupancy",
+            "sender-application-scheduling",
+            "sender-buffer-occupancy",
+            "sender-flight-size"
+          ],
+          "measurementRubric": [
+            "exact-failing-hop",
+            "one-way-delay"
+          ]
+        }
+      },
+      "scenarioId": "incident-008-rtt-step-robotweax-haivision"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "paired-rtt-step-threshold",
+            "receiver-application-consumption",
+            "sender-application-scheduling"
+          ],
+          "measurementRubric": [
+            "receiver-application-consumption"
+          ]
+        }
+      },
+      "scenarioId": "incident-010-receiver-pause-robotweax-haivision"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "receiver-application-consumption",
+            "sender-application-scheduling"
+          ],
+          "measurementRubric": [
+            "receiver-application-consumption"
+          ]
+        }
+      },
+      "scenarioId": "incident-011-receiver-pause-haivision-robotweax"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "paired-rtt-step-threshold",
+            "receiver-application-consumption",
+            "receiver-buffer-occupancy",
+            "sender-application-scheduling"
+          ],
+          "measurementRubric": [
+            "exact-egress-capacity",
+            "offered-application-rate",
+            "sender-application-scheduling"
+          ]
+        }
+      },
+      "scenarioId": "incident-012-bandwidth-reduction-robotweax-haivision"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "paired-rtt-step-threshold",
+            "receiver-application-consumption",
+            "receiver-buffer-occupancy",
+            "sender-application-scheduling"
+          ],
+          "measurementRubric": [
+            "exact-egress-capacity",
+            "offered-application-rate",
+            "sender-application-scheduling"
+          ]
+        }
+      },
+      "scenarioId": "incident-013-bandwidth-reduction-haivision-robotweax"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "paired-rtt-step-threshold",
+            "receiver-application-consumption",
+            "receiver-buffer-occupancy",
+            "sender-application-scheduling",
+            "sender-buffer-occupancy",
+            "sender-flight-size"
+          ],
+          "measurementRubric": [
+            "latency-counterfactual",
+            "one-way-delay",
+            "packet-belated-arrival"
+          ]
+        }
+      },
+      "scenarioId": "incident-014-recovery-margin-robotweax-haivision"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "paired-rtt-step-threshold",
+            "receiver-application-consumption",
+            "receiver-buffer-occupancy",
+            "sender-application-scheduling",
+            "sender-buffer-occupancy",
+            "sender-flight-size"
+          ],
+          "measurementRubric": [
+            "latency-counterfactual",
+            "one-way-delay",
+            "packet-belated-arrival"
+          ]
+        }
+      },
+      "scenarioId": "incident-015-recovery-margin-haivision-robotweax"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "paired-loss-alignment",
+            "paired-rtt-step-threshold",
+            "receiver-application-consumption",
+            "receiver-buffer-occupancy",
+            "receiver-drop-deltas",
+            "receiver-undecryptable-deltas",
+            "sender-application-scheduling",
+            "sender-buffer-occupancy",
+            "sender-drop-deltas",
+            "sender-flight-size",
+            "sender-retransmission-deltas"
+          ],
+          "measurementRubric": [
+            "paired-loss-alignment",
+            "paired-rtt-step-threshold",
+            "receiver-buffer-occupancy",
+            "receiver-drop-deltas",
+            "receiver-undecryptable-deltas",
+            "sender-buffer-occupancy",
+            "sender-drop-deltas",
+            "sender-flight-size",
+            "sender-retransmission-deltas"
+          ]
+        }
+      },
+      "scenarioId": "incident-900-synthetic-missing"
+    },
+    {
+      "changes": {
+        "missingEvidence": {
+          "analyzerDerived": [
+            "exact-egress-capacity",
+            "exact-failing-hop",
+            "latency-counterfactual",
+            "offered-application-rate",
+            "one-way-delay",
+            "packet-belated-arrival",
+            "packet-sequence-adjacency",
+            "paired-rtt-step-threshold",
+            "receiver-application-consumption",
+            "receiver-buffer-occupancy",
+            "sender-application-scheduling",
+            "sender-buffer-occupancy",
+            "sender-flight-size"
+          ],
+          "measurementRubric": [
+            "packet-sequence-adjacency",
+            "receiver-drop-delivery-consistency"
+          ]
+        }
+      },
+      "scenarioId": "incident-901-synthetic-contradictory"
+    }
+  ]
+}
