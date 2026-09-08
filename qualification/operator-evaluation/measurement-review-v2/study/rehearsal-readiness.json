@@ -112,11 +112,11 @@
   },
   "scenarioCount": 10,
   "schemaVersion": "1alpha1",
-  "sourceRevision": "d6069429d071131d79e7e3da2a9ea7801da677d9",
+  "sourceRevision": "fdb1d8509d02f28b8f54bd5dc856b89319cdf049",
   "status": "ready",
   "study": {
     "file": "study.json",
-    "sha256": "98f3821882ce3b858637e80e29225849b25938dcc37ba40f6a02edbcc3a56d7c"
+    "sha256": "f1f56fda67dad61b4598ec8682c162154916677423f9bdce042dfc5c1a9e6296"
   },
   "studyId": "measurement-review-v2"
 }
