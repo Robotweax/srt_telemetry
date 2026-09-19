@@ -103,6 +103,17 @@ in `rehearsal-readiness.json`.
 
 ## Run one session
 
+Current terminal reports show an explicit receiver-buffer observation block
+when existing analysis evidence crosses the receiver occupancy threshold. This
+remains visible with an `insufficient-evidence` hypothesis selection. The block
+separates buffer growth/recovery from upstream confirmation and does not infer
+slow application reads from buffer occupancy alone. Missing sender gauges or
+warm baselines are labeled incomplete, not as evidence of absent pressure.
+
+Retained study JSON files and reference answers are unchanged. Since terminal
+presentation has changed, pin and record the SDK checkout used for each human
+session; do not pool sessions from different renderer revisions without review.
+
 ```sh
 python3 tools/operator_evaluation.py run \
   --study /operator-evaluation-packet/study.json \

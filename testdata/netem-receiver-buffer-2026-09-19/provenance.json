@@ -1,0 +1,72 @@
+{
+  "sourceCommit": "61c951af68ab1cbdcac0e2ff542f5bca7f61fb38",
+  "archiveSha256": "1771fa406499f69ae3d5c0ab5f788e3a5a29b2e1317d90a87a2c7706e9275188",
+  "archiveMemberPrefix": "netem-suite-20260919/",
+  "sha256": {
+    "baseline--robotweax-to-haivision/receiver.jsonl": "707d93a55156ce7a6454afa603152e929398e26394afea2165d633dd63bddbed",
+    "baseline--robotweax-to-haivision/sender.jsonl": "b464e205f6fba52d861adda25c3b30af911e10f4eb9797aa3a9f40952631b894",
+    "receiver-pause--haivision-to-robotweax--rep2/receiver.jsonl": "8a45017e13a9ac2eb90482602490541d39da58769b0d5911c5e063b2ca227df0",
+    "receiver-pause--haivision-to-robotweax--rep2/sender.jsonl": "c572bcc1ac789dd5408e217a111a5c665023426df4274798b681fec2ddcb16eb",
+    "receiver-pause--haivision-to-robotweax--rep3/receiver.jsonl": "13c49647106c3862ca83764c37c3b4c7ef5d160a5443987cef97a4055cea9e4d",
+    "receiver-pause--haivision-to-robotweax--rep3/sender.jsonl": "73ed8efc2f0500554c28325208102422976aeaac6dddf1165608a077cc36f551",
+    "receiver-pause--robotweax-to-haivision--rep2/receiver.jsonl": "e2f18f75362f123656ce1a18089e73b738b137827beda12f32e146b786fadffe",
+    "receiver-pause--robotweax-to-haivision--rep2/sender.jsonl": "d54efef7a5dc01926b6fbbbbc825148d3d1f14169cfd4d940cde23ed96b66efd",
+    "receiver-pause--robotweax-to-haivision--rep3/receiver.jsonl": "33ce7ae01f9b3f2e78750fc348479e5daacdaed6da3a7ac162576a97c0b8529f",
+    "receiver-pause--robotweax-to-haivision--rep3/sender.jsonl": "c016fd99ab8577a1cdea6722323ec2d158128ef6667a32b0554674f2d3ebc2d6",
+    "receiver-pause--haivision-to-robotweax--pause-250ms/receiver.jsonl": "ecaff5b9f178a78ec8d2d85fb9655fd477d4d6b3c8442e2aa949c027fc615e07",
+    "receiver-pause--haivision-to-robotweax--pause-250ms/sender.jsonl": "a00979046ba5cc3df0291c51ca6506dbd9ee95ac1c51d1943f4c3cbba4a21931",
+    "receiver-pause--robotweax-to-haivision--rep1/receiver.jsonl": "9fadcab0df9cd65268a304eed92fe1ccf95f59abec300a9a0c3848fa2e5cc27c",
+    "receiver-pause--robotweax-to-haivision--rep1/sender.jsonl": "b0904680fbde99a7f75ad7083e0f578dddbcbf70f8bcef2d3d3b3cb7d4d2edd3",
+    "baseline--haivision-to-robotweax/receiver.jsonl": "32e20eeb4118a0eb23d3904b2a463c73b80aa3c9e9e8f12237ca53d8d73dedc8",
+    "baseline--haivision-to-robotweax/sender.jsonl": "fc60ccd5c64c350916ab3f936f2eab21835b141bae5034f22a928e8e499de4c7",
+    "receiver-pause--haivision-to-robotweax--rep1/receiver.jsonl": "5d76328011cddcfaf929a5b522612ed1e844e729557d18be33da4176b94f6071",
+    "receiver-pause--haivision-to-robotweax--rep1/sender.jsonl": "b587e67e0ebac016a3c2be990d46ee4c88e66afaca50b558202ad7f1b34edbf4"
+  },
+  "outcomes": {
+    "baseline--robotweax-to-haivision": {
+      "selectedHypothesis": null,
+      "assessment": "insufficient-evidence",
+      "captureGate": "pass"
+    },
+    "receiver-pause--haivision-to-robotweax--rep2": {
+      "selectedHypothesis": null,
+      "assessment": "insufficient-evidence",
+      "captureGate": "rejected"
+    },
+    "receiver-pause--haivision-to-robotweax--rep3": {
+      "selectedHypothesis": null,
+      "assessment": "insufficient-evidence",
+      "captureGate": "rejected"
+    },
+    "receiver-pause--robotweax-to-haivision--rep2": {
+      "selectedHypothesis": null,
+      "assessment": "insufficient-evidence",
+      "captureGate": "rejected"
+    },
+    "receiver-pause--robotweax-to-haivision--rep3": {
+      "selectedHypothesis": null,
+      "assessment": "insufficient-evidence",
+      "captureGate": "rejected"
+    },
+    "receiver-pause--haivision-to-robotweax--pause-250ms": {
+      "selectedHypothesis": null,
+      "assessment": "insufficient-evidence",
+      "captureGate": "rejected"
+    },
+    "receiver-pause--robotweax-to-haivision--rep1": {
+      "selectedHypothesis": "receiver-side-pressure",
+      "assessment": "supported",
+      "captureGate": "pass"
+    },
+    "baseline--haivision-to-robotweax": {
+      "selectedHypothesis": null,
+      "assessment": "insufficient-evidence",
+      "captureGate": "pass"
+    },
+    "receiver-pause--haivision-to-robotweax--rep1": {
+      "selectedHypothesis": null,
+      "assessment": "insufficient-evidence",
+      "captureGate": "rejected"
+    }
+  }
+}

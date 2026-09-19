@@ -868,6 +868,57 @@ def render_raw_view(view: dict) -> str:
     return "\n".join(lines)
 
 
+def render_receiver_buffer_observation(report: dict) -> List[str]:
+    """Surface measured occupancy separately from the causal hypothesis."""
+    hypothesis = next(
+        (item for item in report["hypotheses"] if item["id"] == "receiver-side-pressure"),
+        None,
+    )
+    if hypothesis is None:
+        return []
+    evidence = {item["id"]: item["samples"] for item in hypothesis["supportingEvidence"]}
+    growth = evidence.get("receiver-buffer-growth", [])
+    if not growth:
+        return []
+    observations = {
+        item["sampleIndex"]: item["signals"] for item in report["timeline"]["observations"]
+    }
+    values = [observations[index]["receiverReceiveBufferBytes"] for index in growth]
+    measured = [value for value in values if value is not None]
+    threshold = report["baselines"]["pressure"]["receiverReceiveBufferStepThreshold"]
+    lines = [
+        "Observed receiver buffer growth:",
+        "- Samples at or above the warm-baseline threshold: " + ", ".join(map(str, growth)),
+        f"- Threshold: {render_number(threshold)} bytes; "
+        f"maximum observed occupancy: {render_number(max(measured) if measured else None)} bytes.",
+    ]
+    recovery = evidence.get("receiver-buffer-recovery", [])
+    lines.append(
+        "- Buffer returned below the threshold at sample " + str(recovery[0]) + "."
+        if recovery else "- Buffer recovery below the threshold was not observed."
+    )
+    upstream = evidence.get("upstream-backpressure", [])
+    if upstream:
+        lines.append("- Overlapping sender buffer or flight growth: samples "
+                     + ", ".join(map(str, upstream)) + ".")
+    else:
+        pressure = report["baselines"]["pressure"]
+        complete = all(pressure[field] is not None for field in (
+            "senderSendBufferStepThreshold", "senderFlightStepThreshold")) and all(
+            observations[index][field] is not None
+            for index in growth for field in ("senderSendBufferBytes", "senderFlightSizePackets")
+        )
+        lines.append(
+            "- No overlapping sender buffer or flight growth crossed the candidate thresholds."
+            if complete else
+            "- Upstream confirmation is incomplete: sender gauges or warm baselines are unavailable."
+        )
+    lines.append(
+        "- Buffer occupancy alone does not establish slow application reads or their cause."
+    )
+    return lines
+
+
 def render_report_view(view: dict) -> str:
     report = view["report"]
     timeline = report["timeline"]
@@ -883,8 +934,12 @@ def render_report_view(view: dict) -> str:
         f"{render_number(selected['id'])} ({selected['assessment']})",
         f"Rationale: {selected['rationale']}",
         "",
-        "Hypotheses:",
     ]
+    observation = render_receiver_buffer_observation(report)
+    if observation:
+        lines.extend(observation)
+        lines.append("")
+    lines.append("Hypotheses:")
     for hypothesis in report["hypotheses"]:
         lines.append(
             f"- {hypothesis['id']} | {hypothesis['failureDomain']} | "
