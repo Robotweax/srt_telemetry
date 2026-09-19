@@ -390,6 +390,9 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/results/2026-08-29-macos-arm64-loss-shape-observability.json"
                 --runtime-qualification
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json")
+        add_test(NAME robotweax_srt_telemetry_linux_lab_replay_test
+            COMMAND "${Python3_EXECUTABLE}" -B
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_linux_lab_replay.py")
         add_test(NAME robotweax_srt_telemetry_incident_analysis_test
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_incident_analysis.py"
