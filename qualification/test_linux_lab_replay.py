@@ -15,6 +15,10 @@ FIXTURES = ROOT / "testdata/linux-lab-2026-09-19"
 spec = importlib.util.spec_from_file_location("analyzer", ROOT / "tools/analyze_incident.py")
 analyzer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(analyzer)
+report_spec = importlib.util.spec_from_file_location(
+    "operator_evaluation", ROOT / "tools/operator_evaluation.py")
+operator_evaluation = importlib.util.module_from_spec(report_spec)
+report_spec.loader.exec_module(operator_evaluation)
 
 
 class LinuxLabReplay(unittest.TestCase):
@@ -51,6 +55,8 @@ class LinuxLabReplay(unittest.TestCase):
                 self.assertEqual(evidence["receiver-buffer-growth"], [3, 4, 5, 6])
                 self.assertIn("receiver-buffer-recovery", evidence)
                 self.assertNotIn("upstream-backpressure", evidence)
+                self.assertFalse(any("combined sender-drop counter" in text
+                                     for text in result["nonClaims"]))
 
     def test_sender_drops_reject_pure_capture_but_support_pressure(self):
         for repetition, drops in enumerate([415, 501, 398], 1):
@@ -72,6 +78,24 @@ class LinuxLabReplay(unittest.TestCase):
                 # Drops alone must not be interpreted as missing application delivery.
                 self.assertEqual(result["totals"]["uniqueSentPackets"], 2400)
                 self.assertEqual(result["totals"]["uniqueReceivedPackets"], 2400)
+                drop_evidence = next(e for e in hypothesis["supportingEvidence"]
+                                     if e["id"] == "sender-drop")
+                self.assertIn("local send/retransmission-buffer removals", drop_evidence["summary"])
+                self.assertIn("message TTL or TLPKTDROP", drop_evidence["summary"])
+                self.assertIn("may still arrive", drop_evidence["summary"])
+                self.assertTrue(any("do not by themselves prove network loss or application payload loss"
+                                    in text for text in result["nonClaims"]))
+                self.assertTrue(any("does not distinguish message TTL from TLPKTDROP"
+                                    in text for text in result["nonClaims"]))
+                # The report must not infer a per-run deadline or verified payload
+                # integrity from public counters alone.
+                self.assertNotIn("payloadIntegrityVerified", result)
+                report = operator_evaluation.build_report_view("lab-replay", {
+                    "manifest": {"incidentId": "sender-drop-replay"}, "analysis": result,
+                })
+                rendered = operator_evaluation.render_report_view(report)
+                self.assertIn("may still arrive at the receiver", rendered)
+                self.assertIn("do not by themselves prove network loss or application payload loss", rendered)
 
 
 if __name__ == "__main__":

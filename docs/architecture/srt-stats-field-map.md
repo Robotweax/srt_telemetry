@@ -25,7 +25,7 @@ reset boundary.
 | sender loss packets | `pktSndLossTotal` | loss learned when a NAK newly queues retransmission |
 | receiver loss packets | `pktRcvLossTotal` | newly observed receiver gaps |
 | retransmitted packets | `pktRetransTotal` | retransmission datagrams actually sent |
-| sender drop packets | `pktSndDropTotal` | combined TTL and negotiated TLPKTDROP causes in v1.5.5 |
+| sender drop packets | `pktSndDropTotal` | local send/retransmission-buffer removals from message TTL or negotiated TLPKTDROP; not proof of network or application payload loss |
 | receiver drop packets | `pktRcvDropTotal` | local receiver drop action |
 | receiver undecryptable packets | `pktRcvUndecryptTotal` | protected DATA rejected at decrypt/auth boundary |
 | sent physical wire bytes | `byteSentTotal` | SRT DATA plus documented IP/UDP overhead |
@@ -38,6 +38,25 @@ reset boundary.
 public layout exposes it as an interval value without a matching lifetime field.
 It requires an explicit interval-ownership policy or an enhanced Robotweax
 counter before reliable shared collection.
+
+## Sender-drop interpretation
+
+`sender_drop_packet_total` and its interval delta preserve the combined public
+counter. They neither separate TTL from TLPKTDROP nor report a count of lost
+application messages. An original datagram may already be queued in the kernel
+when SRT abandons its retained copy and future retransmission responsibility;
+that original can still arrive successfully.
+
+Robotweax's [public definition at merged revision 09316eda](https://github.com/Robotweax/srt/blob/09316eda48e3360808fff2021eddc2f2bf821b06/docs/sender-drop-semantics.md)
+documents the packet/ACK experiment. For that Live profile, the TLPKTDROP
+deadline is `max(peer latency + sender drop delay, 1000 ms) + 20 ms`:
+120 ms peer latency and zero sender drop delay give 1020 ms. This is a
+provider/profile-specific rule, not a new common SDK metric or a universal
+conversion from the TSBPD gauge. The public combined counter does not expose
+which removal cause or deadline applied to a particular packet.
+
+The instrumented Robotweax experiment establishes the mechanism for its pinned
+build; it does not establish identical timing or counts for Haivision versions.
 
 ## Gauge candidates
 

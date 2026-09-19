@@ -3,6 +3,14 @@
 Ausgangspunkt ist Network-Lab-PR #48 und dessen Evidenzarchiv vom 19.09.2026.
 Die SDK-Nachprüfung ist in `testdata/linux-lab-2026-09-19/README.md` dokumentiert.
 
+Stand nach der Untersuchung: Die Sender-Drop-Semantik wurde durch SRT-PR #48
+(Merge `09316eda48e3360808fff2021eddc2f2bf821b06`) geklärt: lokale
+TTL-/TLPKTDROP-Pufferentfernungen beweisen keinen Verlust der Anwendungspayload.
+Die paketbezogene Evidenz liegt in Network-Lab-PR #50. Dieser Folgeauftrag
+bleibt als historischer Untersuchungsplan erhalten; die Semantikfrage ist
+für das untersuchte Profil beantwortet. Siehe die
+[aktuelle Metrikdefinition](../architecture/srt-stats-field-map.md#sender-drop-interpretation).
+
 ## Zuerst die Ergebniszuordnung korrigieren
 
 Analysiere die sechs abgewiesenen JSONL-Paare mit dem Analyzer der qualifizierten

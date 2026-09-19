@@ -542,7 +542,8 @@ def build_analysis(source: dict) -> dict:
         )
     if sender_drop_total > 0:
         path_contradictions.append(
-            "Sender drop counters are positive during the incident."
+            "Local sender-buffer removal counters are positive during the incident; "
+            "they do not by themselves establish network or application payload loss."
         )
     if receiver_drop_total > 0:
         path_contradictions.append(
@@ -644,7 +645,9 @@ def build_analysis(source: dict) -> dict:
         sender_support.append(
             evidence(
                 "sender-drop",
-                "Sender drop counters are positive.",
+                "Sender counters record local send/retransmission-buffer removals "
+                "due to message TTL or TLPKTDROP; already submitted UDP datagrams "
+                "may still arrive at the receiver.",
                 [
                     sample["sampleIndex"]
                     for sample in sender_samples
@@ -1174,6 +1177,13 @@ def build_analysis(source: dict) -> dict:
         ],
     }
     non_claims = list(source["nonClaims"])
+    if sender_drop_total > 0:
+        non_claims.extend([
+            "Sender-drop counters do not by themselves prove network loss or "
+            "application payload loss; they count local send/retransmission-buffer removals.",
+            "The combined sender-drop counter does not distinguish message TTL "
+            "from TLPKTDROP or establish the effective sender deadline.",
+        ])
     non_claims.extend(
         [
             "The analysis does not identify the exact failing network hop.",

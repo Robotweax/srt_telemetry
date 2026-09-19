@@ -40,7 +40,15 @@ Bandwidth runs show sender buffer/flight growth in samples 3–6, followed by
 the overall incident recovers at sample 8. All three recordings nevertheless
 account for 2,400 unique sent and received packets. A sender drop counter must
 not be equated with application delivery loss without further evidence.
-The exact counter semantics and timing require follow-up in the protocol Lab.
+The subsequent protocol investigation resolved the counter semantics:
+[SRT PR #48](https://github.com/Robotweax/srt/pull/48), merged as
+`09316eda48e3360808fff2021eddc2f2bf821b06`, defines local TTL/TLPKTDROP buffer
+removals. Its separately instrumented kernel-shaping runs demonstrate that
+already submitted originals can arrive after the sender abandons its retained
+copies. These earlier uninstrumented recordings do not themselves identify
+the removal cause or per-packet deadline. The regression also checks that
+reports explain this boundary without treating complete unique-packet counts
+as an application payload-integrity check.
 
 The analyzer and capture gates are identical between main `2e63753` and the
 qualified revision `9fe30a8`. Telemetry PR #3 changes only the incident peer's
