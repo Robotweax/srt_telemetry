@@ -393,6 +393,9 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
         add_test(NAME robotweax_srt_telemetry_linux_lab_replay_test
             COMMAND "${Python3_EXECUTABLE}" -B
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_linux_lab_replay.py")
+        add_test(NAME robotweax_srt_telemetry_netem_receiver_buffer_test
+            COMMAND "${Python3_EXECUTABLE}" -B
+                "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_netem_receiver_buffer.py")
         add_test(NAME robotweax_srt_telemetry_incident_analysis_test
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_incident_analysis.py"

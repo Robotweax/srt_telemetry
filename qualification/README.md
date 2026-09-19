@@ -6,6 +6,11 @@ yet broad enough to make a release capability claim.
 
 ## Public SRT interoperability runner
 
+The [netem receiver-buffer replays](../testdata/netem-receiver-buffer-2026-09-19/README.md)
+verify that buffer observations remain visible independently of causal
+selection. The [receiver-backpressure Lab assignment](../docs/qualification/receiver-backpressure-lab-followup.md)
+defines controlled follow-ups with smaller SRT buffers or sustained sending.
+
 The [Linux Lab replay review](../testdata/linux-lab-2026-09-19/README.md)
 retains six measured capture rejections and tests their analyzer outcomes
 separately: three receiver-pause abstentions and three supported sender-pressure

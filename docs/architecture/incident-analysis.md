@@ -80,6 +80,15 @@ contract is [`incident-analysis-result.schema.json`](../../schema/incident-analy
 
 ## Diagnostic boundary
 
+Receiver-buffer growth is already represented by `receiver-buffer-growth`
+supporting evidence, independently of whether `receiver-side-pressure` is
+supported. The operator renderer promotes that observation into its own block,
+including threshold, samples, maximum observed occupancy, recovery and upstream
+confirmation. Lack of causal selection does not erase the measured occupancy.
+This display change uses the existing JSON contract and leaves analyzer rules
+unchanged. [Measured netem replays](../../testdata/netem-receiver-buffer-2026-09-19/README.md)
+cover both provider directions, longer pause and unimpeded baselines.
+
 When sender-drop deltas are positive, the report explains that they represent
 local send/retransmission-buffer removals, not proof of network or application
 payload loss. It also states that the public counter cannot separate message
