@@ -6,6 +6,13 @@ yet broad enough to make a release capability claim.
 
 ## Public SRT interoperability runner
 
+The [Linux Lab replay review](../testdata/linux-lab-2026-09-19/README.md)
+retains six measured capture rejections and tests their analyzer outcomes
+separately: three receiver-pause abstentions and three supported sender-pressure
+diagnoses that fail the stricter pure queue-growth capture gate. The
+[netem follow-up assignment](../docs/qualification/linux-lab-netem-followup.md)
+describes the remaining Lab checks.
+
 Build the telemetry runtime test twice: once against Robotweax SRT and once
 against the pinned Haivision SRT. Then run:
 

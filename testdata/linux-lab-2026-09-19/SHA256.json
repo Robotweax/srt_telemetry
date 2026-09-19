@@ -1,0 +1,14 @@
+{
+  "bandwidth_reduction--robotweax-to-haivision--rep1/receiver.jsonl": "b5dd365c43529b648538f41c80ce52ac7adb0889c684a5debf44c9a56bb79dd2",
+  "bandwidth_reduction--robotweax-to-haivision--rep1/sender.jsonl": "863c2f390b81cbb3f16d405859aadc1a4bd7c0c2749616c1812da4a167b9a353",
+  "bandwidth_reduction--robotweax-to-haivision--rep2/receiver.jsonl": "b2cdb11f0d5f814548becdb5901d06e94fd84aa6a6823b13d84eca5177c80e26",
+  "bandwidth_reduction--robotweax-to-haivision--rep2/sender.jsonl": "bacb1b96fb81db293dbe4a95449b430ca6c691f4e123c68f1efacedcc5628f2f",
+  "bandwidth_reduction--robotweax-to-haivision--rep3/receiver.jsonl": "9c51d410f268b2b8f1629f890cc9bafcbab1034a6418ef51ba73685f6ca5f6f2",
+  "bandwidth_reduction--robotweax-to-haivision--rep3/sender.jsonl": "8a94bbb593bc200f74799f665cbf73efb2d0cb732a7c63fd756da9de27126db8",
+  "receiver_pause--haivision-to-robotweax--rep1/receiver.jsonl": "485afbbcae716f14024bb50724361b2d136ea57dfd6f44c9528a7106ab62b660",
+  "receiver_pause--haivision-to-robotweax--rep1/sender.jsonl": "63dafec5fd4c7b4a8c653ef7369fbc76aaff1a84e8612ea73d0060671e1e1678",
+  "receiver_pause--haivision-to-robotweax--rep2/receiver.jsonl": "b5896504eba8912ab81e51b797b983da73eebb75b29a3210ca071831a7643e5f",
+  "receiver_pause--haivision-to-robotweax--rep2/sender.jsonl": "baedebb4ae65ca62233661da78263a2e0657f4ed5e3907ce98f50a8a6be121e8",
+  "receiver_pause--haivision-to-robotweax--rep3/receiver.jsonl": "a4ec9275d4e1a9067ca2c62f6c5d40e9c74e8e059514059f1e2c18eef810fa6a",
+  "receiver_pause--haivision-to-robotweax--rep3/sender.jsonl": "847ec0da9d35c23f5154cef121d5e39f9861774d357bab7a8b8e56e66173932a"
+}

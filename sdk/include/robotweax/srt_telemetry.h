@@ -111,6 +111,8 @@ extern "C"
         uint64_t sender_loss_packet_total;
         uint64_t receiver_loss_packet_total;
         uint64_t retransmitted_packet_total;
+        /* Local send/retransmission-buffer removals due to TTL or TLPKTDROP.
+         * Does not by itself establish network loss or application payload loss. */
         uint64_t sender_drop_packet_total;
         uint64_t receiver_drop_packet_total;
         uint64_t receiver_undecryptable_packet_total;
@@ -152,6 +154,7 @@ extern "C"
         uint64_t sender_loss_packet_delta;
         uint64_t receiver_loss_packet_delta;
         uint64_t retransmitted_packet_delta;
+        /* Interval change in sender_drop_packet_total, with the same semantics. */
         uint64_t sender_drop_packet_delta;
         uint64_t receiver_drop_packet_delta;
         uint64_t receiver_undecryptable_packet_delta;

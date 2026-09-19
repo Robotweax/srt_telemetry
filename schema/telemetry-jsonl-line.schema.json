@@ -101,7 +101,10 @@
         "sender_loss_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
         "receiver_loss_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
         "retransmitted_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "sender_drop_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
+        "sender_drop_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned",
+          "description": "Local send/retransmission-buffer removals due to message TTL or TLPKTDROP; not proof of network loss or application payload loss."
+        },
         "receiver_drop_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
         "receiver_undecryptable_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
         "sent_wire_byte_total": { "$ref": "#/$defs/nullableUnsigned" },
@@ -165,7 +168,10 @@
         "sender_loss_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
         "receiver_loss_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
         "retransmitted_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "sender_drop_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
+        "sender_drop_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned",
+          "description": "Interval change in sender_drop_packet_total; counts local buffer removals, not proven application payload loss."
+        },
         "receiver_drop_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
         "receiver_undecryptable_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
         "sent_wire_byte_delta": { "$ref": "#/$defs/nullableUnsigned" },

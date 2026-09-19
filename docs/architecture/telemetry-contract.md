@@ -43,6 +43,13 @@ The following values must not be collapsed:
 The core does not yet derive generic loss or health scores. Those require an
 evidence-backed denominator and role-aware interpretation.
 
+Sender-drop totals and deltas count local send/retransmission-buffer removals
+due to message TTL or TLPKTDROP. They are separate from network loss and
+application delivery loss: a datagram already submitted to UDP may still arrive
+after SRT removes its retained copy. The combined counter does not identify the
+removal cause. See the [field map](srt-stats-field-map.md#sender-drop-interpretation)
+for the pinned Robotweax definition and qualified timing boundary.
+
 ## Units
 
 The core contract uses OpenTelemetry-compatible base units:

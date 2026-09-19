@@ -80,6 +80,19 @@ contract is [`incident-analysis-result.schema.json`](../../schema/incident-analy
 
 ## Diagnostic boundary
 
+When sender-drop deltas are positive, the report explains that they represent
+local send/retransmission-buffer removals, not proof of network or application
+payload loss. It also states that the public counter cannot separate message
+TTL from TLPKTDROP or establish an effective sender deadline. The packet-level
+mechanism is documented in the [field map](srt-stats-field-map.md#sender-drop-interpretation).
+
+These explanatory limits do not change candidate thresholds, evidence IDs or
+hypothesis selection. In the measured Linux bandwidth replays, sender queue
+and flight growth support `sender-side-pressure` despite complete unique-packet
+accounting. The stricter capture gate still rejects sender drops under its
+pure queue-growth requirement. Equal unique-packet totals alone do not verify
+application payload integrity; that requires the separate application checks.
+
 The timeline identifies the first and last sample with a relevant positive
 loss/drop delta, paired RTT-threshold deviation, or sender/receiver-buffer
 pressure,
