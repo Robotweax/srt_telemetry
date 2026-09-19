@@ -34,8 +34,10 @@ def run(args, directory, block_export=False):
             peer.send("TRIGGER 5000000")
             state = parse_prefixed_json(peer.wait_for("WINDOW_STATE"), "WINDOW_STATE")
             assert state["deadlineMonotonicNano"] == 1_004_000_000 and state["triggerCount"] == 2
+        for peer in peers:
             peer.send("SAMPLE 4 1800000000004000000 6000000")
             peer.wait_for("INCIDENT_SAMPLE")
+        for peer in peers:
             peer.send("DONE")
         for role, peer in zip(["receiver", "sender"], peers):
             state = parse_prefixed_json(peer.wait_for("WINDOW_STATE"), "WINDOW_STATE")
