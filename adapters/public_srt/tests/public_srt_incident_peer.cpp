@@ -149,10 +149,21 @@ bool configure_io_timeouts(const SRTSOCKET socket)
                   "send timeout");
 }
 
+bool configure_live_message_profile(const SRTSOCKET socket)
+{
+    const SRT_TRANSTYPE transport = SRTT_LIVE;
+    const bool message_api = true;
+    return srt_ok(srt_setsockflag(socket, SRTO_TRANSTYPE, &transport, sizeof(transport)),
+                  "live transport profile") &&
+           srt_ok(srt_setsockflag(socket, SRTO_MESSAGEAPI, &message_api, sizeof(message_api)),
+                  "message API profile");
+}
+
 bool configure_caller(const SRTSOCKET socket)
 {
     const int timeout_milliseconds = 15'000;
-    return srt_ok(srt_setsockflag(socket, SRTO_CONNTIMEO, &timeout_milliseconds,
+    return configure_live_message_profile(socket) &&
+           srt_ok(srt_setsockflag(socket, SRTO_CONNTIMEO, &timeout_milliseconds,
                                   sizeof(timeout_milliseconds)),
                   "connect timeout") &&
            configure_io_timeouts(socket);
@@ -552,13 +563,9 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
 {
     TransferWorker transfer_worker;
     bool message_api = false;
-    SRT_TRANSTYPE transport = SRTT_FILE;
     int message_size = sizeof(message_api);
-    int transport_size = sizeof(transport);
     if (!srt_ok(srt_getsockflag(socket, SRTO_MESSAGEAPI, &message_api, &message_size),
-                "profile message API") ||
-        !srt_ok(srt_getsockflag(socket, SRTO_TRANSTYPE, &transport, &transport_size),
-                "profile transport type") || !message_api || transport != SRTT_LIVE)
+                "profile message API") || !message_api)
     {
         std::cerr << "FAIL: incident peer requires live/message profile\n";
         return EXIT_FAILURE;
@@ -706,7 +713,7 @@ int run_listener(const Options &options)
     Runtime runtime;
     Socket listener(srt_create_socket());
     if (!runtime.active() || listener.get() == SRT_INVALID_SOCK ||
-        !configure_io_timeouts(listener.get()))
+        !configure_live_message_profile(listener.get()) || !configure_io_timeouts(listener.get()))
     {
         std::cerr << "FAIL: listener startup\n";
         return EXIT_FAILURE;
