@@ -199,6 +199,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Five-class internal rehearsal packet](qualification/operator-evaluation/five-class-internal-rehearsal-v1/README.md)
 - [Golden incident datasets](docs/architecture/golden-incidents.md)
 - [Provider qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
+- [Robotweax SRT 0.2.6 qualification candidate](qualification/results/2026-09-27-srt-026/README.md)
 - [Retained cross-provider evidence](qualification/results/2026-08-28-macos-arm64-public-srt-interop.json)
 - [Retained sampling and lifecycle evidence](qualification/results/2026-08-28-macos-arm64-public-srt-runtime.json)
 - [Fabric-pinned Robotweax revision interop](qualification/results/2026-08-30-macos-arm64-public-srt-interop-e3d61f7.json)

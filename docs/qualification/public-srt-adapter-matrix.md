@@ -1,6 +1,6 @@
 # Public SRT adapter qualification matrix
 
-Date: 2026-08-30
+Updated: 2026-09-27
 
 This matrix separates build-time compatibility from live behavioral
 qualification. A pass in the first three columns does not authorize production
@@ -8,9 +8,18 @@ capabilities by itself.
 
 | Provider candidate | Exact source | Public header/signature | Deterministic adapter behavior | Bidirectional self-loopback | Cross-implementation interop | Status |
 | --- | --- | --- | --- | --- | --- | --- |
+| Robotweax SRT `v0.2.6` | `50cba37bc89f423ee7c0a292c3c3eae71b5fc7f9`; release tag | Pass | Pass | Pass on macOS and Linux ARM64 | Pass against Haivision 1.5.5 in both caller/listener roles | Release-specific candidate; pressure limits retained |
 | Robotweax SRT `v0.2.0-11-ge3d61f7` | `e3d61f77e852001224b6586c63bcff46a3200223`; clean local clone | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Fabric-pinned interop candidate |
 | Robotweax SRT `v0.2.0-4-g271f832` | `271f832ef4bb96fab13777a313a0af9d7e20af7e`; clean local clone | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Interop candidate |
 | Haivision SRT v1.5.5 | `b6b4ae990daa8193625a4ddeaeaed03023b23125`; tag `v1.5.5`; generated installed headers | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Interop candidate |
+
+The [0.2.6 record](../../qualification/results/2026-09-27-srt-026/README.md)
+adds exact-release macOS interop and lifecycle results plus 16 Linux ARM64
+namespace/netem runs. All application transfers completed, but receiver-pause
+causal evidence and the pure queue-growth bandwidth gate did not pass in every
+run. Its Docker UDP buffer maxima differ from the earlier dedicated Lab VM.
+These findings do not promote a broad provider capability or change the
+existing diagnostic thresholds.
 
 Both builds use the same adapter source and a compile-time assertion that the
 provider's `srt_bistats` address has exactly the injected callback type. The
