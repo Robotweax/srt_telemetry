@@ -68,6 +68,10 @@ struct Options final
     std::string remote_address = "127.0.0.1";
     std::size_t message_bytes = maximum_message_bytes;
     int port = 0;
+    int message_ttl_milliseconds = -1;
+    int receive_timeout_milliseconds = 15'000;
+    std::optional<bool> too_late_packet_drop;
+    bool verify_message_sequence = false;
     std::optional<RecordingConfig> recording;
 };
 
@@ -138,9 +142,8 @@ bool srt_ok(const int result, const std::string_view operation)
     return false;
 }
 
-bool configure_io_timeouts(const SRTSOCKET socket)
+bool configure_io_timeouts(const SRTSOCKET socket, const int timeout_milliseconds)
 {
-    const int timeout_milliseconds = 15'000;
     return srt_ok(srt_setsockflag(socket, SRTO_RCVTIMEO, &timeout_milliseconds,
                                   sizeof(timeout_milliseconds)),
                   "receive timeout") &&
@@ -149,24 +152,33 @@ bool configure_io_timeouts(const SRTSOCKET socket)
                   "send timeout");
 }
 
-bool configure_live_message_profile(const SRTSOCKET socket)
+bool configure_live_message_profile(const SRTSOCKET socket, const Options &options)
 {
     const SRT_TRANSTYPE transport = SRTT_LIVE;
     const bool message_api = true;
-    return srt_ok(srt_setsockflag(socket, SRTO_TRANSTYPE, &transport, sizeof(transport)),
-                  "live transport profile") &&
-           srt_ok(srt_setsockflag(socket, SRTO_MESSAGEAPI, &message_api, sizeof(message_api)),
-                  "message API profile");
+    if (!srt_ok(srt_setsockflag(socket, SRTO_TRANSTYPE, &transport, sizeof(transport)),
+                "live transport profile") ||
+        !srt_ok(srt_setsockflag(socket, SRTO_MESSAGEAPI, &message_api, sizeof(message_api)),
+                "message API profile"))
+        return false;
+    if (options.too_late_packet_drop.has_value())
+    {
+        const bool enabled = *options.too_late_packet_drop;
+        if (!srt_ok(srt_setsockflag(socket, SRTO_TLPKTDROP, &enabled, sizeof(enabled)),
+                    "too-late packet drop"))
+            return false;
+    }
+    return true;
 }
 
-bool configure_caller(const SRTSOCKET socket)
+bool configure_caller(const SRTSOCKET socket, const Options &options)
 {
     const int timeout_milliseconds = 15'000;
-    return configure_live_message_profile(socket) &&
+    return configure_live_message_profile(socket, options) &&
            srt_ok(srt_setsockflag(socket, SRTO_CONNTIMEO, &timeout_milliseconds,
                                   sizeof(timeout_milliseconds)),
                   "connect timeout") &&
-           configure_io_timeouts(socket);
+           configure_io_timeouts(socket, options.receive_timeout_milliseconds);
 }
 
 int parse_ip_address(const std::string &text, const std::uint16_t port, sockaddr_storage &address)
@@ -292,22 +304,38 @@ bool sample_at(Session &session, const std::uint64_t unix_nano, const std::uint6
     return true;
 }
 
-bool transfer_messages(const SRTSOCKET socket, const bool sender, const std::uint64_t sample_index,
+void write_u64(std::array<char, maximum_message_bytes> &payload, const std::size_t offset,
+               const std::uint64_t value)
+{
+    for (std::size_t byte = 0; byte < 8; ++byte)
+        payload[offset + byte] = static_cast<char>((value >> (byte * 8)) & 0xff);
+}
+
+bool transfer_messages(const SRTSOCKET socket, const bool sender, const std::uint64_t transfer_id,
                        const std::uint64_t message_count, const std::size_t message_bytes,
+                       const int ttl_milliseconds, const bool verify_sequence,
+                       std::uint64_t &completed_messages,
                        const std::uint64_t pacing_microseconds = 0)
 {
     std::array<char, maximum_message_bytes> payload{};
-    payload.fill(static_cast<char>('A' + sample_index % 26));
+    payload.fill(static_cast<char>('A' + transfer_id % 26));
+    completed_messages = 0;
     for (std::uint64_t message = 0; message < message_count; ++message)
     {
+        if (verify_sequence)
+        {
+            write_u64(payload, 0, transfer_id);
+            write_u64(payload, 8, message);
+        }
         if (sender)
         {
-            const auto sent =
-                srt_sendmsg(socket, payload.data(), static_cast<int>(message_bytes), -1, 1);
+            const auto sent = srt_sendmsg(socket, payload.data(), static_cast<int>(message_bytes),
+                                          ttl_milliseconds, 1);
             if (sent != static_cast<int>(message_bytes))
             {
                 return srt_ok(sent, "incident send") && false;
             }
+            ++completed_messages;
             if (pacing_microseconds != 0 && message + 1 < message_count)
             {
                 std::this_thread::sleep_for(std::chrono::microseconds(pacing_microseconds));
@@ -319,8 +347,10 @@ bool transfer_messages(const SRTSOCKET socket, const bool sender, const std::uin
         if (size != static_cast<int>(message_bytes) ||
             !std::equal(payload.begin(), payload.begin() + message_bytes, received.begin()))
         {
+            std::cerr << "FAIL: incident receive mismatch at message " << message << '\n';
             return srt_ok(size, "incident receive") && false;
         }
+        ++completed_messages;
     }
     return true;
 }
@@ -347,6 +377,7 @@ class TransferWorker final
 
     bool start(const SRTSOCKET socket, const bool sender, const std::uint64_t transfer_id,
                const std::uint64_t message_count, const std::size_t message_bytes,
+               const int ttl_milliseconds, const bool verify_sequence,
                const std::uint64_t pacing_microseconds)
     {
         if (active())
@@ -356,14 +387,16 @@ class TransferWorker final
         transfer_id_ = transfer_id;
         message_count_ = message_count;
         success_ = false;
+        completed_messages_ = 0;
         try
         {
             thread_ = std::thread(
-                [this, socket, sender, transfer_id, message_count, message_bytes,
-                 pacing_microseconds]()
+                [this, socket, sender, transfer_id, message_count, message_bytes, ttl_milliseconds,
+                 verify_sequence, pacing_microseconds]()
                 {
                     success_ = transfer_messages(socket, sender, transfer_id, message_count,
-                                                 message_bytes, pacing_microseconds);
+                                                 message_bytes, ttl_milliseconds, verify_sequence,
+                                                 completed_messages_, pacing_microseconds);
                 });
         }
         catch (const std::system_error &error)
@@ -384,10 +417,16 @@ class TransferWorker final
         return success_;
     }
 
+    [[nodiscard]] std::uint64_t completed_messages() const noexcept
+    {
+        return completed_messages_;
+    }
+
   private:
     std::thread thread_;
     std::uint64_t transfer_id_ = 0;
     std::uint64_t message_count_ = 0;
+    std::uint64_t completed_messages_ = 0;
     bool success_ = false;
 };
 
@@ -558,22 +597,42 @@ void emit_window(const TriggerWindow &window)
 }
 
 int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
-                 const std::string_view role, const std::size_t message_bytes,
-                 const std::optional<RecordingConfig> &recording)
+                 const std::string_view role, const Options &options)
 {
     TransferWorker transfer_worker;
+    const auto message_bytes = options.message_bytes;
+    const auto &recording = options.recording;
     bool message_api = false;
     int message_size = sizeof(message_api);
+    bool too_late_packet_drop = false;
+    int drop_size = sizeof(too_late_packet_drop);
+    int receive_timeout_milliseconds = 0;
+    int timeout_size = sizeof(receive_timeout_milliseconds);
     if (!srt_ok(srt_getsockflag(socket, SRTO_MESSAGEAPI, &message_api, &message_size),
-                "profile message API") || !message_api)
+                "profile message API") ||
+        !message_api ||
+        !srt_ok(srt_getsockflag(socket, SRTO_TLPKTDROP, &too_late_packet_drop, &drop_size),
+                "profile too-late packet drop") ||
+        !srt_ok(
+            srt_getsockflag(socket, SRTO_RCVTIMEO, &receive_timeout_milliseconds, &timeout_size),
+            "profile receive timeout") ||
+        (options.too_late_packet_drop.has_value() &&
+         too_late_packet_drop != *options.too_late_packet_drop) ||
+        receive_timeout_milliseconds != options.receive_timeout_milliseconds)
     {
-        std::cerr << "FAIL: incident peer requires live/message profile\n";
+        std::cerr << "FAIL: incident peer profile mismatch\n";
         return EXIT_FAILURE;
     }
     std::cout << "PROFILE {\"provider\":\"" << runtime_provider_name
               << "\",\"publicApiVersionHex\":" << srt_getversion()
               << ",\"messageApi\":true,\"transport\":\"live\",\"recordBytes\":"
-              << sizeof(robotweax_srt_telemetry_record_v1) << "}\n" << std::flush;
+              << sizeof(robotweax_srt_telemetry_record_v1)
+              << ",\"tooLatePacketDrop\":" << (too_late_packet_drop ? "true" : "false")
+              << ",\"receiveTimeoutMillis\":" << receive_timeout_milliseconds
+              << ",\"configuredMessageTtlMillis\":" << options.message_ttl_milliseconds
+              << ",\"sequenceVerification\":"
+              << (options.verify_message_sequence ? "true" : "false") << "}\n"
+              << std::flush;
     std::optional<robotweax::srt::telemetry::BoundedRecorder> recorder;
     if (recording.has_value())
     {
@@ -656,16 +715,21 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
         {
             std::uint64_t sample_index = 0;
             std::uint64_t message_count = 0;
+            std::uint64_t completed_messages = 0;
             if (!(command >> sample_index >> message_count) || message_count == 0 ||
                 !no_extra_input(command) ||
-                !transfer_messages(socket, sender, sample_index, message_count, message_bytes))
+                !transfer_messages(socket, sender, sample_index, message_count, message_bytes,
+                                   options.message_ttl_milliseconds,
+                                   options.verify_message_sequence, completed_messages))
             {
                 std::cerr << "FAIL: invalid or failed TRANSFER command\n";
                 return EXIT_FAILURE;
             }
             std::cout << "TRANSFERRED {\"sampleIndex\":" << sample_index
-                      << ",\"messages\":" << message_count << "}\n"
-                      << std::flush;
+                      << ",\"messages\":" << message_count;
+            if (options.verify_message_sequence)
+                std::cout << ",\"completedMessages\":" << completed_messages;
+            std::cout << "}\n" << std::flush;
             continue;
         }
         if (operation == "START_TRANSFER")
@@ -676,7 +740,8 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
             if (!(command >> transfer_id >> message_count >> pacing_microseconds) ||
                 message_count == 0 || !no_extra_input(command) ||
                 !transfer_worker.start(socket, sender, transfer_id, message_count, message_bytes,
-                                       pacing_microseconds))
+                                       options.message_ttl_milliseconds,
+                                       options.verify_message_sequence, pacing_microseconds))
             {
                 std::cerr << "FAIL: invalid or failed START_TRANSFER command\n";
                 return EXIT_FAILURE;
@@ -691,14 +756,27 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
             std::uint64_t transfer_id = 0;
             std::uint64_t message_count = 0;
             if (!(command >> transfer_id >> message_count) || message_count == 0 ||
-                !no_extra_input(command) || !transfer_worker.finish(transfer_id, message_count))
+                !no_extra_input(command))
             {
                 std::cerr << "FAIL: invalid or failed WAIT_TRANSFER command\n";
                 return EXIT_FAILURE;
             }
+            const bool completed = transfer_worker.finish(transfer_id, message_count);
+            if (!completed)
+            {
+                std::cout << "TRANSFER_FAILED {\"transferId\":" << transfer_id
+                          << ",\"messages\":" << message_count
+                          << ",\"completedMessages\":" << transfer_worker.completed_messages()
+                          << "}\n"
+                          << std::flush;
+                std::cerr << "FAIL: invalid or failed WAIT_TRANSFER command\n";
+                return EXIT_FAILURE;
+            }
             std::cout << "TRANSFERRED {\"transferId\":" << transfer_id
-                      << ",\"messages\":" << message_count << "}\n"
-                      << std::flush;
+                      << ",\"messages\":" << message_count;
+            if (options.verify_message_sequence)
+                std::cout << ",\"completedMessages\":" << transfer_worker.completed_messages();
+            std::cout << "}\n" << std::flush;
             continue;
         }
         std::cerr << "FAIL: unsupported command " << line << '\n';
@@ -713,7 +791,8 @@ int run_listener(const Options &options)
     Runtime runtime;
     Socket listener(srt_create_socket());
     if (!runtime.active() || listener.get() == SRT_INVALID_SOCK ||
-        !configure_live_message_profile(listener.get()) || !configure_io_timeouts(listener.get()))
+        !configure_live_message_profile(listener.get(), options) ||
+        !configure_io_timeouts(listener.get(), options.receive_timeout_milliseconds))
     {
         std::cerr << "FAIL: listener startup\n";
         return EXIT_FAILURE;
@@ -726,7 +805,8 @@ int run_listener(const Options &options)
     }
     std::cout << "READY {\"port\":" << port << "}\n" << std::flush;
     Socket accepted(srt_accept(listener.get(), nullptr, nullptr));
-    if (accepted.get() == SRT_INVALID_SOCK || !configure_io_timeouts(accepted.get()))
+    if (accepted.get() == SRT_INVALID_SOCK ||
+        !configure_io_timeouts(accepted.get(), options.receive_timeout_milliseconds))
     {
         std::cerr << "FAIL: incident accept\n";
         return EXIT_FAILURE;
@@ -738,8 +818,7 @@ int run_listener(const Options &options)
         return EXIT_FAILURE;
     }
     std::cout << "CONNECTED\n" << std::flush;
-    return run_commands(accepted.get(), session, false, "receiver", options.message_bytes,
-                        options.recording);
+    return run_commands(accepted.get(), session, false, "receiver", options);
 }
 
 int parse_port(const char *text)
@@ -754,7 +833,8 @@ int run_caller(const Options &options)
 {
     Runtime runtime;
     Socket caller(srt_create_socket());
-    if (!runtime.active() || caller.get() == SRT_INVALID_SOCK || !configure_caller(caller.get()))
+    if (!runtime.active() || caller.get() == SRT_INVALID_SOCK ||
+        !configure_caller(caller.get(), options))
     {
         std::cerr << "FAIL: caller startup\n";
         return EXIT_FAILURE;
@@ -780,8 +860,7 @@ int run_caller(const Options &options)
         return EXIT_FAILURE;
     }
     std::cout << "CONNECTED\n" << std::flush;
-    return run_commands(caller.get(), session, true, "sender", options.message_bytes,
-                        options.recording);
+    return run_commands(caller.get(), session, true, "sender", options);
 }
 
 bool parse_size(const char *text, std::size_t &result)
@@ -797,6 +876,16 @@ bool parse_size(const char *text, std::size_t &result)
     return true;
 }
 
+bool parse_integer(const char *text, const long minimum, const long maximum, int &result)
+{
+    char *end = nullptr;
+    const auto value = std::strtol(text, &end, 10);
+    if (end == text || *end != '\0' || value < minimum || value > maximum)
+        return false;
+    result = static_cast<int>(value);
+    return true;
+}
+
 bool parse_options(const int argc, char **argv, Options &options)
 {
     std::optional<RecordingConfig> recording;
@@ -804,6 +893,11 @@ bool parse_options(const int argc, char **argv, Options &options)
     for (int index = 1; index < argc; ++index)
     {
         const std::string_view option(argv[index]);
+        if (option == "--verify-message-sequence")
+        {
+            options.verify_message_sequence = true;
+            continue;
+        }
         if (index + 1 >= argc)
         {
             return false;
@@ -832,6 +926,22 @@ bool parse_options(const int argc, char **argv, Options &options)
             {
                 return false;
             }
+        }
+        else if (option == "--message-ttl-ms")
+        {
+            if (!parse_integer(value, -1, 60'000, options.message_ttl_milliseconds))
+                return false;
+        }
+        else if (option == "--receive-timeout-ms")
+        {
+            if (!parse_integer(value, 1, 60'000, options.receive_timeout_milliseconds))
+                return false;
+        }
+        else if (option == "--too-late-packet-drop")
+        {
+            if (std::string_view(value) != "enabled" && std::string_view(value) != "disabled")
+                return false;
+            options.too_late_packet_drop = std::string_view(value) == "enabled";
         }
         else
         {
@@ -888,6 +998,8 @@ bool parse_options(const int argc, char **argv, Options &options)
     {
         return false;
     }
+    if (options.verify_message_sequence && options.message_bytes < 16)
+        return false;
     options.recording = std::move(recording);
     return true;
 }
@@ -904,6 +1016,9 @@ int main(const int argc, char **argv)
             std::cerr << "usage: incident-peer --role listener|caller "
                          "[--bind-address IP | --remote-address IP --port PORT] "
                          "[--message-bytes 1..1316] "
+                         "[--too-late-packet-drop enabled|disabled] "
+                         "[--message-ttl-ms -1..60000] [--receive-timeout-ms 1..60000] "
+                         "[--verify-message-sequence (requires >=16 message bytes)] "
                          "[--jsonl-output PATH --flow-id ID --provider-version VERSION "
                          "--provider-revision REVISION --build-profile PROFILE "
                          "[--recorder-capacity RECORDS]]\n";
