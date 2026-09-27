@@ -4,6 +4,12 @@ Candidate profiles describe evidence available for an exact provider revision
 and build profile. An empty `capabilities` array means that the evidence is not
 yet broad enough to make a release capability claim.
 
+The [Robotweax SRT 0.2.6 candidate](results/2026-09-27-srt-026/README.md)
+records bidirectional Haivision 1.5.5 interop, sampling/lifecycle results, and
+16 isolated Linux kernel-netem runs. It preserves capture-gate rejections and
+analyzer outcomes separately; its Docker UDP buffer maxima differ from the
+earlier dedicated Lab VM.
+
 ## Public SRT interoperability runner
 
 The [netem receiver-buffer replays](../testdata/netem-receiver-buffer-2026-09-19/README.md)
