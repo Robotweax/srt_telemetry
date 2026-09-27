@@ -134,6 +134,24 @@ a declared interface such as a FIPS TUN address. `--message-bytes 1..1316`
 retains the 1,316-byte default while allowing an external coordinator to freeze
 a smaller payload against a declared path-MTU budget. The runner starts the
 selected sender/receiver pair and a user-space UDP proxy between them.
+
+For an explicitly configured receiver-pause experiment, the peer accepts
+`--too-late-packet-drop enabled|disabled`, `--message-ttl-ms -1..60000`,
+`--receive-timeout-ms 1..60000`, and `--verify-message-sequence` (with at least
+16 payload bytes). The drop option is set before connection; `PROFILE` reports
+the connected socket's observed drop and timeout values and the per-message TTL
+supplied to `srt_sendmsg`. Sequence verification encodes a transfer ID and
+message index in each synthetic payload and checks every application receive.
+When enabled, `TRANSFERRED` includes `completedMessages`; a failed worker emits
+`TRANSFER_FAILED` with its partial count. The legacy output remains unchanged
+without this opt-in flag. A sender's completed count means its send calls
+succeeded, not that the remote application received those messages. No media
+payload is recorded in JSONL.
+
+These controls make a failed or dropped transfer explicit. They do not by
+themselves attribute a mismatch to TTL, a network hop or application timing;
+interpret them with the socket profile, public counters and test workload.
+
 Robotweax-to-Haivision remains the default direction:
 
 ```sh

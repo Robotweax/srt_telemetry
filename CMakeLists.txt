@@ -174,6 +174,14 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 set_tests_properties(robotweax_srt_telemetry_public_srt_trigger_recording_test
                     PROPERTIES TIMEOUT 30
                         ENVIRONMENT "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
+                add_test(NAME robotweax_srt_telemetry_public_srt_incident_delivery_test
+                    COMMAND "${Python3_EXECUTABLE}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_incident_peer_delivery.py"
+                        --peer $<TARGET_FILE:robotweax_srt_telemetry_public_srt_incident_peer>
+                        --provider "${ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER}")
+                set_tests_properties(robotweax_srt_telemetry_public_srt_incident_delivery_test
+                    PROPERTIES TIMEOUT 30
+                        ENVIRONMENT "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
                 add_test(NAME robotweax_srt_telemetry_public_srt_jsonl_recording_test
                     COMMAND "${Python3_EXECUTABLE}"
                         "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_jsonl_peer_recording.py"
