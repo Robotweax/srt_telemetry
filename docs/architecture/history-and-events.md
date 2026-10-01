@@ -10,7 +10,7 @@ sampler integration in `robotweax/srt_telemetry_sampler.h`.
 
 | Group | Fields |
 | --- | --- |
-| Identity | window start, window length, sample count, window quality flags, availability bits |
+| Identity | window start, window length, sample count, window quality flags, availability bits, worst health verdict and reason |
 | Throughput | unique sent, retransmitted and unique received bit/s (window rates); link capacity (mean) |
 | Path | RTT mean and max |
 | Margins | recovery headroom min and mean, send buffer max, receive buffer min, send buffer / drop threshold max, flight / flow window max |
@@ -69,7 +69,9 @@ connection-monitor poll into events with
 | `settings_changed` | code = changed settings fields | info |
 | `peer_version_changed` | current = peer version | info |
 
-`verdict_changed` is reserved for the health engine.
+With health enabled, the sampler also journals `verdict_changed` (see
+[Health engine](health-engine.md)), and each compact record carries the worst
+verdict of its window with its reason.
 
 Events describe episodes, not ticks:
 

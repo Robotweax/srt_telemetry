@@ -48,8 +48,9 @@ Haivision SRT v1.5.5 and Robotweax SRT `main`.
   labels, on its own thread or driven by the host: **done**;
 - [event journal and a compact 1 s record](architecture/history-and-events.md)
   (112 bytes, 24 h ≈ 9.7 MB per socket): **done**; and
-- eight health indicators producing per-role verdicts (OK, Watch, At risk,
-  Failing, Unknown) with hysteresis, reason codes and knob advice.
+- [eight health indicators](architecture/health-engine.md) producing per-role
+  verdicts (OK, Watch, At risk, Failing, Unknown) with hysteresis, reason codes
+  and knob advice: **engine done**; fault-lab gate next.
 
 **Gate:** the right verdict in at least 9 of 10 lab fault classes per role, and
 never a wrong OK.

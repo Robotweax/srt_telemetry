@@ -3,6 +3,8 @@
 #include "history_internal.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdio>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -23,6 +25,14 @@ struct AggregatorDeleter
     void operator()(robotweax_srt_telemetry_window_aggregator *aggregator) const noexcept
     {
         robotweax_srt_telemetry_window_aggregator_destroy(aggregator);
+    }
+};
+
+struct HealthDeleter
+{
+    void operator()(robotweax_srt_telemetry_health_engine *engine) const noexcept
+    {
+        robotweax_srt_telemetry_health_engine_destroy(engine);
     }
 };
 
@@ -50,6 +60,15 @@ struct Source
     /* Quality flags of the previous shortest window: flag events are
      * emitted when a flag appears, not for every flagged window. */
     std::uint32_t previous_window_flags = 0;
+    /* Health engine (null when health is off), its context and last status. */
+    std::unique_ptr<robotweax_srt_telemetry_health_engine, HealthDeleter> health;
+    bool has_health_context = false;
+    robotweax_srt_telemetry_health_context_v1 health_context{};
+    bool has_health_status = false;
+    robotweax_srt_telemetry_health_status_v1 health_status{};
+    /* Worst verdict of the current shortest window, for the compact record. */
+    robotweax_srt_telemetry_health_verdict window_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
+    robotweax_srt_telemetry_health_reason window_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NONE;
     /* Ring of compact records (empty when history is off). */
     std::vector<robotweax_srt_telemetry_compact_record_v1> history;
     std::size_t history_head = 0;
@@ -199,6 +218,18 @@ struct robotweax_srt_telemetry_sampler
     std::mutex journal_mutex;
     std::uint64_t journal_next_sequence = 1; /* kept while the journal is off */
     std::unique_ptr<robotweax_srt_telemetry_event_journal, JournalDeleter> journal;
+    /* Health, under `mutex`. */
+    bool health_enabled = false;
+    robotweax_srt_telemetry_health_callback health_callback = nullptr;
+    void *health_user_data = nullptr;
+    struct ThresholdOverride
+    {
+        bool set = false;
+        double watch = 0;
+        double at_risk = 0;
+        double failing = 0;
+    };
+    std::array<std::array<ThresholdOverride, ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT>, 3> health_thresholds{};
     std::mutex mutex; /* sources, tick execution */
     std::map<std::uint64_t, std::unique_ptr<Source>> sources;
     std::uint64_t next_id = 1;
@@ -253,7 +284,7 @@ void journal_event(robotweax_srt_telemetry_sampler &sampler, const std::uint64_t
     event.code = code;
     if (detail != nullptr)
     {
-        std::strncpy(event.detail, detail, sizeof(event.detail) - 1);
+        std::snprintf(event.detail, sizeof(event.detail), "%s", detail);
     }
     static_cast<void>(robotweax_srt_telemetry_event_journal_push(sampler.journal.get(), &event, nullptr));
 }
@@ -296,9 +327,13 @@ int deliver_window(void *user_data, const robotweax_srt_telemetry_window_summary
             if (robotweax_srt_telemetry_compact_record_from_window(summary, &record) ==
                 ROBOTWEAX_SRT_TELEMETRY_OK)
             {
+                record.health_verdict = static_cast<std::uint8_t>(source.window_verdict);
+                record.health_reason = static_cast<std::uint8_t>(source.window_reason);
                 source.history_push(record);
             }
         }
+        source.window_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
+        source.window_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NONE;
         struct Flag
         {
             std::uint32_t bit;
@@ -387,6 +422,125 @@ void initialize_output(robotweax_srt_telemetry_source_output_v1 &output)
     output.ext_delta.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
 }
 
+/* Caller holds sampler.mutex. */
+robotweax_srt_telemetry_error create_health(robotweax_srt_telemetry_sampler &sampler, Source &source)
+{
+    robotweax_srt_telemetry_health_config_v1 config;
+    robotweax_srt_telemetry_health_config_default(source.role, &config);
+    robotweax_srt_telemetry_health_engine *engine = nullptr;
+    const auto error = robotweax_srt_telemetry_health_engine_create(&config, &engine);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    source.health.reset(engine);
+    const auto role = static_cast<std::size_t>(source.role);
+    for (std::size_t i = 0; i < ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT; ++i)
+    {
+        const auto &o = sampler.health_thresholds[role][i];
+        if (o.set)
+        {
+            static_cast<void>(robotweax_srt_telemetry_health_engine_set_thresholds(
+                engine, static_cast<robotweax_srt_telemetry_health_indicator>(i), o.watch, o.at_risk,
+                o.failing));
+        }
+    }
+    if (source.has_health_context)
+    {
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(engine, &source.health_context));
+    }
+    source.has_health_status = false;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+robotweax_srt_telemetry_event_severity verdict_severity(const robotweax_srt_telemetry_health_verdict verdict)
+{
+    switch (verdict)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING:
+        return ROBOTWEAX_SRT_TELEMETRY_SEVERITY_ERROR;
+    case ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH:
+    case ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK:
+        return ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING;
+    default:
+        return ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO;
+    }
+}
+
+/* Caller holds sampler.mutex. Feeds the health engine before the windows,
+ * so the window that closes on this sample keeps its own worst verdict. */
+void update_health(robotweax_srt_telemetry_sampler &sampler, Source &source,
+                   const robotweax_srt_telemetry_metric_sample_v1 &metrics)
+{
+    if (!source.health)
+    {
+        return;
+    }
+    robotweax_srt_telemetry_health_status_v1 status{};
+    if (robotweax_srt_telemetry_health_engine_push(source.health.get(), &metrics, &status) !=
+        ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return;
+    }
+    const auto &previous = source.health_status;
+    const bool first = !source.has_health_status;
+    const bool verdict_changed = first || status.verdict != previous.verdict || status.reason != previous.reason;
+    const bool advice_changed = verdict_changed || status.knob != previous.knob ||
+                                status.knob_direction != previous.knob_direction ||
+                                status.suggested_value != previous.suggested_value;
+    if (verdict_changed && !(first && status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN))
+    {
+        char detail[ROBOTWEAX_SRT_TELEMETRY_EVENT_DETAIL_CAPACITY];
+        if (status.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE)
+        {
+            const char *direction = status.knob_direction == ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE
+                                        ? "increase"
+                                    : status.knob_direction == ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_DECREASE
+                                        ? "decrease"
+                                        : "check";
+            std::snprintf(detail, sizeof(detail), "%s %s: %s %s %.6g",
+                          robotweax_srt_telemetry_health_verdict_name(status.verdict),
+                          robotweax_srt_telemetry_health_reason_name(status.reason),
+                          robotweax_srt_telemetry_health_knob_name(status.knob), direction,
+                          status.suggested_value);
+        }
+        else
+        {
+            std::snprintf(detail, sizeof(detail), "%s %s",
+                          robotweax_srt_telemetry_health_verdict_name(status.verdict),
+                          robotweax_srt_telemetry_health_reason_name(status.reason));
+        }
+        journal_event(sampler, source.id, ROBOTWEAX_SRT_TELEMETRY_EVENT_VERDICT_CHANGED,
+                      verdict_severity(status.verdict), metrics.observed_at_unix_nano,
+                      metrics.sample_monotonic_nano, first ? 0 : previous.verdict, status.verdict,
+                      status.reason, detail);
+    }
+    source.health_status = status;
+    source.has_health_status = true;
+    if (advice_changed && sampler.health_callback != nullptr)
+    {
+        const auto info = source.info();
+        try
+        {
+            sampler.health_callback(sampler.health_user_data, &info, &status);
+        }
+        catch (...)
+        {
+        }
+    }
+}
+
+/* Caller holds sampler.mutex. After the window push: this sample belongs to
+ * the window that is now open. */
+void fold_health(Source &source)
+{
+    if (source.has_health_status && source.health_status.verdict >= source.window_verdict)
+    {
+        source.window_verdict = source.health_status.verdict;
+        source.window_reason = source.health_status.reason;
+    }
+}
+
 /* Caller holds sampler.mutex. Called for every failed sample. */
 void source_failed(robotweax_srt_telemetry_sampler &sampler, Source &source,
                    const robotweax_srt_telemetry_error error, const std::int32_t native,
@@ -411,9 +565,11 @@ void source_failed(robotweax_srt_telemetry_sampler &sampler, Source &source,
     empty.observed_at_unix_nano = unix_nano;
     empty.sample_monotonic_nano = monotonic_nano;
     empty.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
+    update_health(sampler, source, empty);
     WindowContext context{&sampler, &source, unix_nano, monotonic_nano};
     static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(
         source.windows.get(), &empty, &deliver_window, &context));
+    fold_health(source);
 }
 
 /* Caller holds sampler.mutex. */
@@ -472,6 +628,7 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
         }
     }
 
+    update_health(sampler, source, metrics);
     const auto &callbacks = sampler.config.callbacks;
     if (callbacks.on_sample != nullptr)
     {
@@ -487,6 +644,7 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
     WindowContext context{&sampler, &source, unix_nano, monotonic_nano};
     static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(
         source.windows.get(), &metrics, &deliver_window, &context));
+    fold_health(source);
 }
 
 /* Caller holds sampler.mutex. */
@@ -649,8 +807,10 @@ robotweax_srt_telemetry_sampler_add_source(robotweax_srt_telemetry_sampler *samp
     {
         return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
     }
+    const auto role = static_cast<std::int64_t>(source->role);
     if (source->sample == nullptr || source->label_count > ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS ||
-        (source->label_count > 0 && source->labels == nullptr))
+        (source->label_count > 0 && source->labels == nullptr) ||
+        role < ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN || role > ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER)
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
@@ -712,6 +872,14 @@ robotweax_srt_telemetry_sampler_add_source(robotweax_srt_telemetry_sampler *samp
     catch (const std::bad_alloc &)
     {
         return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    if (sampler->health_enabled)
+    {
+        const auto health_error = create_health(*sampler, *created);
+        if (health_error != ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            return health_error;
+        }
     }
     const auto id = sampler->next_id;
     created->id = id;
@@ -1009,4 +1177,194 @@ robotweax_srt_telemetry_sampler_record_event(robotweax_srt_telemetry_sampler *sa
         return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
     }
     return robotweax_srt_telemetry_event_journal_push(sampler->journal.get(), event, nullptr);
+}
+
+/* ------------------------------------------------------------------ health */
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_sampler_enable_health(robotweax_srt_telemetry_sampler *sampler, const int enabled)
+{
+    if (sampler == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    std::lock_guard lock(sampler->mutex);
+    if (enabled == 0)
+    {
+        for (auto &entry : sampler->sources)
+        {
+            entry.second->health.reset();
+            entry.second->has_health_status = false;
+        }
+        sampler->health_enabled = false;
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    for (auto &entry : sampler->sources)
+    {
+        if (!entry.second->health)
+        {
+            const auto error = create_health(*sampler, *entry.second);
+            if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+            {
+                for (auto &other : sampler->sources)
+                {
+                    other.second->health.reset();
+                    other.second->has_health_status = false;
+                }
+                sampler->health_enabled = false;
+                return error;
+            }
+        }
+    }
+    sampler->health_enabled = true;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_health_callback(
+    robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_health_callback callback,
+    void *user_data)
+{
+    if (sampler == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    std::lock_guard lock(sampler->mutex);
+    sampler->health_callback = callback;
+    sampler->health_user_data = user_data;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_health_thresholds(
+    robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_endpoint_role role,
+    const robotweax_srt_telemetry_health_indicator indicator, const double watch, const double at_risk,
+    const double failing)
+{
+    const auto role_index = static_cast<std::int64_t>(role);
+    const auto indicator_index = static_cast<std::int64_t>(indicator);
+    if (sampler == nullptr || role_index < ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER ||
+        role_index > ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER || indicator_index < 0 ||
+        indicator_index >= ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    /* Validate the ordering with a scratch engine of that role. */
+    robotweax_srt_telemetry_health_config_v1 config;
+    robotweax_srt_telemetry_health_config_default(role, &config);
+    robotweax_srt_telemetry_health_engine *scratch = nullptr;
+    auto error = robotweax_srt_telemetry_health_engine_create(&config, &scratch);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    error = robotweax_srt_telemetry_health_engine_set_thresholds(scratch, indicator, watch, at_risk, failing);
+    robotweax_srt_telemetry_health_engine_destroy(scratch);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    std::lock_guard lock(sampler->mutex);
+    sampler->health_thresholds[static_cast<std::size_t>(role_index)][static_cast<std::size_t>(indicator_index)] = {
+        true, watch, at_risk, failing};
+    for (auto &entry : sampler->sources)
+    {
+        if (entry.second->health && entry.second->role == role)
+        {
+            static_cast<void>(robotweax_srt_telemetry_health_engine_set_thresholds(
+                entry.second->health.get(), indicator, watch, at_risk, failing));
+        }
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_health_context(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+    const robotweax_srt_telemetry_health_context_v1 *context)
+{
+    if (sampler == nullptr || context == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    /* Validate with a scratch engine so the rules live in one place. */
+    robotweax_srt_telemetry_health_config_v1 config;
+    robotweax_srt_telemetry_health_config_default(ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN, &config);
+    robotweax_srt_telemetry_health_engine *scratch = nullptr;
+    auto error = robotweax_srt_telemetry_health_engine_create(&config, &scratch);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    error = robotweax_srt_telemetry_health_engine_set_context(scratch, context);
+    robotweax_srt_telemetry_health_engine_destroy(scratch);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    }
+    auto &source = *found->second;
+    source.health_context = *context;
+    source.health_context.struct_size = sizeof(source.health_context);
+    source.has_health_context = true;
+    if (source.health)
+    {
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(source.health.get(), &source.health_context));
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_sampler_health_read(robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+                                            robotweax_srt_telemetry_health_status_v1 *status)
+{
+    if (sampler == nullptr || status == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    }
+    if (!sampler->health_enabled)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    const auto &source = *found->second;
+    if (source.has_health_status)
+    {
+        *status = source.health_status;
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    std::memset(status, 0, sizeof(*status));
+    status->struct_size = sizeof(*status);
+    status->abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    status->verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
+    status->reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA;
+    status->primary_indicator = -1;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

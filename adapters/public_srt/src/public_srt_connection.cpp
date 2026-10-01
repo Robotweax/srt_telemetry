@@ -462,3 +462,65 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_conn
     *count = produced;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_health_context(
+    const robotweax_srt_telemetry_public_srt_connection_result_v1 *result,
+    robotweax_srt_telemetry_health_context_v1 *context)
+{
+    if (result == nullptr || context == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (!valid_result(result) || context->struct_size < sizeof(*context) ||
+        context->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    const auto &snapshot = result->snapshot;
+    const auto previous = context->connection;
+    const bool has_state = (snapshot.available_fields & ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_STATE) != 0;
+    auto connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_UNREPORTED;
+    if (rejected(snapshot))
+    {
+        connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+    }
+    else if (has_state)
+    {
+        switch (snapshot.state)
+        {
+        case SRTS_CONNECTED:
+            connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+            break;
+        case SRTS_BROKEN:
+        case SRTS_CLOSING:
+        case SRTS_CLOSED:
+        case SRTS_NONEXIST:
+            connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+            break;
+        default:
+            /* INIT, OPENED, LISTENING, CONNECTING */
+            connection = previous == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED ||
+                                 previous == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST
+                             ? ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST
+                             : ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTING;
+            break;
+        }
+    }
+    else if (previous == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED ||
+             previous == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST)
+    {
+        /* The state can no longer be read: the socket is gone. */
+        connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+    }
+    context->connection = connection;
+    constexpr auto bandwidth =
+        ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_OVERHEAD_PERCENT | ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_MAX_BANDWIDTH;
+    if ((snapshot.available_fields & bandwidth) == bandwidth)
+    {
+        context->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS;
+        context->overhead_percent = snapshot.overhead_percent;
+        context->max_bandwidth_bytes_per_second = snapshot.max_bandwidth_bytes_per_second;
+    }
+    /* Otherwise keep the last known settings (a closed socket loses them). */
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}

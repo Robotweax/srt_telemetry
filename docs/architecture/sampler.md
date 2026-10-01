@@ -62,7 +62,8 @@ not as silence followed by one stale window.
 
 `sampler_enable_history` keeps compact per-second records per source, and
 `sampler_enable_journal` records source and data-quality events. See
-[History and events](history-and-events.md).
+[History and events](history-and-events.md). `sampler_enable_health` runs a
+health engine per source; see [Health engine](health-engine.md).
 
 ## Callbacks and threading
 

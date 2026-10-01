@@ -1562,9 +1562,10 @@ int run_sampler()
     }
 
     if (robotweax_srt_telemetry_sampler_enable_history(sampler, 600) != ROBOTWEAX_SRT_TELEMETRY_OK ||
-        robotweax_srt_telemetry_sampler_enable_journal(sampler, 256) != ROBOTWEAX_SRT_TELEMETRY_OK)
+        robotweax_srt_telemetry_sampler_enable_journal(sampler, 256) != ROBOTWEAX_SRT_TELEMETRY_OK ||
+        robotweax_srt_telemetry_sampler_enable_health(sampler, 1) != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
-        std::cerr << "FAIL: history/journal\n";
+        std::cerr << "FAIL: history/journal/health\n";
         robotweax_srt_telemetry_sampler_destroy(sampler);
         return EXIT_FAILURE;
     }
@@ -1615,6 +1616,12 @@ int run_sampler()
     }
     reader.join();
 
+    /* Health of a clean loopback stream, read right after it. */
+    robotweax_srt_telemetry_health_status_v1 sender_health{};
+    robotweax_srt_telemetry_health_status_v1 receiver_health{};
+    static_cast<void>(robotweax_srt_telemetry_sampler_health_read(sampler, sender_id, &sender_health));
+    static_cast<void>(robotweax_srt_telemetry_sampler_health_read(sampler, receiver_id, &receiver_health));
+
     /* History: 500 ms records of the receiver, read while it is registered. */
     std::vector<robotweax_srt_telemetry_compact_record_v1> history(64);
     std::size_t history_count = 0;
@@ -1636,10 +1643,18 @@ int run_sampler()
     Monitor monitor;
     bool disconnect_journaled = false;
     bool sender_removed = false;
+    robotweax_srt_telemetry_health_context_v1 receiver_context;
+    robotweax_srt_telemetry_health_context_init(&receiver_context);
+    /* Haivision SRT fails statistics reads on a broken socket, so only
+     * errors before the close count. */
+    int errors_before_close = -1;
     if (create_monitor(accepted.get(), monitor))
     {
         const auto record = [&](const robotweax_srt_telemetry_public_srt_connection_result_v1 &result)
         {
+            static_cast<void>(robotweax_srt_telemetry_public_srt_health_context(&result, &receiver_context));
+            static_cast<void>(
+                robotweax_srt_telemetry_sampler_set_health_context(sampler, receiver_id, &receiver_context));
             robotweax_srt_telemetry_event_v1 events[8]{};
             std::size_t count = 0;
             static_cast<void>(robotweax_srt_telemetry_public_srt_connection_events(
@@ -1650,6 +1665,10 @@ int run_sampler()
             }
         };
         record(poll_monitor(monitor));
+        {
+            std::lock_guard lock(observed.mutex);
+            errors_before_close = observed.errors[sender_id] + observed.errors[receiver_id];
+        }
         /* Lifecycle rule: stop sampling a socket before closing it. */
         sender_removed = robotweax_srt_telemetry_sampler_remove_source(sampler, sender_id) ==
                          ROBOTWEAX_SRT_TELEMETRY_OK;
@@ -1666,15 +1685,25 @@ int run_sampler()
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
+    /* The lost connection reaches the verdict within a sampling period. */
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    robotweax_srt_telemetry_health_status_v1 lost_health{};
+    static_cast<void>(robotweax_srt_telemetry_sampler_health_read(sampler, receiver_id, &lost_health));
     std::vector<robotweax_srt_telemetry_event_v1> journal_events(256);
     std::size_t journal_count = 0;
     static_cast<void>(robotweax_srt_telemetry_sampler_journal_read(
         sampler, 0, journal_events.data(), journal_events.size(), &journal_count, nullptr));
     int added = 0;
+    bool failing_journaled = false;
     for (std::size_t index = 0; index < journal_count; ++index)
     {
         const auto &event = journal_events[index];
         added += event.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_ADDED ? 1 : 0;
+        failing_journaled = failing_journaled ||
+                            (event.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_VERDICT_CHANGED &&
+                             event.source_id == receiver_id &&
+                             event.current_value == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                             event.code == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST);
         disconnect_journaled = disconnect_journaled ||
                                (event.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_DISCONNECTED &&
                                 event.source_id == receiver_id);
@@ -1716,11 +1745,17 @@ int run_sampler()
               << ",\"sentPacketsPerSecond\":" << sent_pps
               << ",\"receivedPacketsPerSecond\":" << received_pps
               << ",\"bestRecoveryHeadroom\":" << headroom << ",\"rttSeconds\":" << rtt
-              << ",\"errors\":" << observed.errors[sender_id] + observed.errors[receiver_id]
+              << ",\"errors\":" << errors_before_close
               << ",\"historyRecords\":" << history_count
               << ",\"bestHistoryReceivedBps\":" << best_history_rate
               << ",\"journalEvents\":" << journal_count
-              << ",\"disconnectJournaled\":" << disconnect_journaled << "}\n";
+              << ",\"disconnectJournaled\":" << disconnect_journaled
+              << ",\"senderVerdict\":\"" << robotweax_srt_telemetry_health_verdict_name(sender_health.verdict)
+              << "\",\"receiverVerdict\":\""
+              << robotweax_srt_telemetry_health_verdict_name(receiver_health.verdict) << "\",\"receiverReason\":\""
+              << robotweax_srt_telemetry_health_reason_name(receiver_health.reason) << "\",\"afterClose\":\""
+              << robotweax_srt_telemetry_health_verdict_name(lost_health.verdict) << '/'
+              << robotweax_srt_telemetry_health_reason_name(lost_health.reason) << "\"}\n";
 
     const auto ok = sent_all && received.load() == message_count && removed &&
                     observed.samples[sender_id] >= 20 && observed.windows[sender_id].size() >= 3 &&
@@ -1729,7 +1764,12 @@ int run_sampler()
                     observed.role_label[sender_id] == "sender" &&
                     history_count >= 2 && best_history_rate > 2e6 && added == 2 &&
                     disconnect_journaled &&
-                    observed.errors[sender_id] + observed.errors[receiver_id] == 0;
+                    receiver_health.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                    (sender_health.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK ||
+                     sender_health.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN) &&
+                    lost_health.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                    lost_health.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST && failing_journaled &&
+                    errors_before_close == 0;
     if (!ok)
     {
         std::cerr << "FAIL: sampler over live SRT (received " << received.load() << ")\n";

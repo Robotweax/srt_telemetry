@@ -10,6 +10,7 @@
  * library. The public SRT adapter provides a ready source for its sessions
  * (robotweax_srt_telemetry_public_srt_source_config). */
 
+#include <robotweax/srt_telemetry_health.h>
 #include <robotweax/srt_telemetry_history.h>
 #include <robotweax/srt_telemetry_metrics.h>
 
@@ -210,6 +211,46 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_sampler_record_event(robotweax_srt_telemetry_sampler *sampler,
                                                  const robotweax_srt_telemetry_event_v1 *event);
+
+    /* ------------------------------------------------------------- health */
+
+    /* Called after a sample when a source's verdict, reason or advice changed.
+     * Same rules as the other callbacks. */
+    typedef void (*robotweax_srt_telemetry_health_callback)(
+        void *user_data, const robotweax_srt_telemetry_source_info_v1 *source,
+        const robotweax_srt_telemetry_health_status_v1 *status);
+
+    /* Runs a health engine per source (current and future), with the default
+     * health configuration for the source's role. Non-zero enables; zero
+     * disables and discards the engines. With health on, verdict changes are
+     * journaled (VERDICT_CHANGED) and the compact history records each
+     * window's worst verdict. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_enable_health(robotweax_srt_telemetry_sampler *sampler,
+                                                  int enabled);
+
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_health_callback(
+        robotweax_srt_telemetry_sampler *sampler, robotweax_srt_telemetry_health_callback callback,
+        void *user_data);
+
+    /* Overrides thresholds for every source of a role, current and future. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_health_thresholds(
+        robotweax_srt_telemetry_sampler *sampler, robotweax_srt_telemetry_endpoint_role role,
+        robotweax_srt_telemetry_health_indicator indicator, double watch, double at_risk, double failing);
+
+    /* Connection state and settings for one source, e.g. from the public SRT
+     * adapter's robotweax_srt_telemetry_public_srt_health_context. Kept
+     * while health is disabled and applied when it is enabled. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_health_context(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
+        const robotweax_srt_telemetry_health_context_v1 *context);
+
+    /* The status after the source's latest sample. NOT_FOUND for an unknown
+     * source; INVALID_STATE when health is off or from a callback. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_health_read(robotweax_srt_telemetry_sampler *sampler,
+                                                uint64_t source_id,
+                                                robotweax_srt_telemetry_health_status_v1 *status);
 
 #ifdef __cplusplus
 }
