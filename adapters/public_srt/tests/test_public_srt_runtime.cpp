@@ -1106,13 +1106,24 @@ int run_field_coverage()
         return EXIT_FAILURE;
     }
 
-    for (int message = 0; message < 50; ++message)
+    /* Pipeline the messages: a ping-pong exchange would wait out the TSBPD
+     * latency (120 ms by default) for every message. */
+    constexpr int message_count = 50;
+    for (int message = 0; message < message_count; ++message)
     {
         const auto fill = static_cast<char>('a' + message % 26);
-        if (!send_payload(caller.get(), fill) || !receive_payload(accepted.get(), fill) ||
-            !send_payload(accepted.get(), fill) || !receive_payload(caller.get(), fill))
+        if (!send_payload(caller.get(), fill) || !send_payload(accepted.get(), fill))
         {
-            std::cerr << "FAIL: payload exchange " << message << '\n';
+            std::cerr << "FAIL: payload send " << message << '\n';
+            return EXIT_FAILURE;
+        }
+    }
+    for (int message = 0; message < message_count; ++message)
+    {
+        const auto fill = static_cast<char>('a' + message % 26);
+        if (!receive_payload(accepted.get(), fill) || !receive_payload(caller.get(), fill))
+        {
+            std::cerr << "FAIL: payload receive " << message << '\n';
             return EXIT_FAILURE;
         }
     }
