@@ -56,14 +56,19 @@ extern "C"
         /* Ratios of gauges. */
         /* receive buffer span / receiver latency: about 1 when no packet is
          * missing, falling toward 0 while a gap waits for repair. */
-        /* Only while data arrives or is buffered; otherwise unavailable, so a
-         * send-only endpoint never shows a false zero. */
+        /* Only while at least 8 unique packets per latency period arrive;
+         * otherwise unavailable, so a send-only endpoint or a trickle stream
+         * never shows a false zero. An outage shows as a zero unique receive
+         * rate instead. Expect values below 1 during the first latency period
+         * after a stream starts. */
         ROBOTWEAX_SRT_TELEMETRY_METRIC_RECOVERY_HEADROOM_RATIO = 29,
         /* flight size / flow window: near 1 means the peer stopped reading. */
         ROBOTWEAX_SRT_TELEMETRY_METRIC_FLIGHT_TO_FLOW_WINDOW_RATIO = 30,
-        /* send buffer span / peer latency: data ageing toward a too-late drop.
-         * Only while data is sent or queued. */
-        ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_PEER_LATENCY_RATIO = 31,
+        /* send buffer span / sender drop threshold, where the threshold is
+         * max(peer latency, 1 s) + 20 ms as in both providers with
+         * SRTO_SNDDROPDELAY 0. Near 1 means packets are about to be dropped
+         * by the sender. Only while data is sent or queued. */
+        ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_DROP_THRESHOLD_RATIO = 31,
         ROBOTWEAX_SRT_TELEMETRY_METRIC_DEFINED_COUNT = 32
     } robotweax_srt_telemetry_metric;
 
@@ -214,14 +219,18 @@ extern "C"
         robotweax_srt_telemetry_window_aggregator *aggregator);
 
     /* Adds one metric sample. Windows whose end has passed are emitted to the
-     * sink first, shortest window first. Empty windows are not emitted. */
+     * sink first, shortest window first. Empty windows are not emitted. The
+     * sample is accumulated only after every emission succeeded; after
+     * SINK_FAILURE the failed window stays open and the same sample can be
+     * pushed again. Non-finite values are ignored. The sink must not throw. */
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_window_aggregator_push(
         robotweax_srt_telemetry_window_aggregator *aggregator,
         const robotweax_srt_telemetry_metric_sample_v1 *sample,
         robotweax_srt_telemetry_window_sink sink, void *user_data);
 
-    /* Emits every open window, marked PARTIAL, and starts empty windows. */
+    /* Emits every open window marked PARTIAL and closes it. Later samples in
+     * the same aligned window form another window that is also PARTIAL. */
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_window_aggregator_flush(
         robotweax_srt_telemetry_window_aggregator *aggregator,

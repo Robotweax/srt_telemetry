@@ -114,10 +114,12 @@ void test_compute()
     auto delta = delta_of(second / 10);
     delta.available_delta_fields = ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_WIRE_BYTE_TOTAL |
                                    ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_LOSS_PACKET_TOTAL |
-                                   ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_PACKET_TOTAL;
+                                   ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_PACKET_TOTAL |
+                                   ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL;
     delta.unique_sent_wire_byte_delta = 125'000; /* 1 Mbit in 100 ms = 10 Mbit/s */
     delta.receiver_loss_packet_delta = 3;
     delta.unique_sent_packet_delta = 0;
+    delta.unique_received_packet_delta = 40; /* 400 pkt/s: 48 per 120 ms latency */
 
     robotweax_srt_telemetry_ext_sample_v1 ext{};
     ext.struct_size = sizeof(ext);
@@ -148,8 +150,20 @@ void test_compute()
     check(near(v[ROBOTWEAX_SRT_TELEMETRY_METRIC_FLIGHT_TO_FLOW_WINDOW_RATIO], 0.01),
           "flight to flow ratio");
     const auto available = metrics.available_metrics;
-    check((available & bit(ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_PEER_LATENCY_RATIO)) == 0,
+    check((available & bit(ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_DROP_THRESHOLD_RATIO)) == 0,
           "no send-buffer ratio while nothing is sent or queued");
+    {
+        auto queued = raw;
+        queued.send_buffer_bytes = 600'000;
+        queued.send_buffer_seconds = 0.51;
+        auto queued_metrics = empty_metrics();
+        static_cast<void>(robotweax_srt_telemetry_metrics_compute(&queued, nullptr, &delta, nullptr,
+                                                                  &queued_metrics));
+        check(near(queued_metrics
+                       .values[ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_DROP_THRESHOLD_RATIO],
+                   0.5),
+              "send buffer is measured against max(latency, 1 s) + 20 ms, not the latency");
+    }
     check((available & bit(ROBOTWEAX_SRT_TELEMETRY_METRIC_LINK_CAPACITY_BITS_PER_SECOND)) == 0,
           "Robotweax arrival rate is never reported as link capacity");
     check((available & bit(ROBOTWEAX_SRT_TELEMETRY_METRIC_SENT_BITS_PER_SECOND)) == 0,
@@ -158,6 +172,7 @@ void test_compute()
     /* Idle receiver: no arrivals and an empty buffer. */
     raw.receive_buffer_bytes = 0;
     raw.receive_buffer_seconds = 0.0;
+    delta.unique_received_packet_delta = 0;
     check(robotweax_srt_telemetry_metrics_compute(&raw, nullptr, &delta, nullptr, &metrics) ==
               ROBOTWEAX_SRT_TELEMETRY_OK,
           "compute without ext");
@@ -165,8 +180,17 @@ void test_compute()
               0,
           "an idle direction has no headroom value instead of a false zero");
 
+    /* Trickle stream: one packet per 100 ms is 1.2 packets per latency. */
+    delta.unique_received_packet_delta = 1;
+    raw.receive_buffer_bytes = 1'316;
+    static_cast<void>(
+        robotweax_srt_telemetry_metrics_compute(&raw, nullptr, &delta, nullptr, &metrics));
+    check((metrics.available_metrics & bit(ROBOTWEAX_SRT_TELEMETRY_METRIC_RECOVERY_HEADROOM_RATIO)) ==
+              0,
+          "a sparse stream gives no headroom value instead of a false zero");
+
     /* Gap blocking delivery: data still arrives, acknowledged span is zero. */
-    delta.available_delta_fields |= ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL;
+    raw.receive_buffer_bytes = 0;
     delta.unique_received_packet_delta = 40;
     static_cast<void>(
         robotweax_srt_telemetry_metrics_compute(&raw, nullptr, &delta, nullptr, &metrics));
@@ -372,6 +396,108 @@ void test_truncation_and_sink_failure()
     robotweax_srt_telemetry_window_aggregator_destroy(aggregator);
 }
 
+void test_retry_after_sink_failure()
+{
+    robotweax_srt_telemetry_window_config_v1 config{};
+    robotweax_srt_telemetry_window_config_default(&config);
+    robotweax_srt_telemetry_window_aggregator *aggregator = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_window_aggregator_create(&config, &aggregator));
+    Collected collected;
+    const auto period = second / 10;
+    for (int index = 0; index < 10; ++index)
+    {
+        auto sample =
+            metric_at(base_unix + static_cast<std::uint64_t>(index) * period, 0.01, 1e5, period);
+        static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(aggregator, &sample,
+                                                                         &collect, &collected));
+    }
+    /* Crossing 10 s closes the 1 s and the 10 s window; fail on the second. */
+    auto crossing = metric_at(base_unix + 10 * second, 0.01, 1e5, period);
+    Collected failing;
+    failing.fail_after = 1;
+    check(robotweax_srt_telemetry_window_aggregator_push(aggregator, &crossing, &collect,
+                                                         &failing) ==
+              ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE,
+          "second emission fails");
+    Collected retry;
+    check(robotweax_srt_telemetry_window_aggregator_push(aggregator, &crossing, &collect,
+                                                         &retry) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "the same sample can be pushed again");
+    check(retry.summaries.size() == 1 && retry.summaries[0].window_nano == 10 * second &&
+              retry.summaries[0].sample_count == 10,
+          "the failed 10 s window is emitted on retry, unchanged");
+    Collected flushed;
+    static_cast<void>(
+        robotweax_srt_telemetry_window_aggregator_flush(aggregator, &collect, &flushed));
+    bool counted_once = true;
+    for (const auto &summary : flushed.summaries)
+    {
+        const auto expected = summary.window_nano == 60 * second ? 11U : 1U;
+        counted_once = counted_once && summary.sample_count == expected;
+    }
+    check(flushed.summaries.size() == 3 && counted_once,
+          "after the retry every window holds the crossing sample exactly once");
+    robotweax_srt_telemetry_window_aggregator_destroy(aggregator);
+}
+
+void test_flags_and_values()
+{
+    robotweax_srt_telemetry_window_config_v1 config{};
+    robotweax_srt_telemetry_window_config_default(&config);
+    config.window_count = 1;
+    config.window_nano[0] = 10 * second;
+    robotweax_srt_telemetry_window_aggregator *aggregator = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_window_aggregator_create(&config, &aggregator));
+    Collected collected;
+    const auto period = second / 10;
+    auto a = metric_at(base_unix + 5 * second, 0.01, 1e5, period);
+    auto b = metric_at(base_unix + 4 * second, std::nan(""), 1e5, period); /* back 1 s */
+    auto c = metric_at(base_unix + 4 * second + period, 0.02, 0.0, 0); /* no rate */
+    for (auto *sample : {&a, &b, &c})
+    {
+        static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(aggregator, sample,
+                                                                         &collect, &collected));
+    }
+    static_cast<void>(
+        robotweax_srt_telemetry_window_aggregator_flush(aggregator, &collect, &collected));
+    check(collected.summaries.size() == 1, "one window");
+    if (!collected.summaries.empty())
+    {
+        const auto &window = collected.summaries[0];
+        check((window.quality_flags & ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP) != 0,
+              "a backward wall-clock step inside one window is flagged");
+        const auto &rtt = window.metrics[ROBOTWEAX_SRT_TELEMETRY_METRIC_RTT_SECONDS];
+        check(rtt.sample_count == 2 && near(rtt.max, 0.02),
+              "a non-finite value is ignored");
+        check(window.covered_nano == 2 * period,
+              "covered time counts only samples that carried rates");
+    }
+
+    /* Samples after a flush continue the same aligned window. */
+    collected.summaries.clear();
+    auto d = metric_at(base_unix + 4 * second + 2 * period, 0.01, 1e5, period);
+    static_cast<void>(
+        robotweax_srt_telemetry_window_aggregator_push(aggregator, &d, &collect, &collected));
+    static_cast<void>(
+        robotweax_srt_telemetry_window_aggregator_flush(aggregator, &collect, &collected));
+    check(collected.summaries.size() == 1 &&
+              (collected.summaries[0].quality_flags & ROBOTWEAX_SRT_TELEMETRY_WINDOW_PARTIAL) != 0 &&
+              collected.summaries[0].start_unix_nano == base_unix,
+          "the rest of a flushed window is reported as PARTIAL");
+
+    /* Wall clock jumping forward faster than the monotonic interval. */
+    collected.summaries.clear();
+    auto jump = metric_at(base_unix + 7 * second, 0.01, 1e5, period);
+    static_cast<void>(
+        robotweax_srt_telemetry_window_aggregator_push(aggregator, &jump, &collect, &collected));
+    static_cast<void>(
+        robotweax_srt_telemetry_window_aggregator_flush(aggregator, &collect, &collected));
+    check(collected.summaries.size() == 1 &&
+              (collected.summaries[0].quality_flags & ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP) != 0,
+          "a forward wall-clock step is flagged");
+    robotweax_srt_telemetry_window_aggregator_destroy(aggregator);
+}
+
 void test_config_validation()
 {
     robotweax_srt_telemetry_window_aggregator *aggregator = nullptr;
@@ -407,6 +533,8 @@ int main()
     test_compute();
     test_windows();
     test_truncation_and_sink_failure();
+    test_retry_after_sink_failure();
+    test_flags_and_values();
     test_config_validation();
     if (failures != 0)
     {

@@ -53,13 +53,17 @@ constexpr std::array<Info, ROBOTWEAX_SRT_TELEMETRY_METRIC_DEFINED_COUNT> catalog
     {"link_capacity_bits_per_second", "bit/s", gauge, both},
     {"recovery_headroom_ratio", "1", ratio, receiver},
     {"flight_to_flow_window_ratio", "1", ratio, sender},
-    {"send_buffer_to_peer_latency_ratio", "1", ratio, sender},
+    {"send_buffer_to_drop_threshold_ratio", "1", ratio, sender},
 }};
 
 constexpr std::uint64_t defined_metrics =
     (UINT64_C(1) << ROBOTWEAX_SRT_TELEMETRY_METRIC_DEFINED_COUNT) - 1;
 
 constexpr std::uint64_t day_nano = UINT64_C(86'400'000'000'000);
+
+/* Bits of every rate metric (catalog indices 0..18). */
+constexpr std::uint64_t rate_metrics =
+    (UINT64_C(1) << (ROBOTWEAX_SRT_TELEMETRY_METRIC_RECEIVED_NAK_PER_SECOND + 1)) - 1;
 
 template <typename T> bool valid_struct(const T *value)
 {
@@ -271,13 +275,18 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_metrics_compute
 
     /* Ratios. Each is computed only when the endpoint is actually carrying
      * data in that direction, so an idle direction is unavailable, not 0. */
-    const auto receiving =
-        (has(ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVE_BUFFER_BYTES) && raw->receive_buffer_bytes > 0) ||
-        ((delta->available_delta_fields & ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL) !=
-             0 &&
-         delta->unique_received_packet_delta > 0);
-    if (receiving && has(ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVE_BUFFER_SECONDS) &&
+    /* Headroom needs a stream dense enough that one latency period holds
+     * several packets; otherwise a single buffered packet reads as zero. */
+    constexpr double minimum_packets_per_latency = 8.0;
+    const auto dense_receive =
+        delta->interval_nano > 0 &&
+        (delta->available_delta_fields & ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL) !=
+            0 &&
         has(ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_TSBPD_DELAY_SECONDS) &&
+        static_cast<double>(delta->unique_received_packet_delta) / seconds *
+                raw->receiver_tsbpd_delay_seconds >=
+            minimum_packets_per_latency;
+    if (dense_receive && has(ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVE_BUFFER_SECONDS) &&
         raw->receiver_tsbpd_delay_seconds > 0.0)
     {
         set(ROBOTWEAX_SRT_TELEMETRY_METRIC_RECOVERY_HEADROOM_RATIO,
@@ -300,8 +309,10 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_metrics_compute
         has(ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_TSBPD_DELAY_SECONDS) &&
         raw->sender_tsbpd_delay_seconds > 0.0)
     {
-        set(ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_PEER_LATENCY_RATIO,
-            raw->send_buffer_seconds / raw->sender_tsbpd_delay_seconds, 0.0);
+        /* Sender too-late drop threshold with SRTO_SNDDROPDELAY 0. */
+        const auto threshold = std::max(raw->sender_tsbpd_delay_seconds, 1.0) + 0.020;
+        set(ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_DROP_THRESHOLD_RATIO,
+            raw->send_buffer_seconds / threshold, 0.0);
     }
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
@@ -314,6 +325,7 @@ namespace
 struct Accumulator
 {
     std::uint32_t count = 0;
+    std::uint32_t percentile_seen = 0;
     double min = 0.0;
     double max = 0.0;
     double sum = 0.0;
@@ -330,6 +342,9 @@ struct Window
     std::size_t percentile_capacity = 0;
     bool open = false;
     std::uint64_t start = 0;
+    /* Start of the window last closed by flush, to mark a continuation. */
+    bool flushed = false;
+    std::uint64_t flushed_start = 0;
     std::uint32_t sample_count = 0;
     std::uint32_t flags = 0;
     std::uint64_t covered_nano = 0;
@@ -347,6 +362,7 @@ struct robotweax_srt_telemetry_window_aggregator
     std::vector<Window> windows;              /* shortest first */
     bool has_last_unix = false;
     std::uint64_t last_unix = 0;
+    std::uint64_t random_state = UINT64_C(0x9E3779B97F4A7C15);
 };
 
 namespace
@@ -422,15 +438,30 @@ int emit(robotweax_srt_telemetry_window_aggregator &aggregator, Window &window,
             }
         }
     }
-    window.open = false;
-    return sink(user_data, &summary);
+    int result = 1;
+    try
+    {
+        result = sink(user_data, &summary);
+    }
+    catch (...)
+    {
+        result = 1; /* a sink must not throw across the C boundary */
+    }
+    if (result == 0)
+    {
+        window.open = false; /* a failed window stays open for a retry */
+    }
+    return result;
 }
 
 void accumulate(robotweax_srt_telemetry_window_aggregator &aggregator, Window &window,
                 const robotweax_srt_telemetry_metric_sample_v1 &sample)
 {
     window.sample_count += 1;
-    window.covered_nano += sample.interval_nano;
+    if (sample.interval_nano > 0 && (sample.available_metrics & rate_metrics) != 0)
+    {
+        window.covered_nano += sample.interval_nano;
+    }
     if ((sample.quality_flags & (ROBOTWEAX_SRT_TELEMETRY_QUALITY_FIRST_SAMPLE |
                                  ROBOTWEAX_SRT_TELEMETRY_QUALITY_PROVIDER_CHANGED)) != 0)
     {
@@ -456,6 +487,10 @@ void accumulate(robotweax_srt_telemetry_window_aggregator &aggregator, Window &w
             continue;
         }
         const auto value = sample.values[metric];
+        if (!std::isfinite(value))
+        {
+            continue; /* a non-finite host value is treated as unavailable */
+        }
         auto &accumulator = window.metrics[metric];
         if (accumulator.count == 0)
         {
@@ -476,17 +511,29 @@ void accumulate(robotweax_srt_telemetry_window_aggregator &aggregator, Window &w
             accumulator.covered_nano += sample.interval_nano;
         }
         const auto slot = aggregator.percentile_slot[metric];
-        if (slot != no_slot)
+        if (slot != no_slot && window.percentile_capacity > 0)
         {
+            auto *block = window.percentile_values.data() + slot * window.percentile_capacity;
+            accumulator.percentile_seen += 1;
             if (accumulator.percentile_used < window.percentile_capacity)
             {
-                window.percentile_values[slot * window.percentile_capacity +
-                                         accumulator.percentile_used] = static_cast<float>(value);
+                block[accumulator.percentile_used] = static_cast<float>(value);
                 accumulator.percentile_used += 1;
             }
             else
             {
+                /* Reservoir sampling keeps an unbiased subset, so a burst late
+                 * in an overfull window can still reach the p95. */
                 accumulator.truncated = true;
+                auto &state = aggregator.random_state;
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                const auto pick = state % accumulator.percentile_seen;
+                if (pick < window.percentile_capacity)
+                {
+                    block[pick] = static_cast<float>(value);
+                }
             }
         }
     }
@@ -588,30 +635,60 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_window_aggregat
     }
 
     const auto now = sample->observed_at_unix_nano;
-    const auto clock_stepped_back = aggregator->has_last_unix && now < aggregator->last_unix;
-    aggregator->has_last_unix = true;
-    aggregator->last_unix = now;
+    /* A wall-clock step: time went backwards, or moved by more than one
+     * period beyond what the monotonic interval accounts for. */
+    bool clock_step = false;
+    if (aggregator->has_last_unix)
+    {
+        if (now < aggregator->last_unix)
+        {
+            clock_step = true;
+        }
+        else if (sample->interval_nano > 0)
+        {
+            const auto wall = now - aggregator->last_unix;
+            const auto mono = sample->interval_nano;
+            const auto difference = wall > mono ? wall - mono : mono - wall;
+            clock_step = difference > aggregator->config.expected_period_nano;
+        }
+    }
 
+    /* Phase 1: close every window the sample has left. Nothing is
+     * accumulated until all of them were emitted, so after a sink failure
+     * the caller can push the same sample again without double counting. */
     for (auto &window : aggregator->windows)
     {
         const auto start = now - now % window.length_nano;
         if (window.open && start != window.start)
         {
-            /* Closed normally when time moved forward; when wall time stepped
-             * back, close the window early and mark both sides. */
-            const auto flags = start < window.start ? ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP : 0U;
+            const auto flags =
+                start < window.start ? ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP : 0U;
             if (emit(*aggregator, window, flags, sink, user_data) != 0)
             {
                 return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
             }
         }
+    }
+
+    /* Phase 2: accumulate. */
+    aggregator->has_last_unix = true;
+    aggregator->last_unix = now;
+    for (auto &window : aggregator->windows)
+    {
+        const auto start = now - now % window.length_nano;
         if (!window.open)
         {
             reset_window(window, start);
-            if (clock_stepped_back)
+            if (window.flushed && window.flushed_start == start)
             {
-                window.flags |= ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP;
+                /* The rest of a window that flush already reported. */
+                window.flags |= ROBOTWEAX_SRT_TELEMETRY_WINDOW_PARTIAL;
             }
+            window.flushed = false;
+        }
+        if (clock_step)
+        {
+            window.flags |= ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP;
         }
         accumulate(*aggregator, window, *sample);
     }
@@ -628,9 +705,16 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_window_aggregat
     }
     for (auto &window : aggregator->windows)
     {
+        const auto was_open = window.open && window.sample_count > 0;
+        const auto start = window.start;
         if (emit(*aggregator, window, ROBOTWEAX_SRT_TELEMETRY_WINDOW_PARTIAL, sink, user_data) != 0)
         {
             return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
+        }
+        if (was_open)
+        {
+            window.flushed = true;
+            window.flushed_start = start;
         }
     }
     return ROBOTWEAX_SRT_TELEMETRY_OK;
