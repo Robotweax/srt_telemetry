@@ -22,6 +22,55 @@ static int reject_jsonl(void *user_data, const char *line, size_t line_size)
     return 1;
 }
 
+static int test_ext_from_c(void)
+{
+    robotweax_srt_telemetry_delta_engine *engine = NULL;
+    robotweax_srt_telemetry_raw_sample_v1 raw;
+    robotweax_srt_telemetry_ext_sample_v1 ext;
+    robotweax_srt_telemetry_delta_v1 delta;
+    robotweax_srt_telemetry_ext_delta_v1 ext_delta;
+    int result = 0;
+
+    memset(&raw, 0, sizeof(raw));
+    memset(&ext, 0, sizeof(ext));
+    memset(&delta, 0, sizeof(delta));
+    memset(&ext_delta, 0, sizeof(ext_delta));
+    raw.struct_size = sizeof(raw);
+    raw.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    raw.provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_HAIVISION_SRT;
+    raw.sample_monotonic_nano = 1000;
+    ext.struct_size = sizeof(ext);
+    ext.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    ext.available_fields = ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_NAK_PACKET_TOTAL;
+    ext.sent_nak_packet_total = 1;
+    delta.struct_size = sizeof(delta);
+    delta.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    ext_delta.struct_size = sizeof(ext_delta);
+    ext_delta.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+
+    if (robotweax_srt_telemetry_delta_engine_create(&engine) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return 20;
+    }
+    if (robotweax_srt_telemetry_delta_engine_update_ext(engine, &raw, &ext, &delta,
+                                                        &ext_delta) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        result = 21;
+    }
+    raw.sample_monotonic_nano = 2000;
+    ext.sent_nak_packet_total = 4;
+    if (result == 0 &&
+        (robotweax_srt_telemetry_delta_engine_update_ext(engine, &raw, &ext, &delta,
+                                                         &ext_delta) != ROBOTWEAX_SRT_TELEMETRY_OK ||
+         ext_delta.sent_nak_packet_delta != 3 ||
+         ext_delta.available_delta_fields != ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_NAK_PACKET_TOTAL))
+    {
+        result = 22;
+    }
+    robotweax_srt_telemetry_delta_engine_destroy(engine);
+    return result;
+}
+
 int main(void)
 {
     robotweax_srt_telemetry_delta_engine *engine = NULL;
@@ -124,5 +173,5 @@ int main(void)
 
     robotweax_srt_telemetry_recorder_destroy(recorder);
     robotweax_srt_telemetry_delta_engine_destroy(engine);
-    return 0;
+    return test_ext_from_c();
 }

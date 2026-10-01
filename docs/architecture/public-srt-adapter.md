@@ -44,6 +44,30 @@ The `ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_V1_5_5_CANDIDATE_FIELDS` mask is a
 mapping candidate only. Production configurations must use the relevant
 qualification record rather than enabling that mask by assumption.
 
+## Extended statistics
+
+`robotweax_srt_telemetry_public_srt_session_create_v2` takes a
+`config_v2` with an additional `qualified_ext_fields` allowlist.
+`robotweax_srt_telemetry_public_srt_session_sample_ext` then fills the v1
+result and an `ext_result_v1` (extended sample plus extended deltas) from the
+same `srt_bistats` call. Together they cover all 52 mapped observations listed
+in the [field map](srt-stats-field-map.md).
+
+Creation is rejected when the extended allowlist:
+
+- contains bits outside the configured provider's candidate mask, which
+  includes the other provider's interpretation of `mbpsBandwidth`
+  (`ESTIMATED_LINK_CAPACITY` for Haivision, `DATA_ARRIVAL_RATE` for Robotweax);
+- qualifies packet-filter counters without `CAP_FEC_STATS_V1`; or
+- is non-empty without `CAP_COMMON_STATS_V1`.
+
+Sessions created through the v1 call report no extended fields. Use the
+provider-specific candidate masks
+(`..._HAIVISION_V1_5_5_EXT_CANDIDATE_FIELDS`,
+`..._ROBOTWEAX_EXT_CANDIDATE_FIELDS`) and the group masks
+(`..._GROUP_CANDIDATE_FIELDS`, `..._GROUP_EXT_CANDIDATE_FIELDS`) as starting
+points for a qualification record, not as blanket claims.
+
 ## Current evidence boundary
 
 Automated checks compile the exact callback type and the mapping implementation

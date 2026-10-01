@@ -1,43 +1,169 @@
 # SRT statistics field map
 
-This map defines candidate mappings from the public SRT v1.5.5
-`SRT_TRACEBSTATS` surface into the common telemetry contract.
+This map accounts for every field of the public `SRT_TRACEBSTATS`
+(`CBytePerfMon`) surface in Haivision SRT v1.5.5 and Robotweax SRT. Both
+providers expose the same 82-field layout. Those 82 fields carry
+**54 distinct observations**: 28 lifetime counters (each also exposed as an
+interval twin), 20 instantaneous gauges, one clock, and 5 values that exist only
+as interval fields.
 
-Robotweax SRT mappings are backed by its released public statistics contract.
-The adapter and its exact `srt_bistats` callback signature compile against both
-the Robotweax public header and pinned Haivision SRT v1.5.5. Haivision mappings
-for physical and unique packet/byte totals plus RTT have now executed on live
-cross-provider sockets against that exact pinned version in both caller/listener
-role combinations. The remaining mappings stay qualification candidates.
+| Status | Observations |
+| --- | --- |
+| Mapped in `raw_sample_v1` | 27 |
+| Mapped in `ext_sample_v1` | 25 |
+| Deliberately excluded (`mbpsSendRate`, `mbpsRecvRate`) | 2 |
+| **Total** | **54** |
 
-Collection uses `clear = 0`. The adapter derives rates from lifetime counters
-and monotonic sample time rather than taking ownership of the host's interval
-reset boundary.
+The 28 interval twins (`pktSent`, `byteRecv`, ...) are not mapped. With
+`clear = 0` they duplicate their lifetime counter since the last clear, and the
+delta engine derives exact interval values from the lifetime counters instead.
 
-## Common counter candidates
+`mbpsBandwidth` has a different meaning in each provider, so it maps to one of
+two contract fields (see below); the 25 extended fields count it once.
 
-| Contract observation | Public field | Semantics retained |
+The live gate test `robotweax_srt_telemetry_public_srt_field_coverage_test`
+qualifies all 52 mapped observations on a bidirectional loopback and fails if
+any is **unavailable** on either endpoint. It also checks a few values that
+must be non-zero on a healthy loopback (connection age, MSS, ACK and
+sender-active deltas). It passes against Haivision SRT v1.5.5 and Robotweax SRT
+`main`. It proves availability, not value correctness: without FEC,
+encryption or loss, the filter, undecryptable and belated fields are observed
+zeros. Those values are qualified by the fault lab (see "Still open").
+
+## Collection rules
+
+- Collection always uses `clear = 0` and `instantaneous = 1`. The adapter never
+  resets the host's interval counters, and buffer gauges are current values
+  rather than one-second moving averages.
+- A clear availability bit means unavailable, never an observed zero. A
+  negative or non-finite provider value is unavailable.
+- Units follow OpenTelemetry: seconds, bytes, packets, bit/s. Durations that
+  must stay integral for deltas use nanoseconds.
+- Role says which dashboard the observation is meant for. Every SRT endpoint
+  can both send and receive, so both sides report every field.
+
+## Lifetime counters
+
+| Contract field | Source (lifetime) | Role | Notes |
+| --- | --- | --- | --- |
+| `sent_packet_total` | `pktSentTotal` | sender | includes retransmissions and FEC parity |
+| `received_packet_total` | `pktRecvTotal` | receiver | may include duplicates and FEC control |
+| `unique_sent_packet_total` | `pktSentUniqueTotal` | sender | first transmissions only |
+| `unique_received_packet_total` | `pktRecvUniqueTotal` | receiver | newly accepted DATA, including FEC-rebuilt |
+| `sender_loss_packet_total` | `pktSndLossTotal` | sender | loss learned when a NAK newly queues a retransmission |
+| `receiver_loss_packet_total` | `pktRcvLossTotal` | receiver | newly observed sequence gaps |
+| `retransmitted_packet_total` | `pktRetransTotal` | sender | retransmissions actually sent |
+| `sender_drop_packet_total` | `pktSndDropTotal` | sender | local TTL/TLPKTDROP removals; see below |
+| `receiver_drop_packet_total` | `pktRcvDropTotal` | receiver | not delivered to the application; includes undecryptable |
+| `receiver_undecryptable_packet_total` | `pktRcvUndecryptTotal` | receiver | rejected at the decrypt/auth boundary |
+| `sent_wire_byte_total` | `byteSentTotal` | sender | DATA plus IP/UDP/SRT headers |
+| `received_wire_byte_total` | `byteRecvTotal` | receiver | DATA plus IP/UDP/SRT headers |
+| `unique_sent_wire_byte_total` | `byteSentUniqueTotal` | sender | |
+| `unique_received_wire_byte_total` | `byteRecvUniqueTotal` | receiver | |
+| `retransmitted_wire_byte_total` | `byteRetransTotal` | sender | |
+| ext `sent_ack_packet_total` | `pktSentACKTotal` | receiver | ACKs sent |
+| ext `received_ack_packet_total` | `pktRecvACKTotal` | sender | ACKs received |
+| ext `sent_nak_packet_total` | `pktSentNAKTotal` | receiver | one compressed multi-range NAK counts once |
+| ext `received_nak_packet_total` | `pktRecvNAKTotal` | sender | |
+| ext `sender_active_nano_total` | `usSndDurationTotal` | sender | time with queued or unacknowledged DATA; µs to ns |
+| ext `receiver_loss_wire_byte_total` | `byteRcvLossTotal` | receiver | estimated from average packet size |
+| ext `sender_drop_wire_byte_total` | `byteSndDropTotal` | sender | |
+| ext `receiver_drop_wire_byte_total` | `byteRcvDropTotal` | receiver | estimated from average packet size |
+| ext `receiver_undecryptable_payload_byte_total` | `byteRcvUndecryptTotal` | receiver | payload only, no headers, in both providers |
+| ext `sent_filter_extra_packet_total` | `pktSndFilterExtraTotal` | sender | FEC parity sent; needs `CAP_FEC_STATS_V1` |
+| ext `received_filter_extra_packet_total` | `pktRcvFilterExtraTotal` | receiver | FEC control consumed; needs `CAP_FEC_STATS_V1` |
+| ext `filter_recovered_packet_total` | `pktRcvFilterSupplyTotal` | receiver | rebuilt by FEC; needs `CAP_FEC_STATS_V1` |
+| ext `filter_unrecovered_packet_total` | `pktRcvFilterLossTotal` | receiver | declared irrecoverable by FEC; needs `CAP_FEC_STATS_V1` |
+
+Filter counters are zero when no packet filter is negotiated. A zero there is an
+observed zero, not "unavailable".
+
+## Interval-only values
+
+These have no lifetime field. The two counters accumulate since the
+connection started, unless the host itself calls `srt_bstats`/`srt_bistats`
+with `clear = 1`. The delta engine detects a host clear only when the counter is
+lower than at the previous sample, and then reports a field-local reset
+(`ext_delta.counter_reset_fields`) instead of a negative delta. If the counter
+has already climbed back above the previous sample, the clear goes unnoticed
+and that interval's delta is too small. Ext resets never set the shared v1
+`QUALITY_COUNTER_RESET` flag, because the lifetime counters are unaffected.
+Hosts that clear interval statistics should say so in their qualification
+record.
+
+| Contract field | Source | Role | Notes |
+| --- | --- | --- | --- |
+| ext `received_retransmitted_packet_since_clear` | `pktRcvRetrans` | receiver | counter; retransmissions that arrived |
+| ext `belated_packet_since_clear` | `pktRcvBelated` | receiver | counter; arrived too late to be used (already acknowledged, dropped or outside the buffer), including late duplicates |
+| ext `reorder_distance_packets` | `pktReorderDistance` | receiver | gauge; recent reorder distance, decays with the tolerance estimator and is **not** reset by a clear in either provider |
+| excluded | `mbpsSendRate` | sender | rate over the host's clear interval; derived from lifetime bytes instead |
+| excluded | `mbpsRecvRate` | receiver | same |
+
+## Gauges
+
+| Contract field | Source | Role | Notes |
+| --- | --- | --- | --- |
+| `rtt_seconds` | `msRTT` | both | smoothed RTT; ms to s |
+| `flight_size_packets` | `pktFlightSize` | sender | |
+| `flow_window_packets` | `pktFlowWindow` | sender | receiver free space as reported in ACKs |
+| `congestion_window_packets` | `pktCongestionWindow` | sender | not used in live mode |
+| `available_send_buffer_bytes` | `byteAvailSndBuf` | sender | |
+| `available_receive_buffer_bytes` | `byteAvailRcvBuf` | receiver | falls when the application stops reading |
+| `send_buffer_bytes` | `byteSndBuf` | sender | DATA wire bytes |
+| `send_buffer_seconds` | `msSndBuf` | sender | span of unacknowledged DATA |
+| `receive_buffer_bytes` | `byteRcvBuf` | receiver | retained application payload |
+| `receive_buffer_seconds` | `msRcvBuf` | receiver | span of acknowledged DATA; not latency margin by itself |
+| `sender_tsbpd_delay_seconds` | `msSndTsbPdDelay` | sender | peer latency |
+| `receiver_tsbpd_delay_seconds` | `msRcvTsbPdDelay` | receiver | own latency |
+| ext `packet_send_period_seconds` | `usPktSndPeriod` | sender | minimum pacing interval; µs to s |
+| ext `send_bandwidth_limit_bits_per_second` | `mbpsMaxBW` | sender | `SRTO_MAXBW`, or the congestion controller's value when unset (Haivision); 0 = none reported |
+| ext `mss_bytes` | `byteMSS` | both | negotiated MSS |
+| ext `send_buffer_packets` | `pktSndBuf` | sender | |
+| ext `receive_buffer_packets` | `pktRcvBuf` | receiver | acknowledged packets only |
+| ext `reorder_tolerance_packets` | `pktReorderTolerance` | receiver | current estimator, capped by `SRTO_LOSSMAXTTL` |
+| ext `average_belated_seconds` | `pktRcvAvgBelatedTime` | receiver | smoothed lateness of belated packets; ms to s |
+| ext `estimated_link_capacity_bits_per_second` | `mbpsBandwidth` | both | **Haivision only** (see below) |
+| ext `data_arrival_rate_bits_per_second` | `mbpsBandwidth` | receiver | **Robotweax only** (see below) |
+
+## Clock
+
+| Contract field | Source | Notes |
 | --- | --- | --- |
-| sent physical packets | `pktSentTotal` | includes successful retransmission datagrams |
-| received physical packets | `pktRecvTotal` | may include physical duplicates |
-| sent unique packets | `pktSentUniqueTotal` | first successful transmission |
-| received unique packets | `pktRecvUniqueTotal` | newly accepted source DATA |
-| sender loss packets | `pktSndLossTotal` | loss learned when a NAK newly queues retransmission |
-| receiver loss packets | `pktRcvLossTotal` | newly observed receiver gaps |
-| retransmitted packets | `pktRetransTotal` | retransmission datagrams actually sent |
-| sender drop packets | `pktSndDropTotal` | local send/retransmission-buffer removals from message TTL or negotiated TLPKTDROP; not proof of network or application payload loss |
-| receiver drop packets | `pktRcvDropTotal` | local receiver drop action |
-| receiver undecryptable packets | `pktRcvUndecryptTotal` | protected DATA rejected at decrypt/auth boundary |
-| sent physical wire bytes | `byteSentTotal` | SRT DATA plus documented IP/UDP overhead |
-| received physical wire bytes | `byteRecvTotal` | SRT DATA plus documented IP/UDP overhead |
-| sent unique wire bytes | `byteSentUniqueTotal` | unique DATA wire accounting |
-| received unique wire bytes | `byteRecvUniqueTotal` | unique DATA wire accounting |
-| retransmitted wire bytes | `byteRetransTotal` | retransmission wire accounting |
+| ext `connection_age_seconds` | `msTimeStamp` | time since connect; transport-local, never wall clock |
 
-`pktRcvBelated` is not currently promoted to the lifetime-counter baseline: the
-public layout exposes it as an interval value without a matching lifetime field.
-It requires an explicit interval-ownership policy or an enhanced Robotweax
-counter before reliable shared collection.
+## `mbpsBandwidth` differs by provider
+
+- **Haivision SRT** reports a link-capacity estimate from probe packet pairs:
+  on the receiving side its own estimate, on the sending side the value the
+  peer carried back in ACKs. It maps to
+  `estimated_link_capacity_bits_per_second`.
+- **Robotweax SRT** reports measured local DATA arrival throughput, or zero
+  without an arrival sample; it does not estimate link capacity
+  ([Robotweax statistics](https://github.com/Robotweax/srt/blob/main/docs/statistics.md)).
+  It maps to `data_arrival_rate_bits_per_second`.
+
+The adapter only accepts the interpretation that belongs to the configured
+provider, as encoded in
+`ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_HAIVISION_V1_5_5_EXT_CANDIDATE_FIELDS`
+and `ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_ROBOTWEAX_EXT_CANDIDATE_FIELDS`. A path-headroom indicator therefore needs link capacity from a Haivision
+peer or another source; it cannot use Robotweax's arrival rate as capacity.
+
+## Group statistics
+
+`srt_bistats` on a group ID fills only these fields; the rest stay zero. Use a
+separate session whose socket is the group ID and qualify
+`ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_GROUP_CANDIDATE_FIELDS` and
+`ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_GROUP_EXT_CANDIDATE_FIELDS`.
+
+| Contract field | Group meaning |
+| --- | --- |
+| `unique_sent_packet_total` / `unique_sent_wire_byte_total` | each original packet once, regardless of how many links carried it |
+| `unique_received_packet_total` / `unique_received_wire_byte_total` | first arrival over any link |
+| `receiver_drop_packet_total` / ext `receiver_drop_wire_byte_total` | dropped on every link: what the application actually lost |
+| ext `connection_age_seconds` | time since the first member connected |
+
+Group mapping is unit-tested with an injected `srt_bistats`. Live bonding
+qualification belongs to the Phase 4 fault-lab work and is still open.
 
 ## Sender-drop interpretation
 
@@ -58,23 +184,6 @@ which removal cause or deadline applied to a particular packet.
 The instrumented Robotweax experiment establishes the mechanism for its pinned
 build; it does not establish identical timing or counts for Haivision versions.
 
-## Gauge candidates
-
-| Contract observation | Public field | Conversion / note |
-| --- | --- | --- |
-| RTT | `msRTT` | milliseconds to seconds |
-| flight size | `pktFlightSize` | packets |
-| flow window | `pktFlowWindow` | packets; not "available bytes" |
-| congestion window | `pktCongestionWindow` | packets |
-| available send buffer | `byteAvailSndBuf` | bytes |
-| available receive buffer | `byteAvailRcvBuf` | bytes |
-| send buffer occupancy | `byteSndBuf` | sender DATA wire bytes |
-| send buffer span | `msSndBuf` | milliseconds to seconds |
-| receive buffer occupancy | `byteRcvBuf` | retained application payload bytes |
-| receive buffer span | `msRcvBuf` | milliseconds to seconds; not latency margin |
-| sender TSBPD delay | `msSndTsbPdDelay` | milliseconds to seconds |
-| receiver TSBPD delay | `msRcvTsbPdDelay` | milliseconds to seconds |
-
 ## Deliberately excluded shortcuts
 
 - `mbpsSendRate` and `mbpsRecvRate` are not the canonical rate source. Their
@@ -85,7 +194,16 @@ build; it does not establish identical timing or counts for Haivision versions.
 - `window_available` is not a canonical metric because the source surfaces use
   different packet and byte quantities.
 - `receive_buffer_ms` is not labeled latency margin. Margin is a derived,
-  configuration-aware quantity to be validated separately.
+  configuration-aware quantity computed by the health engine.
+
+## Still open
+
+- Live values (not just availability) for FEC counters with
+  `SRTO_PACKETFILTER` negotiated, undecryptable counters with a wrong
+  passphrase, belated and reorder fields under reordering, and live group
+  statistics with bonding (Phase 4 fault lab).
+- Recording extended fields in the bounded recorder and JSONL (Phase 2 compact
+  record). Until then the extended sample is available through the adapter API.
 
 ## Qualification record required
 
@@ -98,4 +216,4 @@ Each adapter/provider version must record:
 - field availability and observed reset behavior;
 - counter relationships under loss, duplicate, reorder, and retransmission;
 - sample-call overhead and close/sample race behavior; and
-- any divergence from this candidate map.
+- any divergence from this map.

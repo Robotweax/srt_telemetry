@@ -179,6 +179,132 @@ extern "C"
         robotweax_srt_telemetry_delta_v1 delta;
     } robotweax_srt_telemetry_record_v1;
 
+/* Extended statistics (supplement to raw_sample_v1). Together with the v1 raw
+ * sample these cover every distinct observation of the public SRT_TRACEBSTATS
+ * surface except the two interval rates (mbpsSendRate, mbpsRecvRate), which
+ * the delta engine derives from lifetime byte counters instead. A clear bit
+ * means unavailable, never an observed zero. See the field map for sources. */
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_CONNECTION_AGE_SECONDS UINT64_C(1)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_ACK_PACKET_TOTAL (UINT64_C(1) << 1)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_ACK_PACKET_TOTAL (UINT64_C(1) << 2)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_NAK_PACKET_TOTAL (UINT64_C(1) << 3)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_NAK_PACKET_TOTAL (UINT64_C(1) << 4)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENDER_ACTIVE_NANO_TOTAL (UINT64_C(1) << 5)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVER_LOSS_WIRE_BYTE_TOTAL (UINT64_C(1) << 6)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENDER_DROP_WIRE_BYTE_TOTAL (UINT64_C(1) << 7)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVER_DROP_WIRE_BYTE_TOTAL (UINT64_C(1) << 8)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVER_UNDECRYPTABLE_PAYLOAD_BYTE_TOTAL (UINT64_C(1) << 9)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_FILTER_EXTRA_PACKET_TOTAL (UINT64_C(1) << 10)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_FILTER_EXTRA_PACKET_TOTAL (UINT64_C(1) << 11)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_FILTER_RECOVERED_PACKET_TOTAL (UINT64_C(1) << 12)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_FILTER_UNRECOVERED_PACKET_TOTAL (UINT64_C(1) << 13)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_RETRANSMITTED_PACKET_SINCE_CLEAR (UINT64_C(1) << 14)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_BELATED_PACKET_SINCE_CLEAR (UINT64_C(1) << 15)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_REORDER_DISTANCE_PACKETS (UINT64_C(1) << 16)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_PACKET_SEND_PERIOD_SECONDS (UINT64_C(1) << 17)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_ESTIMATED_LINK_CAPACITY_BITS_PER_SECOND (UINT64_C(1) << 18)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_DATA_ARRIVAL_RATE_BITS_PER_SECOND (UINT64_C(1) << 19)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SEND_BANDWIDTH_LIMIT_BITS_PER_SECOND (UINT64_C(1) << 20)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_MSS_BYTES (UINT64_C(1) << 21)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SEND_BUFFER_PACKETS (UINT64_C(1) << 22)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVE_BUFFER_PACKETS (UINT64_C(1) << 23)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_REORDER_TOLERANCE_PACKETS (UINT64_C(1) << 24)
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_AVERAGE_BELATED_SECONDS (UINT64_C(1) << 25)
+
+/* Ext fields that are monotonic counters and therefore produce deltas. The
+ * *_SINCE_CLEAR counters accumulate since connection start unless the host
+ * itself clears SRT interval statistics. A host clear is detected only when
+ * the counter is lower than at the previous sample (best effort): an ext reset
+ * sets ext_delta.counter_reset_fields but not the shared v1 quality flag. */
+#define ROBOTWEAX_SRT_TELEMETRY_EXT_COUNTER_FIELDS                                                 \
+    (ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_ACK_PACKET_TOTAL |                                     \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_ACK_PACKET_TOTAL |                                 \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_NAK_PACKET_TOTAL |                                     \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_NAK_PACKET_TOTAL |                                 \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENDER_ACTIVE_NANO_TOTAL |                                  \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVER_LOSS_WIRE_BYTE_TOTAL |                             \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENDER_DROP_WIRE_BYTE_TOTAL |                               \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVER_DROP_WIRE_BYTE_TOTAL |                             \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVER_UNDECRYPTABLE_PAYLOAD_BYTE_TOTAL |                 \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_FILTER_EXTRA_PACKET_TOTAL |                            \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_FILTER_EXTRA_PACKET_TOTAL |                        \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_FILTER_RECOVERED_PACKET_TOTAL |                             \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_FILTER_UNRECOVERED_PACKET_TOTAL |                           \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_RETRANSMITTED_PACKET_SINCE_CLEAR |                 \
+     ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_BELATED_PACKET_SINCE_CLEAR)
+
+    typedef struct robotweax_srt_telemetry_ext_sample_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        uint64_t available_fields;
+
+        /* Time since the SRT socket (or group) connected; transport-local. */
+        double connection_age_seconds;
+
+        uint64_t sent_ack_packet_total;
+        uint64_t received_ack_packet_total;
+        uint64_t sent_nak_packet_total;
+        uint64_t received_nak_packet_total;
+        /* Time the sender had unacknowledged or queued DATA. */
+        uint64_t sender_active_nano_total;
+        /* Estimated from the average packet size by the provider. */
+        uint64_t receiver_loss_wire_byte_total;
+        uint64_t sender_drop_wire_byte_total;
+        /* Receiver drop bytes are estimated from the average packet size. */
+        uint64_t receiver_drop_wire_byte_total;
+        /* Protected payload only, without IP/UDP/SRT headers. */
+        uint64_t receiver_undecryptable_payload_byte_total;
+        /* Packet-filter (FEC) counters; zero when no filter is negotiated. */
+        uint64_t sent_filter_extra_packet_total;
+        uint64_t received_filter_extra_packet_total;
+        uint64_t filter_recovered_packet_total;
+        uint64_t filter_unrecovered_packet_total;
+        uint64_t received_retransmitted_packet_since_clear;
+        uint64_t belated_packet_since_clear;
+        /* Recent reorder distance; decays with the tolerance estimator and is
+         * not reset by an interval clear. */
+        uint64_t reorder_distance_packets;
+
+        double packet_send_period_seconds;
+        /* Haivision SRT: link capacity estimated from probe packet pairs. */
+        double estimated_link_capacity_bits_per_second;
+        /* Robotweax SRT: measured local DATA arrival throughput. */
+        double data_arrival_rate_bits_per_second;
+        /* Effective sender limit (SRTO_MAXBW or congestion control); 0 = none reported. */
+        double send_bandwidth_limit_bits_per_second;
+        uint64_t mss_bytes;
+        uint64_t send_buffer_packets;
+        uint64_t receive_buffer_packets;
+        uint64_t reorder_tolerance_packets;
+        double average_belated_seconds;
+    } robotweax_srt_telemetry_ext_sample_v1;
+
+    typedef struct robotweax_srt_telemetry_ext_delta_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        /* Bits use the EXT_FIELD_* values of the source counter. */
+        uint64_t available_delta_fields;
+        uint64_t counter_reset_fields;
+
+        uint64_t sent_ack_packet_delta;
+        uint64_t received_ack_packet_delta;
+        uint64_t sent_nak_packet_delta;
+        uint64_t received_nak_packet_delta;
+        uint64_t sender_active_nano_delta;
+        uint64_t receiver_loss_wire_byte_delta;
+        uint64_t sender_drop_wire_byte_delta;
+        uint64_t receiver_drop_wire_byte_delta;
+        uint64_t receiver_undecryptable_payload_byte_delta;
+        uint64_t sent_filter_extra_packet_delta;
+        uint64_t received_filter_extra_packet_delta;
+        uint64_t filter_recovered_packet_delta;
+        uint64_t filter_unrecovered_packet_delta;
+        uint64_t received_retransmitted_packet_delta;
+        uint64_t belated_packet_delta;
+    } robotweax_srt_telemetry_ext_delta_v1;
+
     typedef enum robotweax_srt_telemetry_endpoint_role
     {
         ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN = 0,
@@ -230,6 +356,18 @@ extern "C"
     robotweax_srt_telemetry_delta_engine_update(robotweax_srt_telemetry_delta_engine *engine,
                                                 const robotweax_srt_telemetry_raw_sample_v1 *sample,
                                                 robotweax_srt_telemetry_delta_v1 *delta);
+
+    /* Same as delta_engine_update, plus deltas for the extended counters. The
+     * interval, quality flags and baselines are shared: ext deltas exist only
+     * when the v1 delta has a valid interval and both samples carry the field.
+     * Mixing update and update_ext on one engine is allowed; ext deltas then
+     * start after the next update_ext call that follows another one. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_delta_engine_update_ext(
+        robotweax_srt_telemetry_delta_engine *engine,
+        const robotweax_srt_telemetry_raw_sample_v1 *sample,
+        const robotweax_srt_telemetry_ext_sample_v1 *ext_sample,
+        robotweax_srt_telemetry_delta_v1 *delta, robotweax_srt_telemetry_ext_delta_v1 *ext_delta);
 
     /* The complete ring is allocated at creation. Push, read, and clear do not
      * grow it. A full ring overwrites its oldest record. */

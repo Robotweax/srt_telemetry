@@ -81,5 +81,10 @@ destination backend has no native equivalent.
 ## ABI evolution
 
 Public structures contain `struct_size` and `abi_version`. Version 1 requires
-the full current structure. Future revisions may append fields but must not
-reinterpret existing fields. Incompatible changes require a new ABI version.
+the full current structure, so growing an existing structure would reject
+callers built against the older header. New observations therefore arrive in
+new structures instead: `ext_sample_v1` and `ext_delta_v1` supplement
+`raw_sample_v1` and `delta_v1`, the adapter adds `config_v2`,
+`session_create_v2` and `session_sample_ext`, and every v1 entry point keeps its
+behaviour. Existing fields are never reinterpreted. Incompatible changes require
+a new ABI version.
