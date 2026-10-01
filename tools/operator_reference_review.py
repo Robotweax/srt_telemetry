@@ -1,3 +1,7 @@
+# FROZEN (2026-10-01): reference implementation for SRT Doctor.
+# SRT Telemetry's roadmap is the sender/receiver dashboard path (docs/roadmap.md).
+# Cross-endpoint diagnosis now belongs to SRT Doctor; only bug fixes that keep
+# existing tests and downstream consumers (e.g. Flight Recorder) working land here.
 """Validate a case-specific measurement rubric without importing the analyzer.
 
 This is a regression oracle and technical review, not an independent human

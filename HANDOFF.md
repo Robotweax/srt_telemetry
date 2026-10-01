@@ -1,5 +1,12 @@
 # Project handoff (2026-09-27)
 
+> **Direction change (2026-10-01).** The project now builds the sender and
+> receiver dashboard path described in the [roadmap](docs/roadmap.md): MIT
+> licence, CI on both providers, built-in web UI in 1.0. The incident analyzer
+> and operator-evaluation harness are frozen as reference material for SRT
+> Doctor. Statements below about the diagnostic-value gate describe the state
+> before that change.
+
 This is the entry point for continuing **Robotweax SRT Telemetry** on another
 machine. It is a status snapshot, not a replacement for the linked evidence or
 an authorization to broaden provider claims. Start from the current `main` of

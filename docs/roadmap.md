@@ -1,71 +1,78 @@
 # Roadmap
 
-## Phase 0: evidence foundation — complete
+SRT Telemetry is the embeddable library and dashboard stack for observing an
+SRT stream from the sender or the receiver side. The plan below replaces the
+earlier diagnostic-proof roadmap. Decisions taken on 2026-10-01: MIT licence;
+the built-in web UI ships in 1.0; cross-endpoint diagnosis belongs to SRT
+Doctor.
 
-- common provider contract;
-- versioned C ABI;
-- non-destructive lifetime-counter delta engine;
-- availability and data-quality model;
-- exact SRT field mapping;
-- adapter capability schema; and
-- golden-incident manifest.
+Effort is in engineer-weeks (EW). Gate thresholds are proposals to confirm
+during Phase 0.
 
-## Phase 1: recorder and provider qualification — current
+## Phase 0: hygiene and scope (1.5 EW): in progress
 
-- bounded in-memory recorder and versioned stable-snapshot JSONL callback export
-  complete; streaming callbacks and protobuf export open;
-- public SRT API adapter using the host-selected library complete;
-- Robotweax SRT header/signature and bidirectional self-loopback candidate
-  profile complete, full profile open;
-- pinned Haivision SRT v1.5.5 header/signature and bidirectional self-loopback
-  candidate profile complete, full profile open;
-- Robotweax-to-Haivision Live/Message IPv4 loopback interop complete in both
-  caller/listener role combinations for the common nine-field subset;
-- macOS arm64 sampling microbenchmark and close/sample lifecycle candidate
-  complete; controlled multi-platform release budgets and stress profiles open;
-- wall-clock-paced 20 Hz loss-shape candidate complete in both cross-provider
-  directions; common incident sampling selected for the coarse 50 ms question,
-  exact within-window adjacency and a release cost gate open;
-- constant- and burst-loss captured cross-provider gap candidates complete in
-  both sender directions;
-- receiver-pause/backpressure and reduced-egress-capacity public-gauge
-  candidates complete in both provider directions with lossless recovery and
-  no Robotweax extension required for the bounded endpoint-localization
-  questions;
-- receiver recovery-margin public-counter candidates complete in both provider
-  directions with an exact drop/delivery-gap accounting and no prescriptive
-  latency claim or Robotweax extension; and
-- flight-tail/profile coverage and the remaining initial corpus open.
+- MIT licence, installed with the package;
+- CI on Linux (GCC, Clang) and macOS for the core SDK, and the public SRT
+  adapter against Haivision SRT v1.5.5 and Robotweax SRT `main`;
+- installed-package consumers for static and shared builds, including a C-only
+  host linking the static adapter;
+- the IPv6-only JSONL recording test skips cleanly where `::1` is missing;
+- README leads with the dashboard purpose; and
+- incident analyzer and operator-evaluation harness frozen as reference
+  material for SRT Doctor (see [tools](../tools/README.md)).
 
-## Phase 2: diagnostic proof — current
+**Gate:** CI green on both providers; the IPv6-only test skips cleanly.
 
-- deterministic local incident timeline candidate complete;
-- five explainable hypothesis candidates complete, including a public-API RTT
-  step with warm-baseline thresholds and observed recovery;
-- explicit insufficient-evidence outcome complete;
-- synthetic correlation plus direct provider-linked recorder-to-analyzer
-  candidates complete for constant loss, an RTT step, receiver pause,
-  bandwidth reduction with sender queue growth, and receiver recovery-margin
-  exhaustion in both cross-provider sender directions; real cross-endpoint
-  clock-quality contract open; and
-- versioned, counterbalanced raw-statistics versus incident-report evaluation
-  harness complete; automated coverage of five failure classes complete;
-- immutable eight-scenario internal-rehearsal packet and reproducible preflight
-  complete; conducted internal sessions and design-partner observations open.
+## Phase 1: complete metric model (2 EW)
 
-## Phase 3: pipeline pilot
+- all 57 per-socket fields of `SRT_TRACEBSTATS` and the group statistics,
+  mapped per role in the [field map](architecture/srt-stats-field-map.md);
+- buffer gauges read with `instantaneous=1`;
+- socket state, negotiated options, KM state and reject reason as events; and
+- FEC and group capability bits mapped.
 
-- OTLP signal mapping;
-- agent-versus-Collector decision record;
-- bounded persistent spool;
-- self-observability and data-loss accounting;
-- cardinality allowlist; and
-- measured storage and egress economics.
+**Gate:** field-coverage test passes 57 of 57 on both providers.
 
-## Phase 4: on-prem beta
+## Phase 2: sampler, windows, health engine (3 EW)
 
-- incident-centric dashboard;
-- alert grouping and suppression;
-- calibrated deterministic RCA;
-- authentication, RBAC, audit, retention, and redaction; and
-- representative two-node, long-duration, and upgrade tests.
+- in-SDK sampler at 100 ms per socket with host labels, on its own thread;
+- min/max/p95 windows at 1 s, 10 s and 60 s;
+- event journal and a compact 1 s record (target 128 bytes or less); and
+- eight health indicators producing per-role verdicts (OK, Watch, At risk,
+  Failing, Unknown) with hysteresis, reason codes and knob advice.
+
+**Gate:** the right verdict in at least 9 of 10 lab fault classes per role, and
+never a wrong OK.
+
+## Phase 3: outputs and dashboards (3-4 EW)
+
+- streaming callback, Prometheus, OTLP and a WebSocket feed sharing one
+  versioned metric naming scheme;
+- embedded web UI with sender, receiver and fleet views;
+- Grafana dashboards and alert rules; and
+- reference integrations: srt-live-transmit, GStreamer, Robotweax gateway.
+
+**Gate:** each integration takes 30 host lines or fewer; an operator answers
+"fine, or which knob" from one screen.
+
+## Phase 4: qualification (1.5 EW)
+
+- 24 h soak, reconnect storms, overhead at 1,000 sockets and 10 Hz; and
+- encryption, FEC and bonding scenarios added to the fault lab.
+
+**1.0 gate:** overhead under 1 % of one core; no unexplained gaps in 24 h;
+default thresholds checked on field streams.
+
+## Completed before this plan
+
+The evidence foundation stays the base of every phase above:
+
+- common provider contract, versioned C ABI, non-destructive lifetime-counter
+  delta engine, availability and data-quality model;
+- injected public SRT API adapter working unchanged against Haivision SRT
+  v1.5.5 and Robotweax SRT;
+- bounded in-memory recorder with versioned JSONL export;
+- cross-provider interop, sampling and lifecycle candidates, and the 0.2.6
+  qualification archive;
+- deterministic two-process fault lab with 15 retained golden incidents; and
+- the incident analyzer and operator-evaluation harness, now frozen.

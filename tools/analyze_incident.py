@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# FROZEN (2026-10-01): reference implementation for SRT Doctor.
+# SRT Telemetry's roadmap is the sender/receiver dashboard path (docs/roadmap.md).
+# Cross-endpoint diagnosis now belongs to SRT Doctor; only bug fixes that keep
+# existing tests and downstream consumers (e.g. Flight Recorder) working land here.
 
 import argparse
 import csv

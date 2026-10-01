@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import socket
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,25 @@ def require_recorded(line: str, role: str, count: int) -> None:
     }
     if result != expected:
         raise RuntimeError(f"unexpected recording result: {result}")
+
+
+SKIP_RETURN_CODE = 77
+
+
+def ipv6_loopback_available() -> bool:
+    """Return whether this host can bind a UDP socket on the IPv6 loopback.
+
+    Some containers and CI runners have no ::1. The test deliberately exercises
+    the IPv6 path, so it reports a CTest skip there instead of a failure.
+    """
+    if not socket.has_ipv6:
+        return False
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        return False
+    return True
 
 
 def run(arguments: argparse.Namespace, directory: Path) -> None:
@@ -141,6 +161,9 @@ def main() -> int:
     parser.add_argument("--analyzer", type=Path, required=True)
     parser.add_argument("--work-dir", type=Path, required=True)
     arguments = parser.parse_args()
+    if not ipv6_loopback_available():
+        print("SKIP: IPv6 loopback (::1) is not available on this host")
+        return SKIP_RETURN_CODE
     if not arguments.peer.is_file() or not arguments.analyzer.is_file():
         raise RuntimeError("peer or analyzer does not exist")
     arguments.work_dir.mkdir(parents=True, exist_ok=True)
