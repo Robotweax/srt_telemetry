@@ -97,7 +97,10 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_REASON_SENDER_BACKLOG = 24,
         ROBOTWEAX_SRT_TELEMETRY_REASON_SENDER_DROPS = 25,
         ROBOTWEAX_SRT_TELEMETRY_REASON_PEER_READ_STALL = 26,
-        ROBOTWEAX_SRT_TELEMETRY_REASON_APPLICATION_READ_STALL = 27
+        ROBOTWEAX_SRT_TELEMETRY_REASON_APPLICATION_READ_STALL = 27,
+        /* Flight fills the flow window while the window is unchanged: no
+         * acknowledgements arrive (path or peer unresponsive). No knob. */
+        ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED = 28
     } robotweax_srt_telemetry_health_reason;
 
     typedef enum robotweax_srt_telemetry_health_knob
@@ -109,7 +112,7 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE = 2,
         /* SRTO_OHEADBW; percent. */
         ROBOTWEAX_SRT_TELEMETRY_KNOB_OVERHEAD_BANDWIDTH = 3,
-        /* SRTO_MAXBW; bit/s. */
+        /* SRTO_MAXBW; bytes/s, as the option takes it. */
         ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH = 4,
         /* SRTO_PASSPHRASE / SRTO_PBKEYLEN on both ends; no value. */
         ROBOTWEAX_SRT_TELEMETRY_KNOB_PASSPHRASE = 5,
@@ -250,7 +253,8 @@ extern "C"
 
     /* Feeds one metric sample (samples must arrive in monotonic order) and
      * returns the status after it. A sample flagged METRIC_SAMPLE_SOURCE_ERROR
-     * yields UNKNOWN / SOURCE_ERROR. */
+     * keeps the verdict (reason SOURCE_ERROR) for up to enter_hold after the
+     * last good sample, then yields UNKNOWN / SOURCE_ERROR. */
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine *engine,
                                                const robotweax_srt_telemetry_metric_sample_v1 *sample,

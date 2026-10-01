@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <deque>
@@ -13,6 +14,11 @@ static_assert(sizeof(robotweax_srt_telemetry_health_indicator_status_v1) == 24,
               "indicator status layout is part of the ABI");
 static_assert(sizeof(robotweax_srt_telemetry_health_status_v1) == 72 + 16 * 24,
               "health status layout is part of the ABI");
+static_assert(offsetof(robotweax_srt_telemetry_health_status_v1, suggested_value) == 56 &&
+                  offsetof(robotweax_srt_telemetry_health_status_v1, indicators) == 72,
+              "health status layout is part of the ABI");
+static_assert(sizeof(robotweax_srt_telemetry_health_config_v1) == 48, "health config layout is part of the ABI");
+static_assert(sizeof(robotweax_srt_telemetry_health_context_v1) == 32, "health context layout is part of the ABI");
 
 namespace
 {
@@ -91,6 +97,7 @@ enum Gauge : std::size_t
     G_HEADROOM,
     G_FLIGHT_TO_FLOW,
     G_SEND_BUFFER_RATIO,
+    G_FLOW_WINDOW,
     GAUGES
 };
 constexpr std::array<robotweax_srt_telemetry_metric, GAUGES> gauge_metric = {
@@ -101,6 +108,7 @@ constexpr std::array<robotweax_srt_telemetry_metric, GAUGES> gauge_metric = {
     ROBOTWEAX_SRT_TELEMETRY_METRIC_RECOVERY_HEADROOM_RATIO,
     ROBOTWEAX_SRT_TELEMETRY_METRIC_FLIGHT_TO_FLOW_WINDOW_RATIO,
     ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_DROP_THRESHOLD_RATIO,
+    ROBOTWEAX_SRT_TELEMETRY_METRIC_FLOW_WINDOW_PACKETS,
 };
 
 std::uint64_t bit(const robotweax_srt_telemetry_metric metric)
@@ -238,6 +246,16 @@ struct robotweax_srt_telemetry_health_engine
     std::deque<Entry> entries;
     std::array<double, COUNTS> sums{};
     std::array<std::size_t, COUNTS> available_entries{};
+    /* Time the count window actually covers (sum of sample intervals). */
+    std::uint64_t covered_nano = 0;
+    /* Largest flow window seen: a receiver that stops reading shrinks it. */
+    double max_flow_window = 0;
+    /* Last sample that was not a source error. */
+    std::uint64_t last_good = 0;
+    bool has_good = false;
+    /* Since when a required indicator has had no grade. */
+    bool required_missing = false;
+    std::uint64_t required_missing_since = 0;
     std::uint64_t last_monotonic = 0;
     bool has_last = false;
 
@@ -259,6 +277,7 @@ using Engine = robotweax_srt_telemetry_health_engine;
 void add_entry(Engine &engine, const Entry &entry)
 {
     engine.entries.push_back(entry);
+    engine.covered_nano += entry.interval;
     for (std::size_t c = 0; c < COUNTS; ++c)
     {
         if ((entry.available & bit(count_metric[c])) != 0)
@@ -272,6 +291,7 @@ void add_entry(Engine &engine, const Entry &entry)
     while (!engine.entries.empty() && engine.entries.front().monotonic + window <= now)
     {
         const auto &old = engine.entries.front();
+        engine.covered_nano -= old.interval;
         for (std::size_t c = 0; c < COUNTS; ++c)
         {
             if ((old.available & bit(count_metric[c])) != 0)
@@ -284,6 +304,7 @@ void add_entry(Engine &engine, const Entry &entry)
     }
     if (engine.entries.size() == 1)
     {
+        engine.covered_nano = entry.interval;
         /* Rounding from subtraction cannot accumulate past an empty window. */
         for (std::size_t c = 0; c < COUNTS; ++c)
         {
@@ -462,8 +483,8 @@ Advice drop_advice(const Evaluation &e, const Reason fallback)
     {
         /* Plenty of retransmission rounds and still losing: the path cannot
          * carry the stream plus its repairs. */
-        const double seconds = static_cast<double>(e.engine.config.count_window_nano) / 1e9;
-        return bitrate_decrease(fallback, 0.8 * sum(engine, C_UNIQUE_RECEIVED_BITS) / seconds);
+        const double seconds = static_cast<double>(e.engine.covered_nano) / 1e9;
+        return bitrate_decrease(fallback, seconds > 0 ? 0.8 * sum(engine, C_UNIQUE_RECEIVED_BITS) / seconds : 0.0);
     }
     return latency_advice(e, fallback, loss_ratio);
 }
@@ -472,7 +493,9 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
 {
     const auto &engine = e.engine;
     const auto &g = e.gauges;
-    const auto count_seconds = static_cast<double>(engine.config.count_window_nano) / 1e9;
+    /* Rates over the counts use the time the window really covers: shorter
+     * than the window at the start of a stream or after an outage. */
+    const auto count_seconds = static_cast<double>(engine.covered_nano) / 1e9;
     switch (indicator)
     {
     case HEADROOM:
@@ -486,7 +509,7 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         }
         const auto warmup = std::max<std::uint64_t>(
             engine.config.gauge_window_nano,
-            e.has_latency ? static_cast<std::uint64_t>(1.5 * e.latency * 1e9) : SECOND);
+            e.has_latency ? static_cast<std::uint64_t>(1.5 * std::clamp(e.latency, 0.0, 3600.0) * 1e9) : SECOND);
         if (engine.last_monotonic < engine.headroom_first + warmup)
         {
             return unavailable(ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA);
@@ -589,7 +612,7 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         }
         const auto unique = sum(engine, C_UNIQUE_SENT_BITS);
         const auto retransmitted = sum(engine, C_RETRANSMITTED_BITS);
-        if (unique <= 0)
+        if (unique <= 0 || engine.covered_nano < engine.config.gauge_window_nano)
         {
             return unavailable(ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA);
         }
@@ -601,18 +624,19 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
             allowed = cap - unique;
             advice = {ROBOTWEAX_SRT_TELEMETRY_REASON_OVERHEAD_BUDGET_HIGH,
                       ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH, ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE,
-                      round_up(1.25 * (unique + retransmitted) / count_seconds, 1000.0)};
+                      round_up(1.25 * (unique + retransmitted) / count_seconds / 8.0, 1000.0)};
         }
         else
         {
             const auto percent = static_cast<double>(std::max<std::int64_t>(context.overhead_percent, 0));
             allowed = unique * percent / 100.0;
-            const auto needed = round_up(1.5 * 100.0 * retransmitted / unique, 5.0);
+            /* SRTO_OHEADBW accepts 5..100 percent. */
+            const auto needed = std::max(round_up(1.5 * 100.0 * retransmitted / unique, 5.0), percent + 5.0);
             if (needed <= 100.0)
             {
                 advice = {ROBOTWEAX_SRT_TELEMETRY_REASON_OVERHEAD_BUDGET_HIGH,
                           ROBOTWEAX_SRT_TELEMETRY_KNOB_OVERHEAD_BANDWIDTH,
-                          ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE, std::max(needed, percent + 5.0)};
+                          ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE, needed};
             }
             else
             {
@@ -681,7 +705,8 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         }
         else
         {
-            advice = bitrate_decrease(reason, 0.8 * sum(engine, C_UNIQUE_SENT_BITS) / count_seconds);
+            advice = bitrate_decrease(reason, count_seconds > 0 ? 0.8 * sum(engine, C_UNIQUE_SENT_BITS) / count_seconds
+                                                                : 0.0);
         }
         const auto value = has_ratio ? g.max[G_SEND_BUFFER_RATIO] : 0.0;
         auto raw = graded(e, indicator, value, advice);
@@ -717,10 +742,18 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         {
             return unavailable(ROBOTWEAX_SRT_TELEMETRY_REASON_MISSING_METRIC, bit(gauge_metric[G_FLIGHT_TO_FLOW]));
         }
-        return graded(e, indicator, g.max[G_FLIGHT_TO_FLOW],
-                      {ROBOTWEAX_SRT_TELEMETRY_REASON_PEER_READ_STALL,
-                       ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION,
-                       ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK, 0.0});
+        /* A receiver that stops reading shrinks the flow window it
+         * advertises. A full flight with an unchanged window means the
+         * acknowledgements stopped (path or peer unresponsive). */
+        const bool shrunk = g.available[G_FLOW_WINDOW] && engine.max_flow_window > 0 &&
+                            g.min[G_FLOW_WINDOW] < 0.5 * engine.max_flow_window;
+        const Advice advice = shrunk ? Advice{ROBOTWEAX_SRT_TELEMETRY_REASON_PEER_READ_STALL,
+                                              ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION,
+                                              ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK, 0.0}
+                                     : Advice{ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED,
+                                              ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
+                                              ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0};
+        return graded(e, indicator, g.max[G_FLIGHT_TO_FLOW], advice);
     }
     default:
         return {};
@@ -731,8 +764,13 @@ void update_hysteresis(const Engine &engine, Hysteresis &h, const Raw &raw, cons
 {
     if (!raw.available)
     {
-        /* No evidence: hold the state, and give it up after leave_hold. */
-        h.up_pending = false;
+        /* No evidence: hold the state, and give it up after leave_hold. A
+         * pending escalation survives gaps shorter than enter_hold; a
+         * pending improvement needs unbroken evidence. */
+        if (h.up_pending && now - h.last_known >= engine.config.enter_hold_nano)
+        {
+            h.up_pending = false;
+        }
         h.down_pending = false;
         if (!h.ever_known || now - h.last_known >= engine.config.leave_hold_nano)
         {
@@ -1014,14 +1052,21 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         if ((entry.available & bit(gauge_metric[G_HEADROOM])) != 0)
         {
             /* A gap of a second restarts the warm-up (new stream). */
-            if (!engine->headroom_seen || now - engine->headroom_last > SECOND)
+            const auto restart_gap = std::max<std::uint64_t>(2 * SECOND, 3 * entry.interval);
+            if (!engine->headroom_seen || now - engine->headroom_last > restart_gap)
             {
                 engine->headroom_first = now;
             }
             engine->headroom_seen = true;
             engine->headroom_last = now;
         }
+        if ((entry.available & bit(gauge_metric[G_FLOW_WINDOW])) != 0)
+        {
+            engine->max_flow_window = std::max(engine->max_flow_window, entry.gauges[G_FLOW_WINDOW]);
+        }
         add_entry(*engine, entry);
+        engine->has_good = true;
+        engine->last_good = now;
 
         Evaluation e{*engine, gauge_view(*engine, now), receiver, false, 0.0, 0.0};
         const auto latency_gauge = receiver ? G_RECEIVER_LATENCY : G_SENDER_LATENCY;
@@ -1043,6 +1088,11 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             if (raws[i].applicable)
             {
                 update_hysteresis(*engine, engine->hysteresis[i], raws[i], now);
+            }
+            else
+            {
+                /* e.g. MAXBW became unlimited: no stale state comes back later. */
+                engine->hysteresis[i] = {};
             }
         }
     }
@@ -1103,6 +1153,14 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
     }
     if (source_error)
     {
+        /* A failed read or two keeps the verdict; after enter_hold without
+         * a good sample it is UNKNOWN. */
+        if (engine->has_good && now - engine->last_good < engine->config.enter_hold_nano &&
+            engine->verdict != UNKNOWN)
+        {
+            status->primary_indicator = -1;
+            return finish(engine->verdict, ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
+        }
         return finish(UNKNOWN, ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
     }
 
@@ -1125,13 +1183,28 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         status->suggested_value = advice.value;
         return finish(worst, advice.reason);
     }
-    /* Never a wrong OK: a required indicator without a grade now (or not
-     * yet out of UNKNOWN) means UNKNOWN. */
+    /* Never a wrong OK: a required indicator not yet graded, or without a
+     * grade for enter_hold (stream stopped), means UNKNOWN. A shorter gap,
+     * such as a trickle stream between packets, keeps the verdict. */
     for (std::size_t i = 0; i < INDICATORS; ++i)
     {
         const auto &out = status->indicators[i];
-        if ((out.flags & ROBOTWEAX_SRT_TELEMETRY_INDICATOR_REQUIRED) != 0 &&
-            (out.state == UNKNOWN || !raws[i].available))
+        if ((out.flags & ROBOTWEAX_SRT_TELEMETRY_INDICATOR_REQUIRED) == 0)
+        {
+            continue;
+        }
+        if (raws[i].available)
+        {
+            engine->required_missing = false;
+        }
+        else if (!engine->required_missing)
+        {
+            engine->required_missing = true;
+            engine->required_missing_since = now;
+        }
+        const bool missing_too_long =
+            engine->required_missing && now - engine->required_missing_since >= engine->config.enter_hold_nano;
+        if (out.state == UNKNOWN || missing_too_long)
         {
             status->primary_indicator = static_cast<std::int32_t>(i);
             return finish(UNKNOWN, raws[i].available ? ROBOTWEAX_SRT_TELEMETRY_REASON_NONE : raws[i].advice.reason);
@@ -1231,6 +1304,8 @@ robotweax_srt_telemetry_health_reason_name(const robotweax_srt_telemetry_health_
         return "peer_read_stall";
     case ROBOTWEAX_SRT_TELEMETRY_REASON_APPLICATION_READ_STALL:
         return "application_read_stall";
+    case ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED:
+        return "acknowledgements_stalled";
     }
     return "invalid";
 }

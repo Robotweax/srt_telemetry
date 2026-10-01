@@ -48,6 +48,7 @@ struct Condition
     double sender_drops_per_second = 0;
     double send_buffer_ratio = 0.1;
     double flight_to_flow = 0.05;
+    double flow_window = 8192;
     double capacity_bps = 0; /* 0: provider gives no estimate */
     bool sending = true;
 };
@@ -98,6 +99,7 @@ robotweax_srt_telemetry_metric_sample_v1 sample(const robotweax_srt_telemetry_en
         rate(ROBOTWEAX_SRT_TELEMETRY_METRIC_SENDER_DROP_PACKETS_PER_SECOND, c.sender_drops_per_second);
         set(s, ROBOTWEAX_SRT_TELEMETRY_METRIC_SENDER_TSBPD_DELAY_SECONDS, c.latency);
         set(s, ROBOTWEAX_SRT_TELEMETRY_METRIC_FLIGHT_TO_FLOW_WINDOW_RATIO, c.flight_to_flow);
+        set(s, ROBOTWEAX_SRT_TELEMETRY_METRIC_FLOW_WINDOW_PACKETS, c.flow_window);
         if (c.sending)
         {
             set(s, ROBOTWEAX_SRT_TELEMETRY_METRIC_SEND_BUFFER_TO_DROP_THRESHOLD_RATIO, c.send_buffer_ratio);
@@ -376,8 +378,8 @@ void test_receiver_classes()
         for (int i = 0; i < 300; ++i)
         {
             run.feed(c, 0.1);
-            /* One gauge window after the last packet, OK is no longer allowed. */
-            if (i >= 10)
+            /* After the gauge window plus the 2 s hold, OK is no longer allowed. */
+            if (i >= 31)
             {
                 never_wrong = never_wrong && run.status.verdict != ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK;
             }
@@ -427,13 +429,48 @@ void test_sender_classes()
               "overhead budget: AT_RISK, OHEADBW to 35 %");
     }
     {
-        /* Receiver stopped reading: flight fills the flow window. */
+        /* Receiver stopped reading: it shrinks the window, flight fills it. */
         Run run(SENDER);
+        run.feed(clean, 2);
+        Condition c = clean;
+        c.flight_to_flow = 0.99;
+        c.flow_window = 64;
+        check(run.feed(c, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PEER_READ_STALL &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION,
+              "peer read stall: FAILING, check the receiving application");
+    }
+    {
+        /* Full flight with an unchanged window: acknowledgements stopped. */
+        Run run(SENDER);
+        run.feed(clean, 2);
         Condition c = clean;
         c.flight_to_flow = 0.99;
         check(run.feed(c, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
-                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PEER_READ_STALL,
-              "peer read stall: FAILING");
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
+              "stalled acknowledgements are not blamed on the application");
+    }
+    {
+        /* Absolute MAXBW exhausted from the start: the budget uses the time
+         * the window covers, not the full 10 s. */
+        Run run(SENDER);
+        robotweax_srt_telemetry_health_context_v1 context;
+        robotweax_srt_telemetry_health_context_init(&context);
+        context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        context.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS;
+        context.max_bandwidth_bytes_per_second = 400'000; /* 3.2 Mbit/s */
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context));
+        Condition c = clean; /* 3.16 Mbit/s unique */
+        c.retransmitted_per_second = 30;
+        run.feed(c, 1.5);
+        const auto &budget = run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_OVERHEAD_BUDGET];
+        check((budget.flags & ROBOTWEAX_SRT_TELEMETRY_INDICATOR_AVAILABLE) != 0 && budget.value > 1.0,
+              "exhausted MAXBW budget is visible within 1.5 s");
+        check(run.feed(c, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH &&
+                  std::abs(run.status.suggested_value - 543'000) < 1'500,
+              "MAXBW advice in bytes/s (1.25 x sending rate)");
     }
     {
         /* RTT step on the sender side. */
@@ -516,10 +553,21 @@ void test_unknown_and_context()
         failed.sample_monotonic_nano = run.now;
         failed.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
         static_cast<void>(robotweax_srt_telemetry_health_engine_push(run.engine, &failed, &run.status));
+        check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR,
+              "one failed read keeps the verdict, with the reason");
+        check(run.feed(Condition{}, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_NONE,
+              "back to OK after the error");
+        for (int i = 0; i < 25; ++i)
+        {
+            run.now += period;
+            failed.sample_monotonic_nano = run.now;
+            static_cast<void>(robotweax_srt_telemetry_health_engine_push(run.engine, &failed, &run.status));
+        }
         check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN &&
                   run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR,
-              "source error: UNKNOWN");
-        check(run.feed(Condition{}, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "back to OK after the error");
+              "failed reads for 2 s: UNKNOWN");
     }
     {
         Run run(ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN);
@@ -537,6 +585,45 @@ void test_unknown_and_context()
         c.headroom = 0.2;
         run.feed(c, 2.5);
         check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "warm-up headroom ignored");
+    }
+    {
+        /* Slow sampling (1.05 s) still grades headroom after warm-up. */
+        Run run(RECEIVER);
+        Condition c;
+        c.headroom = 0.05;
+        for (int i = 0; i < 20; ++i)
+        {
+            run.now += second + second / 20;
+            auto s = sample(RECEIVER, run.now, c);
+            s.interval_nano = second + second / 20;
+            s.rate_numerators[ROBOTWEAX_SRT_TELEMETRY_METRIC_UNIQUE_RECEIVED_PACKETS_PER_SECOND] = 315;
+            static_cast<void>(robotweax_srt_telemetry_health_engine_push(run.engine, &s, &run.status));
+        }
+        check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_RECOVERY_HEADROOM_LOW,
+              "headroom graded at 1.05 s sampling, got " + describe(run.status));
+    }
+    {
+        /* Escalation survives short availability gaps. */
+        Run run(RECEIVER);
+        Condition clean;
+        run.feed(clean, 3);
+        Condition low = clean;
+        low.headroom = 0.05;
+        bool reached = false;
+        for (int i = 0; i < 40 && !reached; ++i)
+        {
+            run.now += period;
+            auto s = sample(RECEIVER, run.now, low);
+            if (i % 3 == 2)
+            {
+                s.available_metrics &= ~ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(
+                    ROBOTWEAX_SRT_TELEMETRY_METRIC_RECOVERY_HEADROOM_RATIO);
+            }
+            static_cast<void>(robotweax_srt_telemetry_health_engine_push(run.engine, &s, &run.status));
+            reached = run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING;
+        }
+        check(reached, "flickering availability does not block escalation");
     }
 }
 

@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdio>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -66,7 +67,10 @@ struct Source
     robotweax_srt_telemetry_health_context_v1 health_context{};
     bool has_health_status = false;
     robotweax_srt_telemetry_health_status_v1 health_status{};
-    /* Worst verdict of the current shortest window, for the compact record. */
+    /* Worst verdict of the current shortest window, for the compact record;
+     * UNKNOWN ranks between OK and WATCH, so a window is OK only if every
+     * graded sample in it was. */
+    bool window_has_health = false;
     robotweax_srt_telemetry_health_verdict window_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
     robotweax_srt_telemetry_health_reason window_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NONE;
     /* Ring of compact records (empty when history is off). */
@@ -327,11 +331,15 @@ int deliver_window(void *user_data, const robotweax_srt_telemetry_window_summary
             if (robotweax_srt_telemetry_compact_record_from_window(summary, &record) ==
                 ROBOTWEAX_SRT_TELEMETRY_OK)
             {
-                record.health_verdict = static_cast<std::uint8_t>(source.window_verdict);
-                record.health_reason = static_cast<std::uint8_t>(source.window_reason);
+                if (source.window_has_health)
+                {
+                    record.health_verdict = static_cast<std::uint8_t>(source.window_verdict);
+                    record.health_reason = static_cast<std::uint8_t>(source.window_reason);
+                }
                 source.history_push(record);
             }
         }
+        source.window_has_health = false;
         source.window_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
         source.window_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NONE;
         struct Flag
@@ -467,27 +475,43 @@ robotweax_srt_telemetry_event_severity verdict_severity(const robotweax_srt_tele
     }
 }
 
-/* Caller holds sampler.mutex. Feeds the health engine before the windows,
- * so the window that closes on this sample keeps its own worst verdict. */
+/* Caller holds sampler.mutex. The status is folded into the window
+ * only after the window push (fold_health), so a window that closes on this
+ * sample keeps its own worst verdict. The engine runs on the sampler's tick
+ * clock, the same for good and failed samples. */
 void update_health(robotweax_srt_telemetry_sampler &sampler, Source &source,
-                   const robotweax_srt_telemetry_metric_sample_v1 &metrics)
+                   const robotweax_srt_telemetry_metric_sample_v1 &metrics, const std::uint64_t monotonic_nano)
 {
     if (!source.health)
     {
         return;
     }
+    auto timed = metrics;
+    timed.sample_monotonic_nano = monotonic_nano;
     robotweax_srt_telemetry_health_status_v1 status{};
-    if (robotweax_srt_telemetry_health_engine_push(source.health.get(), &metrics, &status) !=
+    if (robotweax_srt_telemetry_health_engine_push(source.health.get(), &timed, &status) !=
         ROBOTWEAX_SRT_TELEMETRY_OK)
     {
-        return;
+        /* e.g. a host tick clock that went backwards: no grade. */
+        std::memset(&status, 0, sizeof(status));
+        status.struct_size = sizeof(status);
+        status.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        status.observed_at_unix_nano = metrics.observed_at_unix_nano;
+        status.sample_monotonic_nano = monotonic_nano;
+        status.verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
+        status.reason = ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR;
+        status.primary_indicator = -1;
     }
     const auto &previous = source.health_status;
     const bool first = !source.has_health_status;
     const bool verdict_changed = first || status.verdict != previous.verdict || status.reason != previous.reason;
+    /* Suggested values move with the stream; report a change of 10 % or
+     * more, not every sample. */
+    const auto moved = [](const double a, const double b)
+    { return std::abs(a - b) > 0.1 * std::max(std::abs(a), std::abs(b)); };
     const bool advice_changed = verdict_changed || status.knob != previous.knob ||
                                 status.knob_direction != previous.knob_direction ||
-                                status.suggested_value != previous.suggested_value;
+                                moved(status.suggested_value, previous.suggested_value);
     if (verdict_changed && !(first && status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN))
     {
         char detail[ROBOTWEAX_SRT_TELEMETRY_EVENT_DETAIL_CAPACITY];
@@ -532,12 +556,35 @@ void update_health(robotweax_srt_telemetry_sampler &sampler, Source &source,
 
 /* Caller holds sampler.mutex. After the window push: this sample belongs to
  * the window that is now open. */
+int fold_rank(const robotweax_srt_telemetry_health_verdict verdict)
+{
+    switch (verdict)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK:
+        return 1;
+    case ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN:
+        return 2;
+    case ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH:
+        return 3;
+    case ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK:
+        return 4;
+    default:
+        return 5;
+    }
+}
+
 void fold_health(Source &source)
 {
-    if (source.has_health_status && source.health_status.verdict >= source.window_verdict)
+    if (!source.has_health_status)
     {
-        source.window_verdict = source.health_status.verdict;
-        source.window_reason = source.health_status.reason;
+        return;
+    }
+    const auto &status = source.health_status;
+    if (!source.window_has_health || fold_rank(status.verdict) >= fold_rank(source.window_verdict))
+    {
+        source.window_has_health = true;
+        source.window_verdict = status.verdict;
+        source.window_reason = status.reason;
     }
 }
 
@@ -565,7 +612,7 @@ void source_failed(robotweax_srt_telemetry_sampler &sampler, Source &source,
     empty.observed_at_unix_nano = unix_nano;
     empty.sample_monotonic_nano = monotonic_nano;
     empty.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
-    update_health(sampler, source, empty);
+    update_health(sampler, source, empty, monotonic_nano);
     WindowContext context{&sampler, &source, unix_nano, monotonic_nano};
     static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(
         source.windows.get(), &empty, &deliver_window, &context));
@@ -628,7 +675,7 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
         }
     }
 
-    update_health(sampler, source, metrics);
+    update_health(sampler, source, metrics, monotonic_nano);
     const auto &callbacks = sampler.config.callbacks;
     if (callbacks.on_sample != nullptr)
     {
@@ -1199,6 +1246,7 @@ robotweax_srt_telemetry_sampler_enable_health(robotweax_srt_telemetry_sampler *s
         {
             entry.second->health.reset();
             entry.second->has_health_status = false;
+            entry.second->window_has_health = false;
         }
         sampler->health_enabled = false;
         return ROBOTWEAX_SRT_TELEMETRY_OK;

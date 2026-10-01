@@ -21,8 +21,9 @@ explaining differences between the two ends is SRT Doctor's job.
 
 **Never a wrong OK.** OK needs the role's required indicator to be graded on
 current data: the unrecovered ratio for a receiver, the sender backlog for a
-sender. When nothing has arrived (or been sent) within the last gauge window,
-the verdict becomes Unknown / `no_data` instead of keeping an old OK.
+sender. When nothing has arrived (or been sent) within the gauge window for
+2 s more, the verdict becomes Unknown / `no_data` instead of keeping an old OK.
+Shorter gaps, such as a trickle stream between packets, keep the verdict.
 
 ## Indicators
 
@@ -40,6 +41,11 @@ three thresholds (Watch, At risk, Failing).
 | Sender backlog | sender | send buffer span ÷ too-late drop threshold, maximum over 1 s; any sender drop in 10 s is at least At risk, above 0.1 % Failing | higher | 0.35 / 0.6 / 0.9 |
 | Peer read stall | both | sender: flight ÷ flow window; receiver: receive buffer span ÷ latency (data waiting for the application); maximum over 1 s | higher | sender 0.6 / 0.85 / 0.98; receiver 1.5 / 2.5 / 4 |
 
+A sender blames the receiving application only when the advertised flow window
+has shrunk to under half its largest value. A full flight with an unchanged
+window means acknowledgements stopped (`acknowledgements_stalled`, no knob):
+the path or the peer is unresponsive.
+
 The defaults are defaults until field streams calibrate them (Phase 4).
 Products override any of them with `health_engine_set_thresholds`, or
 `sampler_set_health_thresholds` per role.
@@ -48,8 +54,11 @@ Notes:
 
 - Packet counts use a 10 s sliding window, so a single dropped packet stays
   visible long enough to pass the hysteresis. Gauges use a 1 s window.
-- Recovery headroom is not graded during the first 1.5 latency periods of a
-  stream, when the buffer is still filling.
+- Recovery headroom is not graded while the buffer first fills: for 1.5
+  latency periods, at least one gauge window, after packets start (or restart
+  after a gap of 2 s or three sampling intervals).
+- Rates over the counts use the time the window actually covers, which is
+  shorter than 10 s at the start of a stream or after an outage.
 - Path headroom needs a provider that estimates link capacity (Haivision SRT);
   with Robotweax SRT it is unavailable and does not block an OK.
 - The overhead budget needs the bandwidth settings (OHEADBW, MAXBW) in the
@@ -61,8 +70,11 @@ A worse state is entered after it has held for 2 s; the level entered is the
 best one that held for the whole 2 s. A better state is entered after 10 s
 without the worse one. Short dips never flip the verdict, and a verdict does
 not flicker between two states. An indicator without data keeps its state for
-10 s, then becomes Unknown. Two exceptions act at once: a lost connection
-(Failing) and a failed statistics read (Unknown).
+10 s, then becomes Unknown; a pending escalation survives gaps shorter than
+2 s, while a pending improvement needs unbroken evidence. An indicator that
+stops applying (MAXBW set to unlimited) forgets its state. A lost connection
+is Failing at once. Failed statistics reads keep the verdict (reason
+`source_error`) for up to 2 s after the last good sample, then give Unknown.
 
 ## Reasons and advice
 
@@ -76,11 +88,12 @@ stall) and a suggested knob with a direction and a value.
 | `recovery_headroom_low`, `late_repairs`, `latency_low_for_rtt`, most `unrecovered_loss` | latency, increase | max(1.5 × current, 4 × RTT, or 6 × RTT above 1 % loss), in 10 ms steps |
 | `unrecovered_loss` / `recovery_inefficient` with latency ≥ 8 × RTT and loss above 5 % | bitrate, decrease | 80 % of the received rate |
 | `undecryptable` | passphrase, check | none |
-| `overhead_budget_high` (relative MAXBW) | OHEADBW, increase | 1.5 × the retransmission share, in 5 % steps; above 100 % lower the bitrate instead |
-| `overhead_budget_high` (absolute MAXBW) | MAXBW, increase | 1.25 × the sending rate |
+| `overhead_budget_high` (relative MAXBW) | OHEADBW, increase | 1.5 × the retransmission share, in 5 % steps, at least 5 % above the current value; above 100 % (SRT's maximum) lower the bitrate instead |
+| `overhead_budget_high` (absolute MAXBW) | MAXBW, increase | 1.25 × the sending rate, in bytes/s as SRTO_MAXBW takes it |
 | `path_capacity_exceeded` | bitrate, decrease | 70 % of the estimated capacity |
 | `sender_backlog`, `sender_drops` | bitrate, decrease (path near capacity, or by default); latency, increase (latency short for the RTT) | 70 % of capacity, or 80 % of the sending rate |
 | `peer_read_stall`, `application_read_stall` | receiving application, check | none |
+| `acknowledgements_stalled` | none | none |
 
 ## Context
 
@@ -103,12 +116,16 @@ robotweax_srt_telemetry_sampler_set_health_context(sampler, source_id, &context)
 robotweax_srt_telemetry_sampler_health_read(sampler, source_id, &status);
 ```
 
-- `on_health` fires when a source's verdict, reason or advice changes.
+- `on_health` fires when a source's verdict, reason, knob or direction
+  changes, or the suggested value moves by more than 10 %.
 - Each change of verdict or reason is journaled as `verdict_changed`: previous
   and current verdict, reason as code, and a detail such as
   `at_risk recovery_headroom_low: latency increase 0.18`.
 - Each compact history record holds the worst verdict of its second and that
-  verdict's reason (`health_verdict`, `health_reason`).
+  verdict's reason (`health_verdict`, `health_reason`). Unknown ranks between
+  OK and Watch here, so a second is recorded as OK only if every graded sample
+  in it was OK.
+- The engine runs on the sampler's tick clock for good and failed samples.
 
 ## Tests
 
