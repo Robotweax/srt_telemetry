@@ -20,8 +20,8 @@ Floats keep about 7 significant digits; counts saturate at 2³² − 1.
 
 `sampler_enable_history(sampler, n)` keeps a ring of `n` records per source,
 one per closed window of the shortest configured window (1 s by default).
-`n = 86,400` holds 24 h at about 9.7 MB per source. This matches the 24 h
-download of Haivision's gateways, inside any product.
+`n = 86,400` holds 24 h at about 9.7 MB per source, so any product embedding
+the SDK can offer a 24 h statistics download without a backend.
 `sampler_history_read(sampler, id, since, ...)` returns records in time order.
 A source's history is discarded when it is removed.
 

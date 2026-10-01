@@ -58,6 +58,12 @@ while the same error repeats. The source's windows keep advancing on an empty
 sample, so the outage shows as windows flagged `SOURCE_ERROR` with no metrics,
 not as silence followed by one stale window.
 
+## History and events
+
+`sampler_enable_history` keeps compact per-second records per source, and
+`sampler_enable_journal` records source and data-quality events. See
+[History and events](history-and-events.md).
+
 ## Callbacks and threading
 
 `on_sample` (every sample, with the metrics), `on_window` (each closed window),
