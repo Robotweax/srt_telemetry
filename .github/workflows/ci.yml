@@ -192,7 +192,20 @@ jobs:
       - name: Test (unit, live loopback, JSONL recording)
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/provider-install/lib
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --label-exclude lab
+      - name: Fault-lab gate (health verdicts on impaired SRT streams)
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/provider-install/lib
+        run: |
+          set -o pipefail
+          ./build/robotweax_srt_telemetry_public_srt_fault_lab --timeline | tee fault-lab-${{ matrix.provider }}.txt
+      - name: Keep the fault-lab report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fault-lab-${{ matrix.provider }}
+          path: fault-lab-${{ matrix.provider }}.txt
+          if-no-files-found: ignore
       - name: Install and build the adapter package consumer
         run: |
           cmake --install build

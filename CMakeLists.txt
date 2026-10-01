@@ -179,6 +179,28 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 target_compile_definitions(robotweax_srt_telemetry_public_srt_incident_peer
                     PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
             endif()
+            add_executable(robotweax_srt_telemetry_public_srt_fault_lab
+                adapters/public_srt/tests/fault_lab.cpp)
+            target_include_directories(robotweax_srt_telemetry_public_srt_fault_lab
+                PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
+            target_link_libraries(robotweax_srt_telemetry_public_srt_fault_lab
+                PRIVATE RobotweaxSRTTelemetry::public_srt_adapter
+                        ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY}
+                        Threads::Threads)
+            target_compile_features(robotweax_srt_telemetry_public_srt_fault_lab PRIVATE cxx_std_20)
+            if(ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER STREQUAL "robotweax-srt")
+                target_compile_definitions(robotweax_srt_telemetry_public_srt_fault_lab
+                    PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_PROVIDER_ROBOTWEAX)
+            endif()
+            if(EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt.h" AND
+               NOT EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt/srt.h")
+                target_compile_definitions(robotweax_srt_telemetry_public_srt_fault_lab
+                    PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
+            endif()
+            add_test(NAME robotweax_srt_telemetry_public_srt_fault_lab
+                COMMAND robotweax_srt_telemetry_public_srt_fault_lab)
+            set_tests_properties(robotweax_srt_telemetry_public_srt_fault_lab
+                PROPERTIES TIMEOUT 600 LABELS lab)
             add_test(NAME robotweax_srt_telemetry_public_srt_runtime_tests
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests)
             add_test(NAME robotweax_srt_telemetry_public_srt_lifecycle_tests

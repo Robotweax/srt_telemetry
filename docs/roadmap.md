@@ -40,7 +40,7 @@ on both providers, and the connection-events test passes plain, encrypted,
 wrong-passphrase, FEC and peer-close scenarios on both: **passing** on
 Haivision SRT v1.5.5 and Robotweax SRT `main`.
 
-## Phase 2: sampler, windows, health engine (3 EW): in progress
+## Phase 2: sampler, windows, health engine (3 EW): done
 
 - [metric catalog and min/max/p95 windows](architecture/metrics-and-windows.md)
   at 1 s, 10 s and 60 s: **done**;
@@ -50,7 +50,8 @@ Haivision SRT v1.5.5 and Robotweax SRT `main`.
   (112 bytes, 24 h ≈ 9.7 MB per socket): **done**; and
 - [eight health indicators](architecture/health-engine.md) producing per-role
   verdicts (OK, Watch, At risk, Failing, Unknown) with hysteresis, reason codes
-  and knob advice: **engine done**; fault-lab gate next.
+  and knob advice: **done**. The [fault-lab gate](qualification/fault-lab.md)
+  passes on both providers: 10 of 10 fault classes per role, no wrong OK.
 
 **Gate:** the right verdict in at least 9 of 10 lab fault classes per role, and
 never a wrong OK.

@@ -100,7 +100,10 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_REASON_APPLICATION_READ_STALL = 27,
         /* Flight fills the flow window while the window is unchanged: no
          * acknowledgements arrive (path or peer unresponsive). No knob. */
-        ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED = 28
+        ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED = 28,
+        /* RTT well above its baseline with sustained loss: the path queues
+         * and drops. Advice: lower the bitrate to 80 % of what it delivers. */
+        ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED = 29
     } robotweax_srt_telemetry_health_reason;
 
     typedef enum robotweax_srt_telemetry_health_knob
