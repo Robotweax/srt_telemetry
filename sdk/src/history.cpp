@@ -1,8 +1,11 @@
 #include <robotweax/srt_telemetry_history.h>
 
+#include "history_internal.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstddef>
 #include <cstring>
 #include <limits>
 #include <mutex>
@@ -11,6 +14,10 @@
 
 static_assert(sizeof(robotweax_srt_telemetry_compact_record_v1) == 112,
               "compact record layout is part of the ABI");
+static_assert(sizeof(robotweax_srt_telemetry_event_v1) == 168, "event layout is part of the ABI");
+static_assert(offsetof(robotweax_srt_telemetry_event_v1, kind) == 40 &&
+                  offsetof(robotweax_srt_telemetry_event_v1, detail) == 72,
+              "event layout is part of the ABI");
 
 namespace
 {
@@ -197,14 +204,28 @@ robotweax_srt_telemetry_event_journal_push(robotweax_srt_telemetry_event_journal
     {
         return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
     }
+    /* Compare as integers: an out-of-range enum value is valid in C. */
+    const auto kind = static_cast<std::int64_t>(event->kind);
+    const auto severity = static_cast<std::int64_t>(event->severity);
+    if (kind < ROBOTWEAX_SRT_TELEMETRY_EVENT_HOST || kind > ROBOTWEAX_SRT_TELEMETRY_EVENT_VERDICT_CHANGED ||
+        severity < ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO ||
+        severity > ROBOTWEAX_SRT_TELEMETRY_SEVERITY_ERROR)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
     auto copy = *event;
     copy.struct_size = sizeof(copy);
-    copy.detail[sizeof(copy.detail) - 1] = '\0';
-    for (auto &c : copy.detail)
+    /* Printable up to the terminator, zero after it: no caller bytes beyond
+     * the text are kept. */
+    bool terminated = false;
+    for (std::size_t index = 0; index < sizeof(copy.detail); ++index)
     {
-        if (c == '\0')
+        auto &c = copy.detail[index];
+        if (terminated || index + 1 == sizeof(copy.detail) || c == '\0')
         {
-            break;
+            terminated = true;
+            c = '\0';
+            continue;
         }
         const auto byte = static_cast<unsigned char>(c);
         if (byte < 0x20 || byte > 0x7e)
@@ -332,4 +353,18 @@ robotweax_srt_telemetry_event_kind_name(const robotweax_srt_telemetry_event_kind
         return "verdict_changed";
     }
     return "unknown";
+}
+
+std::uint64_t robotweax_srt_telemetry_internal::journal_next_sequence(
+    const robotweax_srt_telemetry_event_journal &journal)
+{
+    std::lock_guard lock(journal.mutex);
+    return journal.next_sequence;
+}
+
+void robotweax_srt_telemetry_internal::journal_continue_from(
+    robotweax_srt_telemetry_event_journal &journal, const std::uint64_t next_sequence)
+{
+    std::lock_guard lock(journal.mutex);
+    journal.next_sequence = next_sequence;
 }

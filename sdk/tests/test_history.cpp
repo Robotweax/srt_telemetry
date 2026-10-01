@@ -113,6 +113,37 @@ void test_journal()
     check(count == 0, "nothing after the newest");
     static_cast<void>(robotweax_srt_telemetry_event_journal_read(journal, 0, events, 1, &count));
     check(count == 1 && events[0].sequence == 3, "capacity limits the copy");
+    static_cast<void>(robotweax_srt_telemetry_event_journal_read(journal, 1, events, 8, &count));
+    check(count == 4 && events[0].sequence == 3,
+          "a cursor older than the oldest retained event reads from the oldest");
+
+    auto invalid = host_event("bad");
+    invalid.kind = static_cast<robotweax_srt_telemetry_event_kind>(999);
+    check(robotweax_srt_telemetry_event_journal_push(journal, &invalid, nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "unknown kind rejected");
+    invalid = host_event("bad");
+    invalid.severity = static_cast<robotweax_srt_telemetry_event_severity>(0);
+    check(robotweax_srt_telemetry_event_journal_push(journal, &invalid, nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "unknown severity rejected");
+
+    auto full = host_event("");
+    std::memset(full.detail, 'x', sizeof(full.detail)); /* no terminator */
+    static_cast<void>(robotweax_srt_telemetry_event_journal_push(journal, &full, nullptr));
+    auto trailing = host_event("");
+    std::memset(trailing.detail, 0x7f, sizeof(trailing.detail));
+    std::memcpy(trailing.detail, "ok", 3); /* garbage after the terminator */
+    static_cast<void>(robotweax_srt_telemetry_event_journal_push(journal, &trailing, nullptr));
+    static_cast<void>(robotweax_srt_telemetry_event_journal_read(journal, 6, events, 8, &count));
+    check(count == 2 && std::strlen(events[0].detail) == sizeof(events[0].detail) - 1,
+          "an unterminated detail is truncated and terminated");
+    bool zeroed = count == 2 && std::string_view(events[1].detail) == "ok";
+    for (std::size_t index = 3; zeroed && index < sizeof(events[1].detail); ++index)
+    {
+        zeroed = events[1].detail[index] == '\0';
+    }
+    check(zeroed, "bytes after the terminator are zeroed");
     robotweax_srt_telemetry_event_journal_destroy(journal);
 
     /* Concurrent writers and a reader: every sequence is unique and ordered. */
@@ -185,12 +216,8 @@ std::vector<robotweax_srt_telemetry_event_v1> all_events(robotweax_srt_telemetry
 {
     std::vector<robotweax_srt_telemetry_event_v1> events(256);
     std::size_t count = 0;
-    auto *journal = robotweax_srt_telemetry_sampler_journal(sampler);
-    if (journal != nullptr)
-    {
-        static_cast<void>(robotweax_srt_telemetry_event_journal_read(journal, 0, events.data(),
-                                                                     events.size(), &count));
-    }
+    static_cast<void>(robotweax_srt_telemetry_sampler_journal_read(sampler, 0, events.data(),
+                                                                   events.size(), &count, nullptr));
     events.resize(count);
     return events;
 }
@@ -272,7 +299,7 @@ void test_sampler_history_and_events()
     source.fail = true;
     tick(3);
     source.fail = false;
-    tick(2);
+    tick(15); /* a clean window between the outage and the jump */
     /* A 3 s jump forward in both clocks: a sampling gap in the next window. */
     tick_index += 30;
     tick(11);
@@ -288,6 +315,15 @@ void test_sampler_history_and_events()
     check(count_kind(events, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_FAILED) == 1 &&
               count_kind(events, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_RECOVERED) == 1,
           "one failure and one recovery event for a three-tick outage");
+    for (const auto &event : events)
+    {
+        if (event.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_SAMPLING_GAP)
+        {
+            check(event.sample_monotonic_nano != 0 &&
+                      event.observed_at_unix_nano > static_cast<std::uint64_t>(event.code),
+                  "window events stamped at close time, window start in code");
+        }
+    }
     for (const auto &event : events)
     {
         if (event.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_FAILED)
@@ -314,11 +350,103 @@ void test_sampler_history_and_events()
               ROBOTWEAX_SRT_TELEMETRY_EVENT_SAMPLING_GAP)) == "sampling_gap",
           "event kind names");
 
+    /* Replacing or re-enabling the journal keeps sequences going, so a
+     * reader's cursor stays valid. */
+    const auto last_sequence = events.empty() ? 0 : events.back().sequence;
+    std::size_t read_count = 0;
     check(robotweax_srt_telemetry_sampler_enable_journal(sampler, 0) == ROBOTWEAX_SRT_TELEMETRY_OK &&
-              robotweax_srt_telemetry_sampler_journal(sampler) == nullptr,
+              robotweax_srt_telemetry_sampler_journal_read(sampler, 0, nullptr, 0, &read_count,
+                                                           nullptr) ==
+                  ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND,
           "journal can be turned off");
+    static_cast<void>(robotweax_srt_telemetry_sampler_enable_journal(sampler, 8));
+    static_cast<void>(robotweax_srt_telemetry_sampler_record_event(sampler, &host));
+    static_cast<void>(robotweax_srt_telemetry_sampler_enable_journal(sampler, 16));
+    static_cast<void>(robotweax_srt_telemetry_sampler_record_event(sampler, &host));
+    robotweax_srt_telemetry_event_v1 after[4]{};
+    std::uint64_t overwritten = 99;
+    check(robotweax_srt_telemetry_sampler_journal_read(sampler, last_sequence, after, 4,
+                                                       &read_count, &overwritten) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              read_count == 1 && after[0].sequence == last_sequence + 2 && overwritten == 0,
+          "sequences continue across journal replacement");
     robotweax_srt_telemetry_sampler_destroy(sampler);
     robotweax_srt_telemetry_delta_engine_destroy(source.engine);
+}
+
+struct Harness
+{
+    robotweax_srt_telemetry_sampler *sampler = nullptr;
+    FakeSource source;
+    std::uint64_t id = 0;
+    std::uint64_t tick_index = 0;
+
+    Harness()
+    {
+        robotweax_srt_telemetry_sampler_config_v1 config{};
+        robotweax_srt_telemetry_sampler_config_default(&config);
+        static_cast<void>(robotweax_srt_telemetry_sampler_create(&config, &sampler));
+        static_cast<void>(robotweax_srt_telemetry_sampler_enable_journal(sampler, 256));
+        static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&source.engine));
+        robotweax_srt_telemetry_source_config_v1 source_cfg{};
+        source_cfg.struct_size = sizeof(source_cfg);
+        source_cfg.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        source_cfg.sample = &fake_sample;
+        source_cfg.source_data = &source;
+        static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &source_cfg, &id));
+    }
+    ~Harness()
+    {
+        robotweax_srt_telemetry_sampler_destroy(sampler);
+        robotweax_srt_telemetry_delta_engine_destroy(source.engine);
+    }
+    Harness(const Harness &) = delete;
+    Harness &operator=(const Harness &) = delete;
+
+    void tick(const std::uint64_t unix_nano)
+    {
+        const auto monotonic = second + tick_index++ * second / 10;
+        static_cast<void>(robotweax_srt_telemetry_sampler_tick(sampler, unix_nano, monotonic));
+    }
+};
+
+void test_flapping_source()
+{
+    Harness harness;
+    for (std::uint64_t index = 0; index < 40; ++index)
+    {
+        harness.source.fail = index % 2 == 0;
+        harness.tick(base_unix + index * second / 10);
+    }
+    auto events = all_events(harness.sampler);
+    check(count_kind(events, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_FAILED) == 1 &&
+              count_kind(events, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_RECOVERED) == 0,
+          "a source failing every other tick is one open failure, not 40 events");
+    harness.source.fail = false;
+    for (std::uint64_t index = 40; index < 55; ++index)
+    {
+        harness.tick(base_unix + index * second / 10);
+    }
+    events = all_events(harness.sampler);
+    check(count_kind(events, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_RECOVERED) == 1,
+          "recovery after one second without failures");
+}
+
+void test_backward_clock_step()
+{
+    Harness harness;
+    for (std::uint64_t index = 0; index < 25; ++index)
+    {
+        harness.tick(base_unix + index * second / 10);
+    }
+    /* Wall clock steps back 10 s; the monotonic clock keeps going. */
+    for (std::uint64_t index = 0; index < 30; ++index)
+    {
+        harness.tick(base_unix - 10 * second + (25 + index) * second / 10);
+    }
+    const auto events = all_events(harness.sampler);
+    check(count_kind(events, ROBOTWEAX_SRT_TELEMETRY_EVENT_CLOCK_STEP) == 1,
+          "one backward step is one CLOCK_STEP event");
 }
 
 } // namespace
@@ -328,6 +456,8 @@ int main()
     test_compact_record();
     test_journal();
     test_sampler_history_and_events();
+    test_flapping_source();
+    test_backward_clock_step();
     if (failures != 0)
     {
         std::cerr << failures << " history and event checks failed\n";

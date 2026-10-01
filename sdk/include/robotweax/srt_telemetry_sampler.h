@@ -173,7 +173,9 @@ extern "C"
                                                    size_t records_per_source);
 
     /* Copies up to capacity records of one source whose window starts at or
-     * after since_start_unix_nano, oldest first. Pass 0 for everything. */
+     * after since_start_unix_nano, in the order the windows closed (time
+     * order unless the wall clock stepped back). Pass 0 for everything.
+     * Returns INVALID_STATE from the sampler's own callbacks. */
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_sampler_history_read(robotweax_srt_telemetry_sampler *sampler,
                                                  uint64_t source_id,
@@ -183,17 +185,25 @@ extern "C"
 
     /* Creates the event journal (capacity events). The sampler then records
      * SOURCE_ADDED/REMOVED/FAILED/RECOVERED and, from the shortest window,
-     * SAMPLING_GAP, CLOCK_STEP and COUNTER_RESET. Calling it again replaces
-     * the journal; 0 turns it off. */
+     * SAMPLING_GAP, CLOCK_STEP and COUNTER_RESET (once per episode). Calling
+     * it again replaces the journal and drops its events; 0 turns it off.
+     * Sequence numbers continue across replacement, so readers' cursors stay
+     * valid. */
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_sampler_enable_journal(robotweax_srt_telemetry_sampler *sampler,
                                                    size_t capacity);
 
-    /* The sampler's journal, or NULL when disabled. Owned by the sampler and
-     * valid until enable_journal is called again or the sampler is destroyed.
-     * Reading it is thread-safe and does not take the sampler lock. */
-    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_event_journal *
-    robotweax_srt_telemetry_sampler_journal(robotweax_srt_telemetry_sampler *sampler);
+    /* Reads the sampler's journal like event_journal_read: events with a
+     * sequence greater than after_sequence, oldest first. overwritten
+     * (optional) receives how many events the full journal has dropped.
+     * Safe from any thread, including callbacks; it does not take the
+     * sampler lock. NOT_FOUND without a journal. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_journal_read(robotweax_srt_telemetry_sampler *sampler,
+                                                 uint64_t after_sequence,
+                                                 robotweax_srt_telemetry_event_v1 *events,
+                                                 size_t capacity, size_t *count,
+                                                 uint64_t *overwritten);
 
     /* Adds a host event, e.g. converted from the connection monitor. Safe
      * from any thread, including callbacks. NOT_FOUND without a journal. */

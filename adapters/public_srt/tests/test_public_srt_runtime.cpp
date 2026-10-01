@@ -1668,9 +1668,8 @@ int run_sampler()
     }
     std::vector<robotweax_srt_telemetry_event_v1> journal_events(256);
     std::size_t journal_count = 0;
-    static_cast<void>(robotweax_srt_telemetry_event_journal_read(
-        robotweax_srt_telemetry_sampler_journal(sampler), 0, journal_events.data(),
-        journal_events.size(), &journal_count));
+    static_cast<void>(robotweax_srt_telemetry_sampler_journal_read(
+        sampler, 0, journal_events.data(), journal_events.size(), &journal_count, nullptr));
     int added = 0;
     for (std::size_t index = 0; index < journal_count; ++index)
     {
