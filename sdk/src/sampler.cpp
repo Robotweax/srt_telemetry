@@ -26,6 +26,10 @@ struct AggregatorDeleter
 struct Source
 {
     std::uint64_t id = 0;
+    /* on_error rate limiting: report a new error code at once, a repeated
+     * one at most once per second. */
+    robotweax_srt_telemetry_error last_error = ROBOTWEAX_SRT_TELEMETRY_OK;
+    std::uint64_t last_error_report_nano = 0;
     robotweax_srt_telemetry_source_fn sample = nullptr;
     void *data = nullptr;
     robotweax_srt_telemetry_endpoint_role role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN;
@@ -45,9 +49,48 @@ struct Source
     }
 };
 
-/* Set while this thread runs sampler callbacks, to refuse re-entrant calls
- * that would otherwise deadlock on the sampler mutex. */
-thread_local const void *callback_owner = nullptr;
+/* Samplers whose callbacks are running on this thread, innermost last. A
+ * call into any of them would deadlock on its mutex and is refused. Nested
+ * samplers (a callback of A driving B) are tracked separately. */
+constexpr std::size_t max_callback_depth = 16;
+thread_local const void *callback_owners[max_callback_depth] = {};
+thread_local std::size_t callback_depth = 0;
+
+bool in_callback_of(const void *sampler)
+{
+    for (std::size_t index = 0; index < callback_depth; ++index)
+    {
+        if (callback_owners[index] == sampler)
+        {
+            return true;
+        }
+    }
+    /* Deeper nesting than tracked: refuse every call to stay safe. */
+    return callback_depth > max_callback_depth;
+}
+
+class CallbackScope final
+{
+  public:
+    explicit CallbackScope(const void *sampler) noexcept
+    {
+        if (callback_depth < max_callback_depth)
+        {
+            callback_owners[callback_depth] = sampler;
+        }
+        ++callback_depth;
+    }
+    ~CallbackScope()
+    {
+        --callback_depth;
+        if (callback_depth < max_callback_depth)
+        {
+            callback_owners[callback_depth] = nullptr;
+        }
+    }
+    CallbackScope(const CallbackScope &) = delete;
+    CallbackScope &operator=(const CallbackScope &) = delete;
+};
 
 template <typename T> bool valid_struct(const T *value)
 {
@@ -113,7 +156,8 @@ struct robotweax_srt_telemetry_sampler
     std::mutex thread_mutex; /* thread lifecycle */
     std::condition_variable wake;
     bool stop_requested = false;
-    bool running = false;
+    bool running = false;  /* a thread exists and has not been claimed by stop */
+    bool stopping = false; /* stop is joining the thread */
     std::thread thread;
 };
 
@@ -145,9 +189,20 @@ int deliver_window(void *user_data, const robotweax_srt_telemetry_window_summary
     return 0;
 }
 
-void report_error(robotweax_srt_telemetry_sampler &sampler, const Source &source,
-                  const robotweax_srt_telemetry_error error, const std::int32_t native)
+void report_error(robotweax_srt_telemetry_sampler &sampler, Source &source,
+                  const robotweax_srt_telemetry_error error, const std::int32_t native,
+                  const std::uint64_t monotonic_nano)
 {
+    constexpr std::uint64_t repeat_interval = UINT64_C(1'000'000'000);
+    const auto repeated = error == source.last_error &&
+                          monotonic_nano >= source.last_error_report_nano &&
+                          monotonic_nano - source.last_error_report_nano < repeat_interval;
+    source.last_error = error;
+    if (repeated)
+    {
+        return;
+    }
+    source.last_error_report_nano = monotonic_nano;
     const auto &callbacks = sampler.config.callbacks;
     if (callbacks.on_error != nullptr)
     {
@@ -194,9 +249,21 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
     }
     if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
-        report_error(sampler, source, error, output.native_result);
+        report_error(sampler, source, error, output.native_result, monotonic_nano);
+        /* Keep the windows moving: an empty sample marked SOURCE_ERROR closes
+         * windows on time, so an outage shows as flagged windows, not silence. */
+        robotweax_srt_telemetry_metric_sample_v1 failed{};
+        failed.struct_size = sizeof(failed);
+        failed.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        failed.observed_at_unix_nano = unix_nano;
+        failed.sample_monotonic_nano = monotonic_nano;
+        failed.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
+        WindowContext context{&sampler, &source};
+        static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(
+            source.windows.get(), &failed, &deliver_window, &context));
         return;
     }
+    source.last_error = ROBOTWEAX_SRT_TELEMETRY_OK;
 
     robotweax_srt_telemetry_metric_sample_v1 metrics{};
     metrics.struct_size = sizeof(metrics);
@@ -207,7 +274,7 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
                                                     has_ext ? &output.ext_delta : nullptr, &metrics);
     if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
-        report_error(sampler, source, error, output.native_result);
+        report_error(sampler, source, error, output.native_result, monotonic_nano);
         return;
     }
 
@@ -232,22 +299,20 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
 void tick_locked(robotweax_srt_telemetry_sampler &sampler, const std::uint64_t unix_nano,
                  const std::uint64_t monotonic_nano)
 {
-    callback_owner = &sampler;
+    const CallbackScope scope(&sampler);
     for (auto &entry : sampler.sources)
     {
         sample_source(sampler, *entry.second, unix_nano, monotonic_nano);
     }
-    callback_owner = nullptr;
 }
 
 /* Caller holds sampler.mutex. */
 void flush_locked(robotweax_srt_telemetry_sampler &sampler, Source &source)
 {
-    callback_owner = &sampler;
+    const CallbackScope scope(&sampler);
     WindowContext context{&sampler, &source};
     static_cast<void>(robotweax_srt_telemetry_window_aggregator_flush(source.windows.get(),
                                                                       &deliver_window, &context));
-    callback_owner = nullptr;
 }
 
 std::uint64_t now_unix_nano()
@@ -351,7 +416,7 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_create(
 
 extern "C" void robotweax_srt_telemetry_sampler_destroy(robotweax_srt_telemetry_sampler *sampler)
 {
-    if (sampler == nullptr || callback_owner == sampler)
+    if (sampler == nullptr || in_callback_of(sampler))
     {
         return; /* a call from a callback would deadlock; refused */
     }
@@ -376,7 +441,7 @@ robotweax_srt_telemetry_sampler_add_source(robotweax_srt_telemetry_sampler *samp
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
-    if (callback_owner == sampler)
+    if (in_callback_of(sampler))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
@@ -459,7 +524,7 @@ robotweax_srt_telemetry_sampler_remove_source(robotweax_srt_telemetry_sampler *s
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
-    if (callback_owner == sampler)
+    if (in_callback_of(sampler))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
@@ -477,7 +542,7 @@ robotweax_srt_telemetry_sampler_remove_source(robotweax_srt_telemetry_sampler *s
 extern "C" std::size_t
 robotweax_srt_telemetry_sampler_source_count(robotweax_srt_telemetry_sampler *sampler)
 {
-    if (sampler == nullptr || callback_owner == sampler)
+    if (sampler == nullptr || in_callback_of(sampler))
     {
         return 0;
     }
@@ -494,13 +559,13 @@ robotweax_srt_telemetry_sampler_tick(robotweax_srt_telemetry_sampler *sampler,
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
-    if (callback_owner == sampler)
+    if (in_callback_of(sampler))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
     {
         std::lock_guard thread_lock(sampler->thread_mutex);
-        if (sampler->running)
+        if (sampler->running || sampler->stopping)
         {
             return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
         }
@@ -517,12 +582,12 @@ robotweax_srt_telemetry_sampler_start(robotweax_srt_telemetry_sampler *sampler)
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
-    if (callback_owner == sampler)
+    if (in_callback_of(sampler))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
     std::lock_guard lock(sampler->thread_mutex);
-    if (sampler->running)
+    if (sampler->running || sampler->stopping)
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
@@ -546,7 +611,7 @@ robotweax_srt_telemetry_sampler_stop(robotweax_srt_telemetry_sampler *sampler)
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
-    if (callback_owner == sampler)
+    if (in_callback_of(sampler))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
@@ -555,14 +620,26 @@ robotweax_srt_telemetry_sampler_stop(robotweax_srt_telemetry_sampler *sampler)
         std::lock_guard lock(sampler->thread_mutex);
         if (!sampler->running)
         {
+            /* Not running, or another stop already owns the join. */
             return ROBOTWEAX_SRT_TELEMETRY_OK;
         }
+        sampler->running = false;
+        sampler->stopping = true;
         sampler->stop_requested = true;
         thread = std::move(sampler->thread);
     }
     sampler->wake.notify_all();
-    thread.join();
+    if (thread.joinable())
+    {
+        try
+        {
+            thread.join();
+        }
+        catch (...)
+        {
+        }
+    }
     std::lock_guard lock(sampler->thread_mutex);
-    sampler->running = false;
+    sampler->stopping = false;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

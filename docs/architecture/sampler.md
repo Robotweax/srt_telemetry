@@ -47,7 +47,16 @@ use them as metric labels.
   their own loop and for deterministic tests. It is refused while the thread
   runs.
 - `sampler_stop` joins the thread and keeps windows open; a later `start`
-  continues them.
+  continues them. Concurrent `stop` calls are safe: one joins and the others
+  return at once. `start` is refused until the join has finished.
+
+## Failing sources
+
+When a source fails (for example the socket closed before the host removed
+it), `on_error` fires at once for a new error code and at most once per second
+while the same error repeats. The source's windows keep advancing on an empty
+sample, so the outage shows as windows flagged `SOURCE_ERROR` with no metrics,
+not as silence followed by one stale window.
 
 ## Callbacks and threading
 
@@ -55,11 +64,16 @@ use them as metric labels.
 and `on_error` (a source failed; other sources continue). Callbacks run on the
 sampling thread while the sampler holds its lock:
 
-- they must not call sampler functions; such calls return `INVALID_STATE`
-  instead of deadlocking;
+- they must not call functions of the same sampler; such calls return
+  `INVALID_STATE` instead of deadlocking. Driving a different sampler from a
+  callback is allowed, and the guard tracks nesting per sampler;
 - they must not throw; exceptions are swallowed at the C boundary;
 - the host must not hold a lock that a callback takes while it calls
   `remove_source`, `stop`, `tick` or `destroy`.
+
+`destroy` must not run concurrently with other calls on the same sampler. A
+`destroy` from one of the sampler's own callbacks is ignored, because it would
+deadlock.
 
 `add_source` and `remove_source` are thread-safe. `remove_source` waits for a
 running tick, flushes that source's windows as `PARTIAL`, and guarantees the
@@ -73,9 +87,11 @@ every source.
 - `robotweax_srt_telemetry_sampler_tests` (core, fake sources): labels copied
   and delivered, exact windowed rates from known counters, per-source errors,
   removal flushing `PARTIAL` windows and stopping calls, `NOT_FOUND`,
-  re-entrant calls refused, label validation, and the real thread (period,
-  start/stop, manual tick refused, removal while running, prompt stop). Also
-  run under ThreadSanitizer and AddressSanitizer/UBSan.
+  re-entrant calls refused (also with nested samplers), label validation,
+  failing sources producing flagged windows with rate-limited errors, and the
+  real thread: period, 20 start/stop rounds with four concurrent stoppers,
+  manual tick refused, removal while running, prompt stop. Also run under
+  ThreadSanitizer and AddressSanitizer/UBSan with leak checking.
 - `robotweax_srt_telemetry_public_srt_sampler_test` (live, each provider): a
   caller streams about 300 packets/s to a listener for 1.5 s while the thread
   samples both ends at 50 ms with 500 ms windows. Sender and receiver windows

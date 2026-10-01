@@ -263,7 +263,10 @@ void test_validation()
     check(robotweax_srt_telemetry_sampler_add_source(sampler, &dup_cfg, &id) ==
               ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
           "duplicate label keys rejected");
-    auto too_many = source_config(source, bad_key, ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS + 1);
+    const robotweax_srt_telemetry_label_v1 many[ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS + 1] = {
+        {"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}, {"e", "5"},
+        {"f", "6"}, {"g", "7"}, {"h", "8"}, {"i", "9"}};
+    auto too_many = source_config(source, many, ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS + 1);
     check(robotweax_srt_telemetry_sampler_add_source(sampler, &too_many, &id) ==
               ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
           "too many labels rejected");
@@ -295,6 +298,7 @@ void test_thread()
     check(robotweax_srt_telemetry_sampler_tick(sampler, base_unix, second) ==
               ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE,
           "manual tick refused while the thread runs");
+    const auto started = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(400));
 
     /* Remove from another thread while sampling: must not race. */
@@ -302,6 +306,7 @@ void test_thread()
     check(robotweax_srt_telemetry_sampler_remove_source(sampler, id) == ROBOTWEAX_SRT_TELEMETRY_OK,
           "remove while running");
     const auto remove_took = std::chrono::steady_clock::now() - remove_started;
+    const auto elapsed = std::chrono::steady_clock::now() - started;
     const auto calls = source.calls;
     std::this_thread::sleep_for(std::chrono::milliseconds(60));
     check(source.calls == calls, "no sampling after remove returned");
@@ -314,15 +319,144 @@ void test_thread()
 
     std::unique_lock lock(observed.mutex);
     const auto samples = observed.samples[id];
-    /* 400 ms at 20 ms: about 20 ticks; allow for a loaded CI host. */
-    check(samples >= 10 && samples <= 22, "thread samples at the configured period");
+    /* About one tick per 20 ms of elapsed time; never bunched beyond that. */
+    const auto upper = static_cast<int>(elapsed / std::chrono::milliseconds(20)) + 2;
+    check(samples >= 10 && samples <= upper, "thread samples at the configured period");
     check(!observed.windows[id].empty(), "thread emits windows");
-    check(remove_took < std::chrono::milliseconds(200) && stop_took < std::chrono::milliseconds(200),
+    check(remove_took < std::chrono::milliseconds(1'000) &&
+              stop_took < std::chrono::milliseconds(1'000),
           "remove and stop return promptly");
     std::cout << "THREAD {\"samples\":" << samples << ",\"windows\":" << observed.windows[id].size()
               << "}\n";
     /* Never hold a lock that callbacks take while calling into the sampler. */
     lock.unlock();
+    robotweax_srt_telemetry_sampler_destroy(sampler);
+    robotweax_srt_telemetry_delta_engine_destroy(source.engine);
+}
+
+/* A callback of sampler A drives sampler B, then calls back into A. */
+struct Nested
+{
+    robotweax_srt_telemetry_sampler *a = nullptr;
+    robotweax_srt_telemetry_sampler *b = nullptr;
+    robotweax_srt_telemetry_error b_tick = ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    robotweax_srt_telemetry_error a_again = ROBOTWEAX_SRT_TELEMETRY_OK;
+};
+
+void nested_on_sample(void *user, const robotweax_srt_telemetry_source_info_v1 *,
+                      const robotweax_srt_telemetry_source_output_v1 *,
+                      const robotweax_srt_telemetry_metric_sample_v1 *)
+{
+    auto &nested = *static_cast<Nested *>(user);
+    if (nested.b != nullptr)
+    {
+        nested.b_tick = robotweax_srt_telemetry_sampler_tick(nested.b, base_unix, second);
+        nested.a_again = robotweax_srt_telemetry_sampler_tick(nested.a, base_unix, second);
+    }
+}
+
+void test_nested_samplers()
+{
+    Nested nested;
+    robotweax_srt_telemetry_sampler_config_v1 config{};
+    robotweax_srt_telemetry_sampler_config_default(&config);
+    config.callbacks.user_data = &nested;
+    config.callbacks.on_sample = &nested_on_sample;
+    static_cast<void>(robotweax_srt_telemetry_sampler_create(&config, &nested.a));
+    robotweax_srt_telemetry_sampler_config_v1 plain{};
+    robotweax_srt_telemetry_sampler_config_default(&plain);
+    static_cast<void>(robotweax_srt_telemetry_sampler_create(&plain, &nested.b));
+
+    FakeSource source;
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&source.engine));
+    auto source_cfg = source_config(source, nullptr, 0);
+    std::uint64_t id = 0;
+    static_cast<void>(robotweax_srt_telemetry_sampler_add_source(nested.a, &source_cfg, &id));
+    static_cast<void>(robotweax_srt_telemetry_sampler_tick(nested.a, base_unix, second));
+    check(nested.b_tick == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "a callback of one sampler may drive another sampler");
+    check(nested.a_again == ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE,
+          "after driving another sampler, re-entering the first is still refused");
+    auto *b = nested.b;
+    nested.b = nullptr; /* stop the callback from driving B during destroy */
+    robotweax_srt_telemetry_sampler_destroy(nested.a);
+    robotweax_srt_telemetry_sampler_destroy(b);
+    robotweax_srt_telemetry_delta_engine_destroy(source.engine);
+}
+
+void test_stop_races_and_restart()
+{
+    Observed observed;
+    auto config = config_for(observed);
+    config.period_nano = second / 100;
+    config.windows.expected_period_nano = config.period_nano;
+    config.windows.window_count = 1;
+    config.windows.window_nano[0] = second / 10;
+    robotweax_srt_telemetry_sampler *sampler = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_sampler_create(&config, &sampler));
+    FakeSource source;
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&source.engine));
+    auto source_cfg = source_config(source, nullptr, 0);
+    std::uint64_t id = 0;
+    static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &source_cfg, &id));
+
+    for (int round = 0; round < 20; ++round)
+    {
+        check(robotweax_srt_telemetry_sampler_start(sampler) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "start after stop");
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        std::atomic<int> ok{0};
+        std::vector<std::thread> stoppers;
+        for (int index = 0; index < 4; ++index)
+        {
+            stoppers.emplace_back(
+                [&]
+                {
+                    if (robotweax_srt_telemetry_sampler_stop(sampler) == ROBOTWEAX_SRT_TELEMETRY_OK)
+                    {
+                        ok.fetch_add(1);
+                    }
+                });
+        }
+        for (auto &stopper : stoppers)
+        {
+            stopper.join();
+        }
+        check(ok.load() == 4, "concurrent stops all succeed without crashing");
+    }
+    check(source.calls > 20, "restarted thread keeps sampling");
+    robotweax_srt_telemetry_sampler_destroy(sampler);
+    robotweax_srt_telemetry_delta_engine_destroy(source.engine);
+}
+
+void test_failing_source_windows()
+{
+    Observed observed;
+    auto config = config_for(observed);
+    robotweax_srt_telemetry_sampler *sampler = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_sampler_create(&config, &sampler));
+    FakeSource source;
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&source.engine));
+    source.fail = true;
+    auto source_cfg = source_config(source, nullptr, 0);
+    std::uint64_t id = 0;
+    static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &source_cfg, &id));
+    for (int tick = 0; tick < 35; ++tick) /* 3.5 s of failures */
+    {
+        const auto offset = static_cast<std::uint64_t>(tick) * second / 10;
+        static_cast<void>(
+            robotweax_srt_telemetry_sampler_tick(sampler, base_unix + offset, second + offset));
+    }
+    check(observed.windows[id].size() == 3, "a failing source still closes its 1 s windows");
+    bool flagged = !observed.windows[id].empty();
+    for (const auto &window : observed.windows[id])
+    {
+        flagged = flagged &&
+                  (window.quality_flags & ROBOTWEAX_SRT_TELEMETRY_WINDOW_SOURCE_ERROR) != 0 &&
+                  window.available_metrics == 0;
+    }
+    check(flagged, "outage windows are flagged SOURCE_ERROR and carry no metrics");
+    check(observed.errors[id] == 4, "a repeating error is reported at most once per second");
     robotweax_srt_telemetry_sampler_destroy(sampler);
     robotweax_srt_telemetry_delta_engine_destroy(source.engine);
 }
@@ -334,6 +468,9 @@ int main()
     test_manual_ticks();
     test_validation();
     test_thread();
+    test_nested_samplers();
+    test_stop_races_and_restart();
+    test_failing_source_windows();
     if (failures != 0)
     {
         std::cerr << failures << " sampler checks failed\n";

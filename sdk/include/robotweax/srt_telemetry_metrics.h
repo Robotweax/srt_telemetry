@@ -150,6 +150,12 @@ extern "C"
 #define ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP (UINT32_C(1) << 2)
 #define ROBOTWEAX_SRT_TELEMETRY_WINDOW_COUNTER_RESET (UINT32_C(1) << 3)
 #define ROBOTWEAX_SRT_TELEMETRY_WINDOW_BASELINE (UINT32_C(1) << 4)
+/* At least one sample in the window came from a failed source read. */
+#define ROBOTWEAX_SRT_TELEMETRY_WINDOW_SOURCE_ERROR (UINT32_C(1) << 5)
+
+/* metric_sample_v1.quality_flags bit (above the delta QUALITY_* bits): the
+ * source failed; the sample carries no metrics but advances the windows. */
+#define ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR (UINT64_C(1) << 32)
 
     typedef struct robotweax_srt_telemetry_window_summary_v1
     {

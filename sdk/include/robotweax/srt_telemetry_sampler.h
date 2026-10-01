@@ -50,7 +50,11 @@ extern "C"
     } robotweax_srt_telemetry_source_output_v1;
 
     /* Fills one sample for the given timestamps. Any error other than OK is
-     * reported through on_error and the tick continues with other sources. */
+     * reported through on_error and the tick continues with other sources.
+     * The source's windows still advance, flagged WINDOW_SOURCE_ERROR, so an
+     * outage shows up as flagged windows rather than as silence. on_error
+     * fires at once for a new error code and at most once per second while
+     * the same error repeats. */
     typedef robotweax_srt_telemetry_error (*robotweax_srt_telemetry_source_fn)(
         void *source_data, uint64_t observed_at_unix_nano, uint64_t sample_monotonic_nano,
         robotweax_srt_telemetry_source_output_v1 *output);
@@ -113,7 +117,9 @@ extern "C"
         robotweax_srt_telemetry_sampler **sampler);
 
     /* Stops the thread if running, flushes every source's windows (PARTIAL)
-     * and frees the sampler. Must not be called from a callback. */
+     * and frees the sampler. Must not run concurrently with any other call on
+     * the same sampler. A call from one of its own callbacks is ignored (the
+     * sampler stays alive) because it would deadlock. */
     ROBOTWEAX_SRT_TELEMETRY_API void
     robotweax_srt_telemetry_sampler_destroy(robotweax_srt_telemetry_sampler *sampler);
 
@@ -148,7 +154,9 @@ extern "C"
     robotweax_srt_telemetry_sampler_start(robotweax_srt_telemetry_sampler *sampler);
 
     /* Stops and joins the thread. Windows stay open; a later start continues
-     * them. Must not be called from a callback. */
+     * them. Safe to call from several threads; only one joins, the others
+     * return at once. start is refused (INVALID_STATE) until the join is
+     * complete. Must not be called from a callback. */
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_sampler_stop(robotweax_srt_telemetry_sampler *sampler);
 
