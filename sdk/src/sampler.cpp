@@ -65,10 +65,15 @@ struct Source
     /* Latest state for snapshots and exporters. */
     std::array<bool, ROBOTWEAX_SRT_TELEMETRY_MAX_WINDOWS> has_window{};
     std::array<robotweax_srt_telemetry_window_summary_v1, ROBOTWEAX_SRT_TELEMETRY_MAX_WINDOWS> latest_window{};
+    /* Steady-clock time each latest window was delivered (staleness). */
+    std::array<std::uint64_t, ROBOTWEAX_SRT_TELEMETRY_MAX_WINDOWS> window_delivered_steady{};
+    std::string prometheus_labels;
     bool has_latest_metrics = false;
     robotweax_srt_telemetry_metric_sample_v1 latest_metrics{};
     bool has_latest_raw = false;
     robotweax_srt_telemetry_raw_sample_v1 latest_raw{};
+    bool has_latest_ext = false;
+    robotweax_srt_telemetry_ext_sample_v1 latest_ext{};
     /* Health engine (null when health is off), its context and last status. */
     std::unique_ptr<robotweax_srt_telemetry_health_engine, HealthDeleter> health;
     bool has_health_context = false;
@@ -338,6 +343,7 @@ int deliver_window(void *user_data, const robotweax_srt_telemetry_window_summary
         {
             context.source->latest_window[w] = *summary;
             context.source->has_window[w] = true;
+            context.source->window_delivered_steady[w] = steady_nano();
         }
     }
     if (summary->window_nano == sampler.history_window_nano)
@@ -698,6 +704,11 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
     source.has_latest_metrics = true;
     source.latest_raw = output.raw;
     source.has_latest_raw = true;
+    source.has_latest_ext = output.has_ext != 0;
+    if (source.has_latest_ext)
+    {
+        source.latest_ext = output.ext;
+    }
     const auto &callbacks = sampler.config.callbacks;
     if (callbacks.on_sample != nullptr)
     {
@@ -938,6 +949,13 @@ robotweax_srt_telemetry_sampler_add_source(robotweax_srt_telemetry_sampler *samp
     {
         created->history.resize(sampler->history_capacity);
         labels = label_text(*created);
+        std::vector<std::pair<std::string, std::string>> pairs;
+        for (std::size_t l = 0; l < created->keys.size(); ++l)
+        {
+            pairs.emplace_back(created->keys[l], created->values[l]);
+        }
+        created->prometheus_labels =
+            robotweax_srt_telemetry_internal::prometheus_labels(sampler->next_id, created->role, pairs);
     }
     catch (const std::bad_alloc &)
     {
@@ -1594,6 +1612,7 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_
                 return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
             }
             view.window_nano = sampler->config.windows.window_nano[index];
+            const auto now_steady = steady_nano();
             view.generated_unix_nano = sampler->last_tick_unix != 0 ? sampler->last_tick_unix : system_nano();
             view.sources.reserve(sampler->sources.size());
             for (const auto &entry : sampler->sources)
@@ -1606,19 +1625,23 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_
                 {
                     out.labels.emplace_back(source.keys[l], source.values[l]);
                 }
+                out.prometheus_labels = source.prometheus_labels;
                 out.failed = source.failed;
                 out.has_window = source.has_window[index];
                 if (out.has_window)
                 {
                     out.window = source.latest_window[index];
-                    /* A window that ended more than two lengths before the
-                     * latest tick no longer describes the source. */
-                    out.window_stale = sampler->last_tick_unix > out.window.end_unix_nano + 2 * view.window_nano;
+                    /* No newer window for two more lengths: the source no
+                     * longer ticks. Steady clock, so independent of host
+                     * timestamps and clock steps. */
+                    out.window_stale = now_steady > source.window_delivered_steady[index] + 3 * view.window_nano;
                 }
                 out.has_metrics = source.has_latest_metrics;
                 out.metrics = source.latest_metrics;
                 out.has_raw = source.has_latest_raw;
                 out.raw = source.latest_raw;
+                out.has_ext = source.has_latest_ext;
+                out.ext = source.latest_ext;
                 out.has_health = source.health != nullptr && source.has_health_status;
                 out.health = source.health_status;
                 out.connection = source.has_health_context ? source.health_context.connection

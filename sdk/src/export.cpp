@@ -1,7 +1,8 @@
 #include "export_internal.h"
 
 #include <array>
-#include <cinttypes>
+#include <charconv>
+#include <set>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -76,59 +77,98 @@ constexpr std::array<MetricName, ROBOTWEAX_SRT_TELEMETRY_METRIC_DEFINED_COUNT> n
      "Free space in the receive buffer."},
     {"srt.sender.packet_send_period", "srt_sender_packet_send_period_seconds", "sender",
      "Interval between packets set by the sender's pacing."},
-    {"srt.connection.link_capacity", "srt_connection_link_capacity_bits_per_second", "connection",
-     "Link capacity estimate (Haivision SRT; follows the arrival rate)."},
+    {"srt.connection.link_capacity_estimate", "srt_connection_link_capacity_estimate_bits_per_second",
+     "connection",
+     "SRT's link capacity estimate from probe packet pairs (mbpsBandwidth; Haivision SRT). Follows the arrival rate "
+     "on a healthy path."},
     {"srt.receiver.recovery_headroom", "srt_receiver_recovery_headroom_ratio", "receiver",
      "Receive buffer span / latency: time left to repair a gap, normalised; about 1 when nothing is missing."},
-    {"srt.sender.flight_to_flow_window", "srt_sender_flight_to_flow_window_ratio", "sender",
+    {"srt.sender.flow_window.utilization", "srt_sender_flow_window_utilization_ratio", "sender",
      "Flight size / flow window: near 1 when the peer stops taking data."},
-    {"srt.sender.buffer.drop_threshold_ratio", "srt_sender_buffer_to_drop_threshold_ratio", "sender",
+    {"srt.sender.buffer.drop_threshold_utilization", "srt_sender_buffer_drop_threshold_utilization_ratio", "sender",
      "Send buffer span / too-late drop threshold: near 1 just before sender drops."},
 }};
 
 struct CounterName
 {
+    bool ext;
     std::uint64_t field;
-    std::uint64_t robotweax_srt_telemetry_raw_sample_v1::*value;
+    std::uint64_t (*value)(const ExportSource &);
     const char *otel;
     const char *prometheus;
     const char *scope;
     const char *help;
 };
 
-const std::array<CounterName, 10> counters = {{
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_PACKET_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::unique_sent_packet_total, "srt.sender.unique_sent.packets",
-     "srt_sender_unique_sent_packets_total", "sender", "Original packets sent since the connection started."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_WIRE_BYTE_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::unique_sent_wire_byte_total, "srt.sender.unique_sent.bytes",
-     "srt_sender_unique_sent_bytes_total", "sender", "Bytes of original packets sent."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_RETRANSMITTED_PACKET_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::retransmitted_packet_total, "srt.sender.retransmitted.packets",
-     "srt_sender_retransmitted_packets_total", "sender", "Packets retransmitted."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_LOSS_PACKET_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::sender_loss_packet_total, "srt.sender.loss_reported.packets",
-     "srt_sender_loss_reported_packets_total", "sender", "Packets reported lost by the receiver."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_DROP_PACKET_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::sender_drop_packet_total, "srt.sender.dropped.packets",
-     "srt_sender_dropped_packets_total", "sender", "Packets dropped by the sender as too late."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::unique_received_packet_total, "srt.receiver.unique_received.packets",
-     "srt_receiver_unique_received_packets_total", "receiver", "Distinct packets received."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_WIRE_BYTE_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::unique_received_wire_byte_total, "srt.receiver.unique_received.bytes",
-     "srt_receiver_unique_received_bytes_total", "receiver", "Bytes of distinct packets received."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_LOSS_PACKET_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::receiver_loss_packet_total, "srt.receiver.lost.packets",
-     "srt_receiver_lost_packets_total", "receiver", "Packets detected missing (before repair)."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_DROP_PACKET_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::receiver_drop_packet_total, "srt.receiver.dropped.packets",
-     "srt_receiver_dropped_packets_total", "receiver", "Packets never delivered to the application."},
-    {ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_UNDECRYPTABLE_PACKET_TOTAL,
-     &robotweax_srt_telemetry_raw_sample_v1::receiver_undecryptable_packet_total,
-     "srt.receiver.undecryptable.packets", "srt_receiver_undecryptable_packets_total", "receiver",
-     "Packets that could not be decrypted."},
+#define RAW_COUNTER(member) [](const ExportSource &s) -> std::uint64_t { return s.raw.member; }
+#define EXT_COUNTER(member) [](const ExportSource &s) -> std::uint64_t { return s.ext.member; }
+
+/* Lifetime totals since the connection started (the adapter never clears
+ * the provider's statistics). Bytes include IP/UDP/SRT headers. */
+const std::array<CounterName, 18> counters = {{
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_SENT_PACKET_TOTAL, RAW_COUNTER(sent_packet_total),
+     "srt.sender.sent.packets", "srt_sender_sent_packets_total", "sender",
+     "Packets sent, original and retransmitted."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_SENT_WIRE_BYTE_TOTAL, RAW_COUNTER(sent_wire_byte_total),
+     "srt.sender.sent.bytes", "srt_sender_sent_bytes_total", "sender",
+     "Bytes sent, original and retransmitted, with IP/UDP/SRT headers."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_PACKET_TOTAL, RAW_COUNTER(unique_sent_packet_total),
+     "srt.sender.unique_sent.packets", "srt_sender_unique_sent_packets_total", "sender", "Original packets sent."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_WIRE_BYTE_TOTAL, RAW_COUNTER(unique_sent_wire_byte_total),
+     "srt.sender.unique_sent.bytes", "srt_sender_unique_sent_bytes_total", "sender",
+     "Bytes of original packets sent, with headers."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_RETRANSMITTED_PACKET_TOTAL, RAW_COUNTER(retransmitted_packet_total),
+     "srt.sender.retransmitted.packets", "srt_sender_retransmitted_packets_total", "sender",
+     "Packets retransmitted."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_LOSS_PACKET_TOTAL, RAW_COUNTER(sender_loss_packet_total),
+     "srt.sender.loss_reported.packets", "srt_sender_loss_reported_packets_total", "sender",
+     "Packets reported lost by the receiver."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_DROP_PACKET_TOTAL, RAW_COUNTER(sender_drop_packet_total),
+     "srt.sender.dropped.packets", "srt_sender_dropped_packets_total", "sender",
+     "Packets dropped by the sender as too late."},
+    {true, ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_NAK_PACKET_TOTAL, EXT_COUNTER(received_nak_packet_total),
+     "srt.sender.nak_received.packets", "srt_sender_nak_received_packets_total", "sender",
+     "Loss reports (NAK packets) received."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVED_PACKET_TOTAL, RAW_COUNTER(received_packet_total),
+     "srt.receiver.received.packets", "srt_receiver_received_packets_total", "receiver",
+     "Packets received, including duplicates and retransmissions."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVED_WIRE_BYTE_TOTAL, RAW_COUNTER(received_wire_byte_total),
+     "srt.receiver.received.bytes", "srt_receiver_received_bytes_total", "receiver",
+     "Bytes received, with IP/UDP/SRT headers."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL, RAW_COUNTER(unique_received_packet_total),
+     "srt.receiver.unique_received.packets", "srt_receiver_unique_received_packets_total", "receiver",
+     "Distinct packets received."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_WIRE_BYTE_TOTAL,
+     RAW_COUNTER(unique_received_wire_byte_total), "srt.receiver.unique_received.bytes",
+     "srt_receiver_unique_received_bytes_total", "receiver", "Bytes of distinct packets received, with headers."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_LOSS_PACKET_TOTAL, RAW_COUNTER(receiver_loss_packet_total),
+     "srt.receiver.lost.packets", "srt_receiver_lost_packets_total", "receiver",
+     "Packets detected missing (before repair)."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_DROP_PACKET_TOTAL, RAW_COUNTER(receiver_drop_packet_total),
+     "srt.receiver.dropped.packets", "srt_receiver_dropped_packets_total", "receiver",
+     "Packets never delivered to the application."},
+    {false, ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_UNDECRYPTABLE_PACKET_TOTAL,
+     RAW_COUNTER(receiver_undecryptable_packet_total), "srt.receiver.undecryptable.packets",
+     "srt_receiver_undecryptable_packets_total", "receiver", "Packets that could not be decrypted."},
+    {true, ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_RETRANSMITTED_PACKET_SINCE_CLEAR,
+     EXT_COUNTER(received_retransmitted_packet_since_clear), "srt.receiver.retransmitted.packets",
+     "srt_receiver_retransmitted_packets_total", "receiver", "Retransmitted packets received."},
+    {true, ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_BELATED_PACKET_SINCE_CLEAR, EXT_COUNTER(belated_packet_since_clear),
+     "srt.receiver.belated.packets", "srt_receiver_belated_packets_total", "receiver",
+     "Packets that arrived after their play time."},
+    {true, ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_NAK_PACKET_TOTAL, EXT_COUNTER(sent_nak_packet_total),
+     "srt.receiver.nak_sent.packets", "srt_receiver_nak_sent_packets_total", "receiver",
+     "Loss reports (NAK packets) sent."},
 }};
+
+#undef RAW_COUNTER
+#undef EXT_COUNTER
+
+bool counter_available(const ExportSource &s, const CounterName &c)
+{
+    return c.ext ? (s.has_ext && (s.ext.available_fields & c.field) != 0)
+                 : (s.has_raw && (s.raw.available_fields & c.field) != 0);
+}
 
 struct Flag
 {
@@ -198,7 +238,8 @@ bool in_scope(const ExportSource &source, const char *scope)
     return std::strcmp(scope, role_name(source.role)) == 0;
 }
 
-/* Locale-independent number text; false for NaN and infinities. */
+/* Shortest round-trip text, independent of the C locale; false for NaN
+ * and infinities. */
 bool number(std::string &out, const double value)
 {
     if (!std::isfinite(value))
@@ -206,19 +247,16 @@ bool number(std::string &out, const double value)
         return false;
     }
     char text[40];
-    const int n = std::snprintf(text, sizeof(text), "%.9g", value);
-    for (int i = 0; i < n; ++i)
-    {
-        out += text[i] == ',' ? '.' : text[i];
-    }
+    const auto result = std::to_chars(text, text + sizeof(text), value);
+    out.append(text, result.ptr);
     return true;
 }
 
 void integer(std::string &out, const std::uint64_t value)
 {
     char text[24];
-    std::snprintf(text, sizeof(text), "%" PRIu64, value);
-    out += text;
+    const auto result = std::to_chars(text, text + sizeof(text), value);
+    out.append(text, result.ptr);
 }
 
 /* ------------------------------------------------------------- Prometheus */
@@ -253,21 +291,38 @@ bool reserved_label(const std::string_view key)
            key == "instance" || key.substr(0, 2) == "__";
 }
 
-std::string prometheus_labels(const ExportSource &source)
+} // namespace
+
+/* A host key that collides with an exporter label, or with another host
+ * label after renaming, gets "host_" prefixes until it is unique. */
+std::string robotweax_srt_telemetry_internal::prometheus_labels(
+    const std::uint64_t id, const robotweax_srt_telemetry_endpoint_role role,
+    const std::vector<std::pair<std::string, std::string>> &labels)
 {
     std::string text = "source_id=\"";
-    integer(text, source.id);
+    integer(text, id);
     text += "\",role=\"";
-    text += role_name(source.role);
+    text += role_name(role);
     text += '"';
-    for (const auto &[key, value] : source.labels)
+    std::set<std::string> used;
+    for (const auto &label : labels)
     {
-        text += ',';
-        if (reserved_label(key))
+        used.insert(label.first);
+    }
+    std::set<std::string> taken;
+    for (const auto &[key, value] : labels)
+    {
+        std::string name = key;
+        if (reserved_label(name))
         {
-            text += "host_";
+            do
+            {
+                name = "host_" + name;
+            } while (reserved_label(name) || used.count(name) != 0 || taken.count(name) != 0);
         }
-        text += key;
+        taken.insert(name);
+        text += ',';
+        text += name;
         text += "=\"";
         prometheus_escape(text, value);
         text += '"';
@@ -275,12 +330,18 @@ std::string prometheus_labels(const ExportSource &source)
     return text;
 }
 
+namespace
+{
+
 void family(std::string &out, const char *name, const char *type, const char *help)
 {
     out += "# HELP ";
     out += name;
     out += ' ';
-    out += help;
+    for (const char *c = help; *c != '\0'; ++c)
+    {
+        out += *c == '\\' ? std::string("\\\\") : *c == '\n' ? std::string("\\n") : std::string(1, *c);
+    }
     out += "\n# TYPE ";
     out += name;
     out += ' ';
@@ -322,7 +383,8 @@ std::string robotweax_srt_telemetry_internal::render_prometheus(const ExportView
     labels.reserve(view.sources.size());
     for (const auto &s : view.sources)
     {
-        labels.push_back(prometheus_labels(s));
+        labels.push_back(s.prometheus_labels.empty() ? prometheus_labels(s.id, s.role, s.labels)
+                                                     : s.prometheus_labels);
     }
     const auto each = [&](auto &&body)
     {
@@ -430,7 +492,7 @@ std::string robotweax_srt_telemetry_internal::render_prometheus(const ExportView
         {
             bool any = false;
             each([&](const ExportSource &s, const std::string &)
-                 { any = any || (s.has_raw && in_scope(s, c.scope) && (s.raw.available_fields & c.field) != 0); });
+                 { any = any || (in_scope(s, c.scope) && counter_available(s, c)); });
             if (!any)
             {
                 continue;
@@ -439,9 +501,15 @@ std::string robotweax_srt_telemetry_internal::render_prometheus(const ExportView
             each(
                 [&](const ExportSource &s, const std::string &l)
                 {
-                    if (s.has_raw && in_scope(s, c.scope) && (s.raw.available_fields & c.field) != 0)
+                    if (in_scope(s, c.scope) && counter_available(s, c))
                     {
-                        sample(out, c.prometheus, l, "", static_cast<double>(s.raw.*(c.value)));
+                        /* Integers exactly: counters must not lose steps. */
+                        out += c.prometheus;
+                        out += '{';
+                        out += l;
+                        out += "} ";
+                        integer(out, c.value(s));
+                        out += '\n';
                     }
                 });
         }
@@ -610,6 +678,9 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
     integer(out, ROBOTWEAX_SRT_TELEMETRY_METRIC_SCHEMA_VERSION);
     out += ",\"generated_unix_nano\":";
     integer(out, view.generated_unix_nano);
+    /* Milliseconds for JavaScript clients: nanoseconds exceed 2^53. */
+    out += ",\"generated_unix_ms\":";
+    integer(out, view.generated_unix_nano / 1'000'000);
     out += ",\"window_seconds\":";
     json_number(out, static_cast<double>(view.window_nano) / 1e9);
     out += ",\"sources\":[";
@@ -643,6 +714,10 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
             integer(out, s.window.start_unix_nano);
             out += ",\"end_unix_nano\":";
             integer(out, s.window.end_unix_nano);
+            out += ",\"start_unix_ms\":";
+            integer(out, s.window.start_unix_nano / 1'000'000);
+            out += ",\"end_unix_ms\":";
+            integer(out, s.window.end_unix_nano / 1'000'000);
             out += ",\"samples\":";
             integer(out, s.window.sample_count);
             out += ",\"quality\":[";
@@ -696,6 +771,8 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
         {
             out += ",\"latest\":{\"observed_unix_nano\":";
             integer(out, s.metrics.observed_at_unix_nano);
+            out += ",\"observed_unix_ms\":";
+            integer(out, s.metrics.observed_at_unix_nano / 1'000'000);
             out += ",\"metrics\":{";
             first = true;
             for (std::size_t m = 0; m < names.size(); ++m)
@@ -720,13 +797,13 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
             out += "}}";
         }
 
-        if (s.has_raw && (view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_COUNTERS) == 0)
+        if ((s.has_raw || s.has_ext) && (view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_COUNTERS) == 0)
         {
             out += ",\"counters\":{";
             first = true;
             for (const auto &c : counters)
             {
-                if (!in_scope(s, c.scope) || (s.raw.available_fields & c.field) == 0)
+                if (!in_scope(s, c.scope) || !counter_available(s, c))
                 {
                     continue;
                 }
@@ -734,7 +811,7 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
                 first = false;
                 json_string(out, c.otel);
                 out += ':';
-                integer(out, s.raw.*(c.value));
+                integer(out, c.value(s));
             }
             out += '}';
         }
@@ -751,9 +828,19 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
             out += ",\"direction\":";
             json_string(out, direction_name(h.knob_direction));
             out += ",\"suggested_value\":";
-            json_number(out, h.suggested_value);
-            out += ",\"since_monotonic_nano\":";
-            integer(out, h.verdict_since_monotonic_nano);
+            if (h.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE && h.suggested_value != 0)
+            {
+                json_number(out, h.suggested_value);
+            }
+            else
+            {
+                out += "null";
+            }
+            /* How long the verdict had held at the latest sample. */
+            out += ",\"verdict_age_seconds\":";
+            json_number(out, h.sample_monotonic_nano >= h.verdict_since_monotonic_nano
+                                 ? static_cast<double>(h.sample_monotonic_nano - h.verdict_since_monotonic_nano) / 1e9
+                                 : 0.0);
             out += ",\"primary_indicator\":";
             if (h.primary_indicator >= 0 && h.primary_indicator < ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT)
             {

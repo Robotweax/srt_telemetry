@@ -12,6 +12,8 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <chrono>
+#include <thread>
 #include <vector>
 
 namespace
@@ -407,7 +409,8 @@ void test_render()
     receiver.receiver = true;
     static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&sender.engine));
     static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&receiver.engine));
-    const robotweax_srt_telemetry_label_v1 sender_labels[] = {{"site", "studio \"2\" \\ west"}, {"role", "uplink"}};
+    const robotweax_srt_telemetry_label_v1 sender_labels[] = {
+        {"site", "studio \"2\" \\ west"}, {"role", "uplink"}, {"host_role", "backup"}};
     const robotweax_srt_telemetry_label_v1 receiver_labels[] = {{"site", "studio-2"}};
     robotweax_srt_telemetry_source_config_v1 cfg{};
     cfg.struct_size = sizeof(cfg);
@@ -416,7 +419,7 @@ void test_render()
     cfg.source_data = &sender;
     cfg.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
     cfg.labels = sender_labels;
-    cfg.label_count = 2;
+    cfg.label_count = 3;
     std::uint64_t sender_id = 0;
     std::uint64_t receiver_id = 0;
     static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &cfg, &sender_id));
@@ -482,7 +485,8 @@ void test_render()
     check(any_line_contains(e, "srt_receiver_unique_received_packets_total{source_id=\"2\"", "} 3750"),
           "lifetime counter");
     check(any_line_contains(e, "site=\"studio \\\"2\\\" \\\\ west\"", "srt_source_up"), "label values escaped");
-    check(any_line_contains(e, "host_role=\"uplink\"", "role=\"sender\""), "reserved host label renamed");
+    check(any_line_contains(e, "host_host_role=\"uplink\",host_role=\"backup\"", "role=\"sender\""),
+          "reserved host label renamed past a colliding host label");
     check(!any_line_contains(e, "srt_receiver_", "role=\"sender\""), "a sender exports no receiver metrics");
     check(any_line_contains(e, "srt_connection_rtt_seconds{source_id=\"1\"", "stat=\"max\"} 0.02") &&
               any_line_contains(e, "srt_connection_rtt_seconds{source_id=\"2\"", "stat=\"max\"} 0.02"),
@@ -507,6 +511,10 @@ void test_render()
 
     const auto json = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON);
     check(valid_json(json), "snapshot is valid JSON");
+    check(json.find("\"generated_unix_ms\":1800000012400") != std::string::npos &&
+              json.find("\"suggested_value\":null") != std::string::npos &&
+              json.find("\"verdict_age_seconds\":") != std::string::npos,
+          "snapshot times in ms, verdict age, no advice value without a knob");
     check(json.find("\"schema\":\"srt-telemetry.snapshot.v1\"") != std::string::npos &&
               json.find("\"srt.receiver.recovery_headroom\":{\"unit\":\"1\"") != std::string::npos &&
               json.find("\"srt.receiver.unique_received.packets\":3750") != std::string::npos &&
@@ -564,9 +572,52 @@ void test_render()
               ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE,
           "writer failure");
 
+    /* Counters stay exact integers far above 2^53 / 1e9. */
+    receiver.packets = UINT64_C(123'456'953'512);
+    static_cast<void>(robotweax_srt_telemetry_sampler_tick(sampler, base_unix + 125 * second / 10, second + 125 * second / 10));
+    {
+        auto big = parse_prometheus(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS));
+        check(big.valid && any_line_contains(big, "srt_receiver_unique_received_packets_total{source_id=\"2\"",
+                                             "} 123456953542"),
+              "large counter printed exactly");
+    }
+
+    /* Health off: no health series, still valid. */
+    static_cast<void>(robotweax_srt_telemetry_sampler_enable_health(sampler, 0));
+    {
+        auto plain = parse_prometheus(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS));
+        const auto plain_json = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON);
+        check(plain.valid && plain.types.count("srt_health_verdict") == 0 && valid_json(plain_json) &&
+                  plain_json.find("\"health\"") == std::string::npos,
+              "health disabled: no health output");
+    }
+
+    /* Ticks stop: after two more window lengths the window is stale. */
+    {
+        const auto before = parse_prometheus(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS, 0, second));
+        check(has_line(before, "srt_window_seconds{source_id=\"2\""), "1 s window present while ticking");
+        std::this_thread::sleep_for(std::chrono::milliseconds(3'200));
+        const auto after = parse_prometheus(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS, 0, second));
+        check(after.valid && !has_line(after, "srt_window_seconds{") &&
+                  !has_line(after, "srt_receiver_recovery_headroom_ratio{") &&
+                  has_line(after, "srt_receiver_unique_received_packets_total{"),
+              "stale window left out, counters kept");
+    }
+
     robotweax_srt_telemetry_sampler_destroy(sampler);
     robotweax_srt_telemetry_delta_engine_destroy(sender.engine);
     robotweax_srt_telemetry_delta_engine_destroy(receiver.engine);
+
+    /* No sources at all. */
+    robotweax_srt_telemetry_sampler *empty = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_sampler_create(&config, &empty));
+    {
+        auto e0 = parse_prometheus(render(empty, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS));
+        const auto j0 = render(empty, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON);
+        check(e0.valid && valid_json(j0) && j0.find("\"sources\":[]") != std::string::npos,
+              "no sources: valid empty output");
+    }
+    robotweax_srt_telemetry_sampler_destroy(empty);
 }
 
 } // namespace

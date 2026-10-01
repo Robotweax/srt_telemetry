@@ -1642,6 +1642,7 @@ int run_sampler()
     /* Export: both formats render the live sources. */
     std::string prometheus;
     std::string snapshot;
+    bool render_ok = false;
     {
         robotweax_srt_telemetry_render_options_v1 options;
         const auto collect = [](void *user, const char *data, const std::size_t size)
@@ -1651,13 +1652,15 @@ int run_sampler()
         };
         robotweax_srt_telemetry_render_options_default(ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS, &options);
         options.window_nano = UINT64_C(500'000'000);
-        static_cast<void>(robotweax_srt_telemetry_sampler_render_to(sampler, &options, collect, &prometheus));
+        render_ok = robotweax_srt_telemetry_sampler_render_to(sampler, &options, collect, &prometheus) ==
+                    ROBOTWEAX_SRT_TELEMETRY_OK;
         robotweax_srt_telemetry_render_options_default(ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON, &options);
         options.window_nano = UINT64_C(500'000'000);
-        static_cast<void>(robotweax_srt_telemetry_sampler_render_to(sampler, &options, collect, &snapshot));
+        render_ok = render_ok && robotweax_srt_telemetry_sampler_render_to(sampler, &options, collect, &snapshot) ==
+                                     ROBOTWEAX_SRT_TELEMETRY_OK;
     }
     const bool exported =
-        prometheus.find("srt_receiver_recovery_headroom_ratio{source_id=") != std::string::npos &&
+        render_ok && prometheus.find("srt_receiver_recovery_headroom_ratio{source_id=") != std::string::npos &&
         prometheus.find("srt_sender_unique_sent_packets_total{source_id=") != std::string::npos &&
         prometheus.find("srt_health_verdict{") != std::string::npos &&
         snapshot.find("\"srt.receiver.unique_received.packet_rate\"") != std::string::npos;
