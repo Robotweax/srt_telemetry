@@ -40,10 +40,11 @@ on both providers, and the connection-events test passes plain, encrypted,
 wrong-passphrase, FEC and peer-close scenarios on both: **passing** on
 Haivision SRT v1.5.5 and Robotweax SRT `main`.
 
-## Phase 2: sampler, windows, health engine (3 EW)
+## Phase 2: sampler, windows, health engine (3 EW): in progress
 
+- [metric catalog and min/max/p95 windows](architecture/metrics-and-windows.md)
+  at 1 s, 10 s and 60 s: **done**;
 - in-SDK sampler at 100 ms per socket with host labels, on its own thread;
-- min/max/p95 windows at 1 s, 10 s and 60 s;
 - event journal and a compact 1 s record (target 128 bytes or less); and
 - eight health indicators producing per-role verdicts (OK, Watch, At risk,
   Failing, Unknown) with hysteresis, reason codes and knob advice.

@@ -36,6 +36,7 @@ endif()
 
 add_library(robotweax_srt_telemetry
     sdk/src/delta_engine.cpp
+    sdk/src/metrics.cpp
     sdk/src/recorder.cpp
     sdk/src/version.cpp)
 add_library(
@@ -240,6 +241,14 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     target_compile_features(robotweax_srt_telemetry_tests PRIVATE cxx_std_20)
     add_test(NAME robotweax_srt_telemetry_tests
         COMMAND robotweax_srt_telemetry_tests)
+
+    add_executable(robotweax_srt_telemetry_metrics_tests
+        sdk/tests/test_metrics.cpp)
+    target_link_libraries(robotweax_srt_telemetry_metrics_tests
+        PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_metrics_tests PRIVATE cxx_std_20)
+    add_test(NAME robotweax_srt_telemetry_metrics_tests
+        COMMAND robotweax_srt_telemetry_metrics_tests)
 
     add_executable(robotweax_srt_telemetry_c_api_test
         sdk/tests/test_c_api.c)
