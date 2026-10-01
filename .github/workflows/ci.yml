@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      robotweax_srt_ref:
+        description: Robotweax SRT ref to test the adapter against
+        default: main
+  schedule:
+    # Weekly run catches drift against Robotweax SRT main.
+    - cron: "41 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Haivision SRT v1.5.5, the pinned comparison provider used by the retained evidence.
+  HAIVISION_SRT_COMMIT: b6b4ae990daa8193625a4ddeaeaed03023b23125
+  HAIVISION_SRT_VERSION: "1.5.5"
+
+jobs:
+  core:
+    name: Core SDK (${{ matrix.os }}, ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            compiler: gcc
+            cc: gcc
+            cxx: g++
+          - os: ubuntu-24.04
+            compiler: clang
+            cc: clang
+            cxx: clang++
+          - os: macos-14
+            compiler: apple-clang
+            cc: clang
+            cxx: clang++
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON
+          -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/install"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 2
+      - name: Install and build an out-of-tree consumer
+        run: |
+          cmake --install build
+          cmake -S sdk/tests/package_consumer -B consumer \
+            -DCMAKE_PREFIX_PATH="${{ runner.temp }}/install"
+          cmake --build consumer
+          ./consumer/robotweax_srt_telemetry_package_consumer
+          test -f "${{ runner.temp }}/install/share/doc/robotweax_srt_telemetry/LICENSE"
+      - name: Shared-library build and consumer
+        run: |
+          cmake -S . -B build-shared -DBUILD_SHARED_LIBS=ON \
+            -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/install-shared"
+          cmake --build build-shared --parallel
+          cmake --install build-shared
+          cmake -S sdk/tests/package_consumer -B consumer-shared \
+            -DCMAKE_PREFIX_PATH="${{ runner.temp }}/install-shared"
+          cmake --build consumer-shared
+          DYLD_LIBRARY_PATH="${{ runner.temp }}/install-shared/lib" \
+          LD_LIBRARY_PATH="${{ runner.temp }}/install-shared/lib" \
+            ./consumer-shared/robotweax_srt_telemetry_package_consumer
+
+  evidence:
+    name: Retained evidence validators
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Robotweax SRT 0.2.6 qualification archive
+        run: python3 qualification/results/2026-09-27-srt-026/validate.py
+      - name: Frozen operator-evaluation rehearsal packet
+        run: >
+          python3 tools/operator_evaluation.py rehearsal
+          --study qualification/operator-evaluation/five-class-internal-rehearsal-v1/study.json
+          --check qualification/operator-evaluation/five-class-internal-rehearsal-v1/rehearsal-readiness.json
+
+  provider:
+    name: Adapter on ${{ matrix.provider }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [haivision-srt, robotweax-srt]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build libssl-dev
+
+      - name: Check out Haivision SRT ${{ env.HAIVISION_SRT_VERSION }}
+        if: matrix.provider == 'haivision-srt'
+        uses: actions/checkout@v4
+        with:
+          repository: Haivision/srt
+          ref: ${{ env.HAIVISION_SRT_COMMIT }}
+          path: provider-src
+      - name: Check out Robotweax SRT
+        if: matrix.provider == 'robotweax-srt'
+        uses: actions/checkout@v4
+        with:
+          repository: Robotweax/srt
+          ref: ${{ inputs.robotweax_srt_ref || 'main' }}
+          path: provider-src
+
+      - name: Record provider revision
+        id: rev
+        run: |
+          rev=$(git -C provider-src rev-parse HEAD)
+          echo "sha=$rev" >> "$GITHUB_OUTPUT"
+          echo "### ${{ matrix.provider }} at \`$rev\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore provider build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: provider-install
+          key: ${{ matrix.provider }}-${{ steps.rev.outputs.sha }}-ubuntu-24.04-v1
+
+      - name: Build Haivision SRT
+        if: matrix.provider == 'haivision-srt' && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S provider-src -B provider-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DENABLE_APPS=OFF -DENABLE_STATIC=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PWD/provider-install"
+          cmake --build provider-build
+          cmake --install provider-build
+      - name: Build Robotweax SRT
+        if: matrix.provider == 'robotweax-srt' && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S provider-src -B provider-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+            -DROBOTWEAX_SRT_BUILD_TESTS=OFF -DROBOTWEAX_SRT_BUILD_TOOLS=OFF \
+            -DROBOTWEAX_SRT_BUILD_BENCHMARKS=OFF
+          cmake --build provider-build
+          mkdir -p provider-install/lib
+          cp -a provider-src/include provider-install/include
+          cp -a provider-build/librobotweax-srt.so* provider-install/lib/
+
+      - name: Select provider paths
+        id: paths
+        run: |
+          if [ "${{ matrix.provider }}" = haivision-srt ]; then
+            echo "library=$PWD/provider-install/lib/libsrt.so" >> "$GITHUB_OUTPUT"
+          else
+            echo "library=$PWD/provider-install/lib/librobotweax-srt.so" >> "$GITHUB_OUTPUT"
+          fi
+          echo "include=$PWD/provider-install/include" >> "$GITHUB_OUTPUT"
+      - name: Configure telemetry with the public SRT adapter
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON
+          -DROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER=ON
+          -DROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR="${{ steps.paths.outputs.include }}"
+          -DROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY="${{ steps.paths.outputs.library }}"
+          -DROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER=${{ matrix.provider }}
+          -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/install"
+      - name: Build
+        run: cmake --build build
+      - name: Test (unit, live loopback, JSONL recording)
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/provider-install/lib
+        run: ctest --test-dir build --output-on-failure
+      - name: Install and build the adapter package consumer
+        run: |
+          cmake --install build
+          cmake -S sdk/tests/package_consumer -B consumer -G Ninja \
+            -DCMAKE_PREFIX_PATH="${{ runner.temp }}/install"
+          cmake --build consumer
+          ./consumer/robotweax_srt_telemetry_package_consumer
+          ./consumer/robotweax_srt_telemetry_adapter_package_consumer

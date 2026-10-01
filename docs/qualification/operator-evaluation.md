@@ -1,5 +1,10 @@
 # Operator evaluation
 
+> **Frozen (2026-10-01).** This component is kept as reference material and
+> regression corpus for SRT Doctor, which owns cross-endpoint diagnosis. SRT
+> Telemetry's own roadmap is the sender and receiver dashboard path; see
+> [roadmap](../roadmap.md). Only bug fixes land here.
+
 `tools/operator_evaluation.py` is the first executable comparison harness for
 the diagnostic-value gate. It measures whether an operator identifies the
 first deviation and a useful failure domain faster and with fewer unsupported

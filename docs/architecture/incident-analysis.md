@@ -1,5 +1,10 @@
 # Local incident analysis
 
+> **Frozen (2026-10-01).** This component is kept as reference material and
+> regression corpus for SRT Doctor, which owns cross-endpoint diagnosis. SRT
+> Telemetry's own roadmap is the sender and receiver dashboard path; see
+> [roadmap](../roadmap.md). Only bug fixes land here.
+
 `tools/analyze_incident.py` is the first deterministic diagnostic proof for the
 SDK. It correlates paired sender and receiver evidence into a machine-readable
 timeline and evaluates five bounded hypotheses:

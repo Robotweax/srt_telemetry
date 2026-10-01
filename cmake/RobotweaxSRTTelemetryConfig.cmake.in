@@ -1,5 +1,18 @@
 @PACKAGE_INIT@
 
+# The libraries expose a C ABI but are implemented in C++. A static build needs
+# the C++ runtime at link time, which CMake only adds when CXX is enabled in the
+# consuming project. Enable it here so C-only hosts link without extra setup.
+set(_robotweax_srt_telemetry_static "@ROBOTWEAX_SRT_TELEMETRY_STATIC@")
+if(_robotweax_srt_telemetry_static)
+    get_property(_robotweax_srt_telemetry_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
+    if(NOT "CXX" IN_LIST _robotweax_srt_telemetry_languages)
+        enable_language(CXX)
+    endif()
+    unset(_robotweax_srt_telemetry_languages)
+endif()
+unset(_robotweax_srt_telemetry_static)
+
 include("${CMAKE_CURRENT_LIST_DIR}/RobotweaxSRTTelemetryTargets.cmake")
 
 check_required_components(RobotweaxSRTTelemetry)

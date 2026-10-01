@@ -1,9 +1,36 @@
 # Robotweax SRT Telemetry
 
-Robotweax SRT Telemetry is an implementation-neutral telemetry foundation for
-qualified Robotweax SRT and Haivision SRT versions. It preserves the semantics
-of the shared public SRT API while allowing capability-gated Robotweax
-extensions to expose additional diagnostic evidence.
+SRT Telemetry turns any product that links SRT into one that can show its
+operator, live, whether a stream is going well and which setting to change
+when it is not. It is an embeddable C library that reads the public SRT
+statistics on the **sender** or the **receiver**, plus dashboards built for
+each role.
+
+The first product claim to prove is:
+
+> From one screen per endpoint, an operator can tell whether an SRT stream is
+> healthy and, if not, which knob to turn: bitrate, latency, overhead, or the
+> receiving application.
+
+It works with the SRT library the host already uses: qualified Haivision SRT
+and Robotweax SRT versions, through the same public API.
+
+## What 1.0 delivers
+
+- **Complete per-role metrics**: every public `srt_bistats` field and group
+  statistic, plus connection state, negotiated options and encryption state,
+  with "unavailable" instead of fake zeros.
+- **Burst-faithful sampling**: 100 ms sampling inside the process, exported as
+  min/max/p95 windows so short recovery-margin collapses stay visible.
+- **Health verdicts**: OK, Watch, At risk, Failing or Unknown per endpoint,
+  with a reason and the suggested setting to change.
+- **Outputs**: callback, JSONL, Prometheus, OTLP and a live WebSocket feed.
+- **Dashboards**: an embeddable web UI with sender, receiver and fleet views,
+  and Grafana dashboards with alert rules.
+
+See the [roadmap](docs/roadmap.md) for phases and gates. Cross-endpoint
+diagnosis is SRT Doctor's job; the analyzer here is frozen (see
+[tools](tools/README.md)).
 
 ## Flight Recorder integration
 
@@ -22,74 +49,11 @@ value remains to be measured.
 
 ## Status
 
-**Pre-alpha / evidence foundation.** The repository currently contains the
-telemetry contract, provider model, versioned C ABI, a non-destructive delta
-engine, a bounded in-memory recorder with versioned JSONL snapshot export, a
-local explainable incident-analysis candidate, an injected public SRT API
-adapter, schemas, and the validation plan. The adapter has deterministic
-header/signature coverage and live bidirectional self-loopback coverage for
-Robotweax SRT and Haivision SRT v1.5.5. Robotweax-to-Haivision interoperability
-also passes in both caller/listener role combinations for the common nine-field
-Live/Message IPv4 loopback subset. An initial macOS arm64 candidate also covers
-sampling overhead and the required session-destroy-before-socket-close
-lifecycle for both providers. Full field, controlled performance, and
-deployment-profile qualification remain open. The project intentionally does
-not yet contain a production agent, backend, dashboard, alert engine, or
-production RCA engine. A second exact macOS arm64 candidate now covers
-Robotweax SRT `e3d61f77e852001224b6586c63bcff46a3200223`, the revision
-pinned by Intelligent Media Fabric, for the common loopback subset, lifecycle,
-and bidirectional Haivision interoperability. It does not inherit the older
-revision's incident-class claims, and Linux/IPv6/`fips0` remain open. The local
-analyzer turns paired evidence into a
-deterministic timeline, five bounded hypotheses, and an explicit
-insufficient-evidence outcome. Exact provider-linked peers now record real
-adapter samples directly through the bounded recorder and JSONL exporter;
-retained constant-loss and RTT-step captures complete that path through the
-analyzer in both cross-provider sender directions. Paired receiver-pause
-captures now also retain public receive-buffer growth, overlapping sender
-flight/send-buffer pressure, lossless recovery, and a supported receiver
-endpoint hypothesis in both directions. Exact application-consumption timing
-remains a non-claim, and no Robotweax-only extension is required for this
-operator question. Paired egress-capacity captures additionally retain proxy
-queue growth, public sender-buffer/flight pressure, a receiver buffer below its
-conservative pressure threshold, lossless recovery, and a supported sender
-endpoint hypothesis. Public statistics do not identify the exact restriction,
-but no Robotweax-only extension is required for the bounded localization
-question. Paired sequence-hold captures now add the fifth candidate: public
-loss and retransmission followed by receiver drops that exactly account for the unique
-delivery gap under a configured TSBPD delay. The diagnosis is deliberately
-bounded to an exhausted recovery/playout margin and does not claim that a
-larger latency setting is the correct remediation. The first deterministic
-constant-loss fixture preserves paired sender/receiver evidence and explicit
-non-claims for future diagnostic work. Captured constant- and burst-loss runs
-in both sender directions additionally retain exact public loss,
-retransmission, and recovery observations through a deterministic user-space
-fault boundary. The captures
-qualify exposed gaps; finite flight-tail recovery without later DATA remains
-open. A retained 20 Hz incident-mode experiment now distinguishes eight losses
-in one 50 ms window from the same aggregate loss distributed across eight
-windows in both cross-provider directions. Therefore no Robotweax-only signal
-is currently required for that coarse operator question. Exact within-window
-packet adjacency and a controlled release cost budget remain open.
-An executable, counterbalanced operator-evaluation candidate now compares eight
-real cross-provider recordings as inference-free normalized public SRT
-statistics versus deterministic incident reports. It records pseudonymous
-timing, accuracy, unsupported hypotheses, missing-evidence recognition, and
-confidence. The automated comparison now exercises constant loss, an RTT step,
-receiver pause/backpressure, bandwidth reduction with sender queue growth, and
-receiver recovery-margin exhaustion. This closes the automated five-class
-coverage check, but not the human diagnostic-value gate.
-Automated answers are explicitly harness-only;
-no design-partner or diagnostic-value product claim has been made.
-An immutable eight-scenario internal-rehearsal packet now passes eleven
-machine-checked preflight controls, including raw-view inference isolation and
-interactive field parity. It contains no participant answers; genuinely
-conducted internal sessions remain the next evidence step.
-
-The first product claim to prove is:
-
-> A Robotweax incident timeline identifies the first deviating signals and a
-> useful failure domain faster than raw SRT statistics alone.
+**Pre-alpha.** Phase 0 (licence, CI, scope) is in progress. Available today:
+the telemetry contract, provider model, versioned C ABI, non-destructive delta
+engine, bounded recorder with versioned JSONL export, and the injected public
+SRT adapter, verified against Haivision SRT v1.5.5 and Robotweax SRT. The
+sampler, health engine, exporters and dashboards are not built yet.
 
 ## Scope
 
@@ -106,26 +70,23 @@ implementation interfaces.
 ## Architecture direction
 
 ```text
-Host-selected SRT implementation
+Host product with its own SRT library (Haivision libsrt or Robotweax SRT)
     |
-    +-- Public SRT API adapter --------- common evidence baseline
-    |
-    +-- Robotweax extension adapter ---- optional enhanced evidence
+    +-- Public SRT API adapter (srt_bistats, socket options)
                   |
                   v
-          Telemetry core contract
+          Telemetry core: sampler -> delta and window engine -> health engine
+                  |                         |
+            Event journal            Bounded recorder
+                  \                        /
+       Callback | JSONL | Prometheus | OTLP | WebSocket feed
                   |
-             Delta engine
-                  |
-          Bounded recorder
-             /          \
-  Versioned JSONL     OTLP agent
-          |        (after evidence gate)
-  Local incident analyzer
+       Embedded web UI | Grafana + alert rules | SRT Doctor (JSONL evidence)
 ```
 
 The SDK never brings a second SRT library into a host process. Adapters consume
-the SRT implementation already selected by the host.
+the SRT implementation already selected by the host. Optional Robotweax-only
+evidence stays capability-gated behind a public, versioned C boundary.
 
 ## Current invariants
 
@@ -224,3 +185,77 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Haivision sender to Robotweax receiver recovery-margin exhaustion](testdata/golden-incidents/incident-015-recovery-margin-haivision-robotweax/README.md)
 - [Evidence plan](docs/development/evidence-plan.md)
 - [Roadmap](docs/roadmap.md)
+
+## Diagnostic research (frozen)
+
+Before 2026-10-01 the project concentrated on a two-sided incident analyzer and
+an operator-evaluation study. That work is frozen as reference material and
+regression corpus for SRT Doctor. Its status at the time of freezing:
+
+**Pre-alpha / evidence foundation.** The repository currently contains the
+telemetry contract, provider model, versioned C ABI, a non-destructive delta
+engine, a bounded in-memory recorder with versioned JSONL snapshot export, a
+local explainable incident-analysis candidate, an injected public SRT API
+adapter, schemas, and the validation plan. The adapter has deterministic
+header/signature coverage and live bidirectional self-loopback coverage for
+Robotweax SRT and Haivision SRT v1.5.5. Robotweax-to-Haivision interoperability
+also passes in both caller/listener role combinations for the common nine-field
+Live/Message IPv4 loopback subset. An initial macOS arm64 candidate also covers
+sampling overhead and the required session-destroy-before-socket-close
+lifecycle for both providers. Full field, controlled performance, and
+deployment-profile qualification remain open. The project intentionally does
+not yet contain a production agent, backend, dashboard, alert engine, or
+production RCA engine. A second exact macOS arm64 candidate now covers
+Robotweax SRT `e3d61f77e852001224b6586c63bcff46a3200223`, the revision
+pinned by Intelligent Media Fabric, for the common loopback subset, lifecycle,
+and bidirectional Haivision interoperability. It does not inherit the older
+revision's incident-class claims, and Linux/IPv6/`fips0` remain open. The local
+analyzer turns paired evidence into a
+deterministic timeline, five bounded hypotheses, and an explicit
+insufficient-evidence outcome. Exact provider-linked peers now record real
+adapter samples directly through the bounded recorder and JSONL exporter;
+retained constant-loss and RTT-step captures complete that path through the
+analyzer in both cross-provider sender directions. Paired receiver-pause
+captures now also retain public receive-buffer growth, overlapping sender
+flight/send-buffer pressure, lossless recovery, and a supported receiver
+endpoint hypothesis in both directions. Exact application-consumption timing
+remains a non-claim, and no Robotweax-only extension is required for this
+operator question. Paired egress-capacity captures additionally retain proxy
+queue growth, public sender-buffer/flight pressure, a receiver buffer below its
+conservative pressure threshold, lossless recovery, and a supported sender
+endpoint hypothesis. Public statistics do not identify the exact restriction,
+but no Robotweax-only extension is required for the bounded localization
+question. Paired sequence-hold captures now add the fifth candidate: public
+loss and retransmission followed by receiver drops that exactly account for the unique
+delivery gap under a configured TSBPD delay. The diagnosis is deliberately
+bounded to an exhausted recovery/playout margin and does not claim that a
+larger latency setting is the correct remediation. The first deterministic
+constant-loss fixture preserves paired sender/receiver evidence and explicit
+non-claims for future diagnostic work. Captured constant- and burst-loss runs
+in both sender directions additionally retain exact public loss,
+retransmission, and recovery observations through a deterministic user-space
+fault boundary. The captures
+qualify exposed gaps; finite flight-tail recovery without later DATA remains
+open. A retained 20 Hz incident-mode experiment now distinguishes eight losses
+in one 50 ms window from the same aggregate loss distributed across eight
+windows in both cross-provider directions. Therefore no Robotweax-only signal
+is currently required for that coarse operator question. Exact within-window
+packet adjacency and a controlled release cost budget remain open.
+An executable, counterbalanced operator-evaluation candidate now compares eight
+real cross-provider recordings as inference-free normalized public SRT
+statistics versus deterministic incident reports. It records pseudonymous
+timing, accuracy, unsupported hypotheses, missing-evidence recognition, and
+confidence. The automated comparison now exercises constant loss, an RTT step,
+receiver pause/backpressure, bandwidth reduction with sender queue growth, and
+receiver recovery-margin exhaustion. This closes the automated five-class
+coverage check, but not the human diagnostic-value gate.
+Automated answers are explicitly harness-only;
+no design-partner or diagnostic-value product claim has been made.
+An immutable eight-scenario internal-rehearsal packet now passes eleven
+machine-checked preflight controls, including raw-view inference isolation and
+interactive field parity. It contains no participant answers; genuinely
+conducted internal sessions remain the next evidence step.
+
+## Licence
+
+[MIT](LICENSE).

@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.21)
 project(
     robotweax_srt_telemetry
     VERSION 0.1.0
-    DESCRIPTION "Implementation-neutral telemetry foundation for Robotweax SRT and Haivision SRT"
+    DESCRIPTION "Sender and receiver SRT stream telemetry for Robotweax SRT and Haivision SRT"
+    HOMEPAGE_URL "https://github.com/Robotweax/srt_telemetry"
     LANGUAGES C CXX)
 
 include(GNUInstallDirs)
@@ -192,6 +193,7 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 set_tests_properties(robotweax_srt_telemetry_public_srt_jsonl_recording_test
                     PROPERTIES
                         TIMEOUT 30
+                        SKIP_RETURN_CODE 77
                         ENVIRONMENT
                             "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
             endif()
@@ -497,6 +499,11 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 
+if(BUILD_SHARED_LIBS)
+    set(ROBOTWEAX_SRT_TELEMETRY_STATIC OFF)
+else()
+    set(ROBOTWEAX_SRT_TELEMETRY_STATIC ON)
+endif()
 configure_package_config_file(
     cmake/RobotweaxSRTTelemetryConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/RobotweaxSRTTelemetryConfig.cmake
@@ -513,3 +520,5 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/RobotweaxSRTTelemetryConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/RobotweaxSRTTelemetryConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/RobotweaxSRTTelemetry)
+install(FILES LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/robotweax_srt_telemetry)
