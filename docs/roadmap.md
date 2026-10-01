@@ -46,7 +46,8 @@ Haivision SRT v1.5.5 and Robotweax SRT `main`.
   at 1 s, 10 s and 60 s: **done**;
 - [in-SDK sampler](architecture/sampler.md) at 100 ms per socket with host
   labels, on its own thread or driven by the host: **done**;
-- event journal and a compact 1 s record (target 128 bytes or less); and
+- [event journal and a compact 1 s record](architecture/history-and-events.md)
+  (112 bytes, 24 h ≈ 9.7 MB per socket): **done**; and
 - eight health indicators producing per-role verdicts (OK, Watch, At risk,
   Failing, Unknown) with hysteresis, reason codes and knob advice.
 

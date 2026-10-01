@@ -36,6 +36,7 @@ endif()
 
 add_library(robotweax_srt_telemetry
     sdk/src/delta_engine.cpp
+    sdk/src/history.cpp
     sdk/src/metrics.cpp
     sdk/src/recorder.cpp
     sdk/src/sampler.cpp
@@ -265,6 +266,14 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     add_test(NAME robotweax_srt_telemetry_sampler_tests
         COMMAND robotweax_srt_telemetry_sampler_tests)
     set_tests_properties(robotweax_srt_telemetry_sampler_tests PROPERTIES TIMEOUT 30)
+
+    add_executable(robotweax_srt_telemetry_history_tests
+        sdk/tests/test_history.cpp)
+    target_link_libraries(robotweax_srt_telemetry_history_tests
+        PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_history_tests PRIVATE cxx_std_20)
+    add_test(NAME robotweax_srt_telemetry_history_tests
+        COMMAND robotweax_srt_telemetry_history_tests)
 
     add_executable(robotweax_srt_telemetry_c_api_test
         sdk/tests/test_c_api.c)

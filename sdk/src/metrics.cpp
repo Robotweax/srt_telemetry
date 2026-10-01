@@ -674,9 +674,13 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_window_aggregat
         }
     }
 
-    /* Phase 2: accumulate. */
-    aggregator->has_last_unix = true;
-    aggregator->last_unix = now;
+    /* Phase 2: accumulate. A source-error sample carries no interval, so it
+     * must not become the reference for the next sample's clock check. */
+    if ((sample->quality_flags & ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR) == 0)
+    {
+        aggregator->has_last_unix = true;
+        aggregator->last_unix = now;
+    }
     for (auto &window : aggregator->windows)
     {
         const auto start = now - now % window.length_nano;

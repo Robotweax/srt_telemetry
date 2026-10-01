@@ -10,6 +10,7 @@
  * library. The public SRT adapter provides a ready source for its sessions
  * (robotweax_srt_telemetry_public_srt_source_config). */
 
+#include <robotweax/srt_telemetry_history.h>
 #include <robotweax/srt_telemetry_metrics.h>
 
 #include <stddef.h>
@@ -159,6 +160,46 @@ extern "C"
      * complete. Must not be called from a callback. */
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_sampler_stop(robotweax_srt_telemetry_sampler *sampler);
+
+    /* ---------------------------------------------------- history, events */
+
+    /* Keeps a ring of compact records per source, one per closed window of
+     * the shortest configured window (1 s by default). 86,400 records hold
+     * 24 h at 1 s, about 9.7 MB per source. Applies to current and future
+     * sources; calling it again resizes and clears every history. 0 turns
+     * history off. A source's history is discarded when it is removed. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_enable_history(robotweax_srt_telemetry_sampler *sampler,
+                                                   size_t records_per_source);
+
+    /* Copies up to capacity records of one source whose window starts at or
+     * after since_start_unix_nano, oldest first. Pass 0 for everything. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_history_read(robotweax_srt_telemetry_sampler *sampler,
+                                                 uint64_t source_id,
+                                                 uint64_t since_start_unix_nano,
+                                                 robotweax_srt_telemetry_compact_record_v1 *records,
+                                                 size_t capacity, size_t *count);
+
+    /* Creates the event journal (capacity events). The sampler then records
+     * SOURCE_ADDED/REMOVED/FAILED/RECOVERED and, from the shortest window,
+     * SAMPLING_GAP, CLOCK_STEP and COUNTER_RESET. Calling it again replaces
+     * the journal; 0 turns it off. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_enable_journal(robotweax_srt_telemetry_sampler *sampler,
+                                                   size_t capacity);
+
+    /* The sampler's journal, or NULL when disabled. Owned by the sampler and
+     * valid until enable_journal is called again or the sampler is destroyed.
+     * Reading it is thread-safe and does not take the sampler lock. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_event_journal *
+    robotweax_srt_telemetry_sampler_journal(robotweax_srt_telemetry_sampler *sampler);
+
+    /* Adds a host event, e.g. converted from the connection monitor. Safe
+     * from any thread, including callbacks. NOT_FOUND without a journal. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_record_event(robotweax_srt_telemetry_sampler *sampler,
+                                                 const robotweax_srt_telemetry_event_v1 *event);
 
 #ifdef __cplusplus
 }

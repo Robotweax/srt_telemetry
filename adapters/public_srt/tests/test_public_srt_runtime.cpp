@@ -1561,6 +1561,13 @@ int run_sampler()
         return EXIT_FAILURE;
     }
 
+    if (robotweax_srt_telemetry_sampler_enable_history(sampler, 600) != ROBOTWEAX_SRT_TELEMETRY_OK ||
+        robotweax_srt_telemetry_sampler_enable_journal(sampler, 256) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        std::cerr << "FAIL: history/journal\n";
+        robotweax_srt_telemetry_sampler_destroy(sampler);
+        return EXIT_FAILURE;
+    }
     const robotweax_srt_telemetry_label_v1 sender_labels[] = {{"endpoint", "sender"}};
     const robotweax_srt_telemetry_label_v1 receiver_labels[] = {{"endpoint", "receiver"}};
     robotweax_srt_telemetry_source_config_v1 sender_source{};
@@ -1608,12 +1615,76 @@ int run_sampler()
     }
     reader.join();
 
+    /* History: 500 ms records of the receiver, read while it is registered. */
+    std::vector<robotweax_srt_telemetry_compact_record_v1> history(64);
+    std::size_t history_count = 0;
+    static_cast<void>(robotweax_srt_telemetry_sampler_history_read(
+        sampler, receiver_id, 0, history.data(), history.size(), &history_count));
+    double best_history_rate = 0.0;
+    for (std::size_t index = 0; index < history_count; ++index)
+    {
+        if ((history[index].available & ROBOTWEAX_SRT_TELEMETRY_COMPACT_UNIQUE_RECEIVED_BPS) != 0)
+        {
+            best_history_rate = std::max(
+                best_history_rate,
+                static_cast<double>(history[index].unique_received_bits_per_second));
+        }
+    }
+
+    /* Connection events into the journal: watch the receiver while the
+     * caller closes, as a host would. */
+    Monitor monitor;
+    bool disconnect_journaled = false;
+    bool sender_removed = false;
+    if (create_monitor(accepted.get(), monitor))
+    {
+        const auto record = [&](const robotweax_srt_telemetry_public_srt_connection_result_v1 &result)
+        {
+            robotweax_srt_telemetry_event_v1 events[8]{};
+            std::size_t count = 0;
+            static_cast<void>(robotweax_srt_telemetry_public_srt_connection_events(
+                &result, receiver_id, events, 8, &count));
+            for (std::size_t index = 0; index < count; ++index)
+            {
+                static_cast<void>(robotweax_srt_telemetry_sampler_record_event(sampler, &events[index]));
+            }
+        };
+        record(poll_monitor(monitor));
+        /* Lifecycle rule: stop sampling a socket before closing it. */
+        sender_removed = robotweax_srt_telemetry_sampler_remove_source(sampler, sender_id) ==
+                         ROBOTWEAX_SRT_TELEMETRY_OK;
+        static_cast<void>(caller.close());
+        robotweax_srt_telemetry_public_srt_connection_result_v1 last{};
+        std::uint64_t seen = 0;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline &&
+               (seen & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_DISCONNECTED) == 0)
+        {
+            last = poll_monitor(monitor);
+            seen |= last.events;
+            record(last);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+    std::vector<robotweax_srt_telemetry_event_v1> journal_events(256);
+    std::size_t journal_count = 0;
+    static_cast<void>(robotweax_srt_telemetry_event_journal_read(
+        robotweax_srt_telemetry_sampler_journal(sampler), 0, journal_events.data(),
+        journal_events.size(), &journal_count));
+    int added = 0;
+    for (std::size_t index = 0; index < journal_count; ++index)
+    {
+        const auto &event = journal_events[index];
+        added += event.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_ADDED ? 1 : 0;
+        disconnect_journaled = disconnect_journaled ||
+                               (event.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_DISCONNECTED &&
+                                event.source_id == receiver_id);
+    }
+
     /* Remove before destroying sessions or closing sockets. */
     const auto removed =
-        robotweax_srt_telemetry_sampler_remove_source(sampler, sender_id) ==
-            ROBOTWEAX_SRT_TELEMETRY_OK &&
-        robotweax_srt_telemetry_sampler_remove_source(sampler, receiver_id) ==
-            ROBOTWEAX_SRT_TELEMETRY_OK;
+        sender_removed && robotweax_srt_telemetry_sampler_remove_source(sampler, receiver_id) ==
+                              ROBOTWEAX_SRT_TELEMETRY_OK;
     robotweax_srt_telemetry_sampler_destroy(sampler);
 
     std::lock_guard lock(observed.mutex);
@@ -1647,13 +1718,18 @@ int run_sampler()
               << ",\"receivedPacketsPerSecond\":" << received_pps
               << ",\"bestRecoveryHeadroom\":" << headroom << ",\"rttSeconds\":" << rtt
               << ",\"errors\":" << observed.errors[sender_id] + observed.errors[receiver_id]
-              << "}\n";
+              << ",\"historyRecords\":" << history_count
+              << ",\"bestHistoryReceivedBps\":" << best_history_rate
+              << ",\"journalEvents\":" << journal_count
+              << ",\"disconnectJournaled\":" << disconnect_journaled << "}\n";
 
     const auto ok = sent_all && received.load() == message_count && removed &&
                     observed.samples[sender_id] >= 20 && observed.windows[sender_id].size() >= 3 &&
                     sent_pps > 200.0 && sent_pps < 400.0 && received_pps > 200.0 &&
                     received_pps < 400.0 && headroom > 0.5 && rtt >= 0.0 &&
                     observed.role_label[sender_id] == "sender" &&
+                    history_count >= 2 && best_history_rate > 2e6 && added == 2 &&
+                    disconnect_journaled &&
                     observed.errors[sender_id] + observed.errors[receiver_id] == 0;
     if (!ok)
     {
