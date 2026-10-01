@@ -1187,7 +1187,12 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         for (std::size_t c = 0; c < COUNTS; ++c)
         {
             const auto metric = count_metric[c];
-            const auto v = sample->rate_numerators[metric];
+            const auto slot = static_cast<std::size_t>(metric);
+            if (slot >= ROBOTWEAX_SRT_TELEMETRY_METRIC_SLOTS_V1)
+            {
+                continue;
+            }
+            const auto v = sample->rate_numerators[slot];
             if ((sample->available_metrics & bit(metric)) != 0 && std::isfinite(v))
             {
                 entry.available |= bit(metric);
@@ -1197,7 +1202,12 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         for (std::size_t g = 0; g < GAUGES; ++g)
         {
             const auto metric = gauge_metric[g];
-            const auto v = sample->values[metric];
+            const auto slot = static_cast<std::size_t>(metric);
+            if (slot >= ROBOTWEAX_SRT_TELEMETRY_METRIC_SLOTS_V1)
+            {
+                continue;
+            }
+            const auto v = sample->values[slot];
             if ((sample->available_metrics & bit(metric)) != 0 && std::isfinite(v))
             {
                 entry.available |= bit(metric);

@@ -68,6 +68,45 @@ if(BUILD_SHARED_LIBS)
         PUBLIC ROBOTWEAX_SRT_TELEMETRY_SHARED)
 endif()
 
+if(WIN32)
+    set(ROBOTWEAX_SRT_TELEMETRY_HTTP_DEFAULT OFF)
+else()
+    set(ROBOTWEAX_SRT_TELEMETRY_HTTP_DEFAULT ON)
+endif()
+option(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER
+    "Build the optional embedded HTTP/WebSocket server (POSIX)" ${ROBOTWEAX_SRT_TELEMETRY_HTTP_DEFAULT})
+if(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER)
+    add_library(robotweax_srt_telemetry_http server/src/http_server.cpp)
+    add_library(RobotweaxSRTTelemetry::http ALIAS robotweax_srt_telemetry_http)
+    target_compile_features(robotweax_srt_telemetry_http PUBLIC cxx_std_20)
+    target_include_directories(robotweax_srt_telemetry_http
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/server/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_link_libraries(robotweax_srt_telemetry_http PUBLIC RobotweaxSRTTelemetry::core)
+    target_compile_definitions(robotweax_srt_telemetry_http PRIVATE ROBOTWEAX_SRT_TELEMETRY_HTTP_BUILDING)
+    set_target_properties(robotweax_srt_telemetry_http PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        EXPORT_NAME http
+        VISIBILITY_INLINES_HIDDEN YES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION 0)
+    if(BUILD_SHARED_LIBS)
+        target_compile_definitions(robotweax_srt_telemetry_http PUBLIC ROBOTWEAX_SRT_TELEMETRY_HTTP_SHARED)
+    endif()
+    if(NOT MSVC)
+        target_compile_options(robotweax_srt_telemetry_http PRIVATE
+            -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+    endif()
+    if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
+        add_executable(robotweax_srt_telemetry_http_tests server/tests/test_http_server.cpp)
+        target_link_libraries(robotweax_srt_telemetry_http_tests PRIVATE RobotweaxSRTTelemetry::http)
+        target_compile_features(robotweax_srt_telemetry_http_tests PRIVATE cxx_std_20)
+        add_test(NAME robotweax_srt_telemetry_http_tests COMMAND robotweax_srt_telemetry_http_tests)
+        set_tests_properties(robotweax_srt_telemetry_http_tests PROPERTIES TIMEOUT 60)
+    endif()
+endif()
+
 if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
     if(NOT ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR)
         find_path(ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR
@@ -590,6 +629,16 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY adapters/public_srt/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+
+if(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER)
+    install(TARGETS robotweax_srt_telemetry_http
+        EXPORT RobotweaxSRTTelemetryTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(DIRECTORY server/include/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 

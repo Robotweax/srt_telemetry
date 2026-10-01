@@ -41,7 +41,10 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE = 6,
         ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND = 7,
         /* The output does not fit; the required size is reported. */
-        ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL = 8
+        ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL = 8,
+        /* An operating-system I/O call failed, e.g. a socket could not be
+         * bound. */
+        ROBOTWEAX_SRT_TELEMETRY_IO_FAILURE = 9
     } robotweax_srt_telemetry_error;
 
     typedef enum robotweax_srt_telemetry_provider
