@@ -10,6 +10,7 @@
  * library. The public SRT adapter provides a ready source for its sessions
  * (robotweax_srt_telemetry_public_srt_source_config). */
 
+#include <robotweax/srt_telemetry_export.h>
 #include <robotweax/srt_telemetry_health.h>
 #include <robotweax/srt_telemetry_history.h>
 #include <robotweax/srt_telemetry_metrics.h>
@@ -251,6 +252,40 @@ extern "C"
     robotweax_srt_telemetry_sampler_health_read(robotweax_srt_telemetry_sampler *sampler,
                                                 uint64_t source_id,
                                                 robotweax_srt_telemetry_health_status_v1 *status);
+
+    /* --------------------------------------------------- snapshots, export */
+
+    /* Copies up to capacity source IDs in ascending order; count receives
+     * the number copied. BUFFER_TOO_SMALL when more sources exist. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_source_ids(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t *ids, size_t capacity, size_t *count);
+
+    /* The latest closed window of a configured length (0: 10 s if
+     * configured, otherwise the shortest). NOT_FOUND before the first one
+     * closes; INVALID_ARGUMENT for a length that is not configured. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_window_read(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id, uint64_t window_nano,
+        robotweax_srt_telemetry_window_summary_v1 *summary);
+
+    /* The metrics of the latest successful sample. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_latest_metrics(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id, robotweax_srt_telemetry_metric_sample_v1 *metrics);
+
+    /* Renders every source (labels, latest window, lifetime counters,
+     * health) in one format; see srt_telemetry_export.h. State is copied
+     * under the sampler lock; the writer runs after it is released, once,
+     * and may call the sampler. Not from the sampler's own callbacks. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_to(
+        robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options,
+        robotweax_srt_telemetry_render_writer writer, void *user_data);
+
+    /* As render_to, into a buffer, NUL-terminated. length receives the
+     * output length without the terminator; BUFFER_TOO_SMALL when it does
+     * not fit (render again with at least length + 1 bytes; the size can
+     * change between calls). */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render(
+        robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options,
+        char *buffer, size_t capacity, size_t *length);
 
 #ifdef __cplusplus
 }

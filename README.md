@@ -161,6 +161,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [History and events](docs/architecture/history-and-events.md)
 - [Health engine](docs/architecture/health-engine.md)
 - [Fault lab](docs/qualification/fault-lab.md)
+- [Metric names and export](docs/architecture/metric-names.md)
 - [Loss-shape observability decision](docs/architecture/loss-shape-observability.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
 - [Local incident analysis](docs/architecture/incident-analysis.md)

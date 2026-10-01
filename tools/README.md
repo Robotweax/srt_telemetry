@@ -17,3 +17,9 @@ Known limitations to fix before Doctor reuses the analyzer: samples are aligned
 by index rather than time, `interval_nano` is unused, thresholds are absolute
 and taken from samples 1 and 2, and any sender drop vetoes the path-loss
 hypothesis.
+
+## Metric names document
+
+`metric_names_doc.py` regenerates `docs/architecture/metric-names.md` from the
+naming tables in `sdk/src/export.cpp`. Run it after changing a name; the
+export tests fail when the document does not list every name.

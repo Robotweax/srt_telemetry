@@ -56,10 +56,12 @@ Haivision SRT v1.5.5 and Robotweax SRT `main`.
 **Gate:** the right verdict in at least 9 of 10 lab fault classes per role, and
 never a wrong OK.
 
-## Phase 3: outputs and dashboards (3-4 EW)
+## Phase 3: outputs and dashboards (3-4 EW): in progress
 
 - streaming callback, Prometheus, OTLP and a WebSocket feed sharing one
-  versioned metric naming scheme;
+  versioned metric naming scheme
+  ([naming scheme, Prometheus and JSON renderers](architecture/metric-names.md):
+  **done**; server, feed and OTLP next);
 - embedded web UI with sender, receiver and fleet views;
 - Grafana dashboards and alert rules; and
 - reference integrations: srt-live-transmit, GStreamer, Robotweax gateway.

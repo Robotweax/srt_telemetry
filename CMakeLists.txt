@@ -36,6 +36,7 @@ endif()
 
 add_library(robotweax_srt_telemetry
     sdk/src/delta_engine.cpp
+    sdk/src/export.cpp
     sdk/src/health.cpp
     sdk/src/history.cpp
     sdk/src/metrics.cpp
@@ -304,6 +305,15 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     target_compile_features(robotweax_srt_telemetry_health_tests PRIVATE cxx_std_20)
     add_test(NAME robotweax_srt_telemetry_health_tests
         COMMAND robotweax_srt_telemetry_health_tests)
+    add_executable(robotweax_srt_telemetry_export_tests
+        sdk/tests/test_export.cpp)
+    target_link_libraries(robotweax_srt_telemetry_export_tests
+        PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_export_tests PRIVATE cxx_std_20)
+    target_compile_definitions(robotweax_srt_telemetry_export_tests PRIVATE
+        ROBOTWEAX_SRT_TELEMETRY_NAMES_DOC="${CMAKE_CURRENT_SOURCE_DIR}/docs/architecture/metric-names.md")
+    add_test(NAME robotweax_srt_telemetry_export_tests
+        COMMAND robotweax_srt_telemetry_export_tests)
 
     add_executable(robotweax_srt_telemetry_c_api_test
         sdk/tests/test_c_api.c)
