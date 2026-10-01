@@ -7,6 +7,7 @@
  * makes one srt_getsockstate, one srt_getrejectreason and about 25
  * srt_getsockflag calls. */
 
+#include <robotweax/srt_telemetry_history.h>
 #include <robotweax/srt_telemetry_public_srt.h>
 
 #include <stdint.h>
@@ -206,6 +207,17 @@ extern "C"
         robotweax_srt_telemetry_public_srt_connection_monitor *monitor,
         uint64_t observed_at_unix_nano, uint64_t sample_monotonic_nano,
         robotweax_srt_telemetry_public_srt_connection_result_v1 *result);
+
+    /* Converts a poll result into journal events for source_id (at most 5):
+     * CONNECTED and DISCONNECTED (previous/current socket state), REJECTED
+     * (current = reject reason), KM_STATE_CHANGED (previous/current KM state;
+     * WARNING for NOSECRET, BADSECRET or BADCRYPTOMODE), SETTINGS_CHANGED
+     * (code = changed settings fields) and PEER_VERSION_CHANGED (current =
+     * peer version). A first poll yields only CONNECTED or REJECTED. */
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_public_srt_connection_events(
+        const robotweax_srt_telemetry_public_srt_connection_result_v1 *result, uint64_t source_id,
+        robotweax_srt_telemetry_event_v1 *events, size_t capacity, size_t *count);
 
 #ifdef __cplusplus
 }

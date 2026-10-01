@@ -1,5 +1,8 @@
 #include <robotweax/srt_telemetry_sampler.h>
 
+#include "history_internal.h"
+
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -37,6 +40,38 @@ struct Source
     std::vector<std::string> values;
     std::vector<robotweax_srt_telemetry_label_v1> labels;
     std::unique_ptr<robotweax_srt_telemetry_window_aggregator, AggregatorDeleter> windows;
+    /* Event state: one SOURCE_FAILED per episode (or error change); the
+     * episode ends with SOURCE_RECOVERED after one second without failures,
+     * so a flapping source cannot flood the journal. */
+    bool failed = false;
+    robotweax_srt_telemetry_error failed_error = ROBOTWEAX_SRT_TELEMETRY_OK;
+    std::uint64_t healthy_since_nano = 0;
+    bool healthy = false;
+    /* Quality flags of the previous shortest window: flag events are
+     * emitted when a flag appears, not for every flagged window. */
+    std::uint32_t previous_window_flags = 0;
+    /* Ring of compact records (empty when history is off). */
+    std::vector<robotweax_srt_telemetry_compact_record_v1> history;
+    std::size_t history_head = 0;
+    std::size_t history_size = 0;
+
+    void history_push(const robotweax_srt_telemetry_compact_record_v1 &record)
+    {
+        if (history.empty())
+        {
+            return;
+        }
+        if (history_size < history.size())
+        {
+            history[(history_head + history_size) % history.size()] = record;
+            history_size += 1;
+        }
+        else
+        {
+            history[history_head] = record;
+            history_head = (history_head + 1) % history.size();
+        }
+    }
 
     robotweax_srt_telemetry_source_info_v1 info() const noexcept
     {
@@ -146,9 +181,24 @@ bool valid_value(const char *value)
 
 } // namespace
 
+struct JournalDeleter
+{
+    void operator()(robotweax_srt_telemetry_event_journal *journal) const noexcept
+    {
+        robotweax_srt_telemetry_event_journal_destroy(journal);
+    }
+};
+
 struct robotweax_srt_telemetry_sampler
 {
     robotweax_srt_telemetry_sampler_config_v1 config{};
+    /* Shortest window: source of history records and window events. */
+    std::uint64_t history_window_nano = 0;
+    std::size_t history_capacity = 0;
+    /* Swapped under `mutex`; used under journal_mutex. */
+    std::mutex journal_mutex;
+    std::uint64_t journal_next_sequence = 1; /* kept while the journal is off */
+    std::unique_ptr<robotweax_srt_telemetry_event_journal, JournalDeleter> journal;
     std::mutex mutex; /* sources, tick execution */
     std::map<std::uint64_t, std::unique_ptr<Source>> sources;
     std::uint64_t next_id = 1;
@@ -164,16 +214,121 @@ struct robotweax_srt_telemetry_sampler
 namespace
 {
 
+std::uint64_t steady_nano()
+{
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::steady_clock::now().time_since_epoch())
+                                          .count());
+}
+
+std::uint64_t system_nano()
+{
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::system_clock::now().time_since_epoch())
+                                          .count());
+}
+
+void journal_event(robotweax_srt_telemetry_sampler &sampler, const std::uint64_t source_id,
+                   const robotweax_srt_telemetry_event_kind kind,
+                   const robotweax_srt_telemetry_event_severity severity,
+                   const std::uint64_t unix_nano, const std::uint64_t monotonic_nano,
+                   const std::int64_t previous, const std::int64_t current, const std::int64_t code,
+                   const char *detail)
+{
+    std::lock_guard lock(sampler.journal_mutex);
+    if (!sampler.journal)
+    {
+        return;
+    }
+    robotweax_srt_telemetry_event_v1 event{};
+    event.struct_size = sizeof(event);
+    event.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    event.observed_at_unix_nano = unix_nano;
+    event.sample_monotonic_nano = monotonic_nano;
+    event.source_id = source_id;
+    event.kind = kind;
+    event.severity = severity;
+    event.previous_value = previous;
+    event.current_value = current;
+    event.code = code;
+    if (detail != nullptr)
+    {
+        std::strncpy(event.detail, detail, sizeof(event.detail) - 1);
+    }
+    static_cast<void>(robotweax_srt_telemetry_event_journal_push(sampler.journal.get(), &event, nullptr));
+}
+
+std::string label_text(const Source &source)
+{
+    std::string text;
+    for (const auto &label : source.labels)
+    {
+        if (!text.empty())
+        {
+            text += ',';
+        }
+        text += label.key;
+        text += '=';
+        text += label.value;
+    }
+    return text;
+}
+
 struct WindowContext
 {
     robotweax_srt_telemetry_sampler *sampler;
-    const Source *source;
+    Source *source;
+    /* When the window was closed: events about it are stamped with this. */
+    std::uint64_t unix_nano;
+    std::uint64_t monotonic_nano;
 };
 
 int deliver_window(void *user_data, const robotweax_srt_telemetry_window_summary_v1 *summary)
 {
     const auto &context = *static_cast<WindowContext *>(user_data);
-    const auto &callbacks = context.sampler->config.callbacks;
+    auto &sampler = *context.sampler;
+    if (summary->window_nano == sampler.history_window_nano)
+    {
+        auto &source = *context.source;
+        if (!source.history.empty())
+        {
+            robotweax_srt_telemetry_compact_record_v1 record{};
+            if (robotweax_srt_telemetry_compact_record_from_window(summary, &record) ==
+                ROBOTWEAX_SRT_TELEMETRY_OK)
+            {
+                source.history_push(record);
+            }
+        }
+        struct Flag
+        {
+            std::uint32_t bit;
+            robotweax_srt_telemetry_event_kind kind;
+            const char *detail;
+        };
+        static constexpr Flag flags[] = {
+            {ROBOTWEAX_SRT_TELEMETRY_WINDOW_SAMPLING_GAP, ROBOTWEAX_SRT_TELEMETRY_EVENT_SAMPLING_GAP,
+             "sampling interval longer than twice the period"},
+            {ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP, ROBOTWEAX_SRT_TELEMETRY_EVENT_CLOCK_STEP,
+             "wall clock stepped"},
+            {ROBOTWEAX_SRT_TELEMETRY_WINDOW_COUNTER_RESET,
+             ROBOTWEAX_SRT_TELEMETRY_EVENT_COUNTER_RESET, "SRT counter decreased"},
+        };
+        /* One event per episode: a backward clock step flags both the
+         * window it closes and the next one; a long overload flags many. */
+        const auto started = summary->quality_flags & ~source.previous_window_flags;
+        source.previous_window_flags = summary->quality_flags;
+        for (const auto &flag : flags)
+        {
+            if ((started & flag.bit) != 0)
+            {
+                journal_event(sampler, source.id, flag.kind,
+                              ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING, context.unix_nano,
+                              context.monotonic_nano, 0, 0,
+                              static_cast<std::int64_t>(summary->start_unix_nano), flag.detail);
+            }
+        }
+    }
+    const auto &callbacks = sampler.config.callbacks;
     if (callbacks.on_window != nullptr)
     {
         const auto info = context.source->info();
@@ -232,6 +387,35 @@ void initialize_output(robotweax_srt_telemetry_source_output_v1 &output)
     output.ext_delta.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
 }
 
+/* Caller holds sampler.mutex. Called for every failed sample. */
+void source_failed(robotweax_srt_telemetry_sampler &sampler, Source &source,
+                   const robotweax_srt_telemetry_error error, const std::int32_t native,
+                   const std::uint64_t unix_nano, const std::uint64_t monotonic_nano)
+{
+    if (!source.failed || error != source.failed_error)
+    {
+        journal_event(sampler, source.id, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_FAILED,
+                      ROBOTWEAX_SRT_TELEMETRY_SEVERITY_ERROR, unix_nano, monotonic_nano,
+                      source.failed ? source.failed_error : ROBOTWEAX_SRT_TELEMETRY_OK, error,
+                      native, robotweax_srt_telemetry_error_string(error));
+    }
+    source.failed = true;
+    source.failed_error = error;
+    source.healthy = false;
+    report_error(sampler, source, error, native, monotonic_nano);
+    /* Keep the windows moving: an empty sample marked SOURCE_ERROR closes
+     * windows on time, so an outage shows as flagged windows, not silence. */
+    robotweax_srt_telemetry_metric_sample_v1 empty{};
+    empty.struct_size = sizeof(empty);
+    empty.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    empty.observed_at_unix_nano = unix_nano;
+    empty.sample_monotonic_nano = monotonic_nano;
+    empty.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
+    WindowContext context{&sampler, &source, unix_nano, monotonic_nano};
+    static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(
+        source.windows.get(), &empty, &deliver_window, &context));
+}
+
 /* Caller holds sampler.mutex. */
 void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
                    const std::uint64_t unix_nano, const std::uint64_t monotonic_nano)
@@ -249,21 +433,9 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
     }
     if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
-        report_error(sampler, source, error, output.native_result, monotonic_nano);
-        /* Keep the windows moving: an empty sample marked SOURCE_ERROR closes
-         * windows on time, so an outage shows as flagged windows, not silence. */
-        robotweax_srt_telemetry_metric_sample_v1 failed{};
-        failed.struct_size = sizeof(failed);
-        failed.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
-        failed.observed_at_unix_nano = unix_nano;
-        failed.sample_monotonic_nano = monotonic_nano;
-        failed.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
-        WindowContext context{&sampler, &source};
-        static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(
-            source.windows.get(), &failed, &deliver_window, &context));
+        source_failed(sampler, source, error, output.native_result, unix_nano, monotonic_nano);
         return;
     }
-    source.last_error = ROBOTWEAX_SRT_TELEMETRY_OK;
 
     robotweax_srt_telemetry_metric_sample_v1 metrics{};
     metrics.struct_size = sizeof(metrics);
@@ -274,8 +446,30 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
                                                     has_ext ? &output.ext_delta : nullptr, &metrics);
     if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
-        report_error(sampler, source, error, output.native_result, monotonic_nano);
+        /* Unusable output counts as a failed sample. */
+        source_failed(sampler, source, error, output.native_result, unix_nano, monotonic_nano);
         return;
+    }
+
+    source.last_error = ROBOTWEAX_SRT_TELEMETRY_OK;
+    if (source.failed)
+    {
+        if (!source.healthy)
+        {
+            source.healthy = true;
+            source.healthy_since_nano = monotonic_nano;
+        }
+        constexpr std::uint64_t settle = UINT64_C(1'000'000'000);
+        if (monotonic_nano >= source.healthy_since_nano &&
+            monotonic_nano - source.healthy_since_nano >= settle)
+        {
+            journal_event(sampler, source.id, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_RECOVERED,
+                          ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, unix_nano, monotonic_nano,
+                          source.failed_error, ROBOTWEAX_SRT_TELEMETRY_OK, 0,
+                          "source sampling again for 1 s");
+            source.failed = false;
+            source.failed_error = ROBOTWEAX_SRT_TELEMETRY_OK;
+        }
     }
 
     const auto &callbacks = sampler.config.callbacks;
@@ -290,7 +484,7 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
         {
         }
     }
-    WindowContext context{&sampler, &source};
+    WindowContext context{&sampler, &source, unix_nano, monotonic_nano};
     static_cast<void>(robotweax_srt_telemetry_window_aggregator_push(
         source.windows.get(), &metrics, &deliver_window, &context));
 }
@@ -310,7 +504,7 @@ void tick_locked(robotweax_srt_telemetry_sampler &sampler, const std::uint64_t u
 void flush_locked(robotweax_srt_telemetry_sampler &sampler, Source &source)
 {
     const CallbackScope scope(&sampler);
-    WindowContext context{&sampler, &source};
+    WindowContext context{&sampler, &source, system_nano(), steady_nano()};
     static_cast<void>(robotweax_srt_telemetry_window_aggregator_flush(source.windows.get(),
                                                                       &deliver_window, &context));
 }
@@ -410,6 +604,12 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_create(
         return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
     }
     created->config = *config;
+    created->history_window_nano = config->windows.window_nano[0];
+    for (std::uint32_t index = 1; index < config->windows.window_count; ++index)
+    {
+        created->history_window_nano =
+            std::min(created->history_window_nano, config->windows.window_nano[index]);
+    }
     *sampler = created;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
@@ -503,16 +703,31 @@ robotweax_srt_telemetry_sampler_add_source(robotweax_srt_telemetry_sampler *samp
     created->windows.reset(windows);
 
     std::lock_guard lock(sampler->mutex);
-    created->id = sampler->next_id++;
-    *source_id = created->id;
+    std::string labels;
     try
     {
-        sampler->sources.emplace(created->id, std::move(created));
+        created->history.resize(sampler->history_capacity);
+        labels = label_text(*created);
     }
     catch (const std::bad_alloc &)
     {
         return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
     }
+    const auto id = sampler->next_id;
+    created->id = id;
+    try
+    {
+        sampler->sources.emplace(id, std::move(created));
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    sampler->next_id += 1;
+    *source_id = id;
+    journal_event(*sampler, id, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_ADDED,
+                  ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, system_nano(), steady_nano(), 0, 0,
+                  source->role, labels.c_str());
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
@@ -536,6 +751,9 @@ robotweax_srt_telemetry_sampler_remove_source(robotweax_srt_telemetry_sampler *s
     }
     flush_locked(*sampler, *found->second);
     sampler->sources.erase(found);
+    journal_event(*sampler, source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_REMOVED,
+                  ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, system_nano(), steady_nano(), 0, 0, 0,
+                  nullptr);
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
@@ -642,4 +860,153 @@ robotweax_srt_telemetry_sampler_stop(robotweax_srt_telemetry_sampler *sampler)
     std::lock_guard lock(sampler->thread_mutex);
     sampler->stopping = false;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_sampler_enable_history(robotweax_srt_telemetry_sampler *sampler,
+                                               const std::size_t records_per_source)
+{
+    if (sampler == nullptr || records_per_source > (std::size_t{1} << 24))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    std::lock_guard lock(sampler->mutex);
+    try
+    {
+        for (auto &entry : sampler->sources)
+        {
+            auto &source = *entry.second;
+            std::vector<robotweax_srt_telemetry_compact_record_v1> ring(records_per_source);
+            source.history.swap(ring);
+            source.history_head = 0;
+            source.history_size = 0;
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        for (auto &entry : sampler->sources)
+        {
+            entry.second->history.clear();
+            entry.second->history.shrink_to_fit();
+            entry.second->history_size = 0;
+        }
+        sampler->history_capacity = 0;
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    sampler->history_capacity = records_per_source;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_history_read(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+    const std::uint64_t since_start_unix_nano, robotweax_srt_telemetry_compact_record_v1 *records,
+    const std::size_t capacity, std::size_t *count)
+{
+    if (sampler == nullptr || count == nullptr || (records == nullptr && capacity > 0))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    *count = 0;
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    }
+    const auto &source = *found->second;
+    std::size_t copied = 0;
+    for (std::size_t index = 0; index < source.history_size && copied < capacity; ++index)
+    {
+        const auto &record = source.history[(source.history_head + index) % source.history.size()];
+        if (record.start_unix_nano >= since_start_unix_nano)
+        {
+            records[copied++] = record;
+        }
+    }
+    *count = copied;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_sampler_enable_journal(robotweax_srt_telemetry_sampler *sampler,
+                                               const std::size_t capacity)
+{
+    if (sampler == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    robotweax_srt_telemetry_event_journal *journal = nullptr;
+    if (capacity > 0)
+    {
+        const auto error = robotweax_srt_telemetry_event_journal_create(capacity, &journal);
+        if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            return error;
+        }
+    }
+    std::lock_guard lock(sampler->mutex);
+    std::lock_guard journal_lock(sampler->journal_mutex);
+    if (sampler->journal)
+    {
+        sampler->journal_next_sequence =
+            robotweax_srt_telemetry_internal::journal_next_sequence(*sampler->journal);
+    }
+    if (journal != nullptr)
+    {
+        robotweax_srt_telemetry_internal::journal_continue_from(*journal,
+                                                                sampler->journal_next_sequence);
+    }
+    sampler->journal.reset(journal);
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_journal_read(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t after_sequence,
+    robotweax_srt_telemetry_event_v1 *events, const std::size_t capacity, std::size_t *count,
+    std::uint64_t *overwritten)
+{
+    if (sampler == nullptr || count == nullptr || (events == nullptr && capacity > 0))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    *count = 0;
+    std::lock_guard lock(sampler->journal_mutex);
+    if (!sampler->journal)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    }
+    if (overwritten != nullptr)
+    {
+        *overwritten = robotweax_srt_telemetry_event_journal_overwritten_count(sampler->journal.get());
+    }
+    return robotweax_srt_telemetry_event_journal_read(sampler->journal.get(), after_sequence, events,
+                                                      capacity, count);
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_sampler_record_event(robotweax_srt_telemetry_sampler *sampler,
+                                             const robotweax_srt_telemetry_event_v1 *event)
+{
+    if (sampler == nullptr || event == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    std::lock_guard lock(sampler->journal_mutex);
+    if (!sampler->journal)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    }
+    return robotweax_srt_telemetry_event_journal_push(sampler->journal.get(), event, nullptr);
 }

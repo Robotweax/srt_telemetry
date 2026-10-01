@@ -382,3 +382,83 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_conn
     monitor->has_previous = true;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_connection_events(
+    const robotweax_srt_telemetry_public_srt_connection_result_v1 *result,
+    const std::uint64_t source_id, robotweax_srt_telemetry_event_v1 *events,
+    const std::size_t capacity, std::size_t *count)
+{
+    if (result == nullptr || count == nullptr || (events == nullptr && capacity > 0))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    *count = 0;
+    if (!valid_result(result))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    const auto &snapshot = result->snapshot;
+    std::size_t produced = 0;
+    const auto emit = [&](const robotweax_srt_telemetry_event_kind kind,
+                          const robotweax_srt_telemetry_event_severity severity,
+                          const std::int64_t previous, const std::int64_t current,
+                          const std::int64_t code, const char *detail)
+    {
+        if (produced >= capacity)
+        {
+            return;
+        }
+        auto &event = events[produced++];
+        std::memset(&event, 0, sizeof(event));
+        event.struct_size = sizeof(event);
+        event.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        event.observed_at_unix_nano = snapshot.observed_at_unix_nano;
+        event.sample_monotonic_nano = snapshot.sample_monotonic_nano;
+        event.source_id = source_id;
+        event.kind = kind;
+        event.severity = severity;
+        event.previous_value = previous;
+        event.current_value = current;
+        event.code = code;
+        std::strncpy(event.detail, detail, sizeof(event.detail) - 1);
+    };
+    const auto events_mask = result->events;
+    if ((events_mask & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_CONNECTED) != 0)
+    {
+        emit(ROBOTWEAX_SRT_TELEMETRY_EVENT_CONNECTED, ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO,
+             result->previous_state, snapshot.state, 0, "connected");
+    }
+    if ((events_mask & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_DISCONNECTED) != 0)
+    {
+        emit(ROBOTWEAX_SRT_TELEMETRY_EVENT_DISCONNECTED, ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING,
+             result->previous_state, snapshot.state, 0, "connection lost");
+    }
+    if ((events_mask & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_REJECTED) != 0)
+    {
+        emit(ROBOTWEAX_SRT_TELEMETRY_EVENT_REJECTED, ROBOTWEAX_SRT_TELEMETRY_SEVERITY_ERROR, 0,
+             snapshot.reject_reason, 0, "connection rejected");
+    }
+    if ((events_mask & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_KM_STATE_CHANGED) != 0)
+    {
+        const auto bad = snapshot.km_state >= 3;
+        emit(ROBOTWEAX_SRT_TELEMETRY_EVENT_KM_STATE_CHANGED,
+             bad ? ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING : ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO,
+             result->previous_km_state, snapshot.km_state, 0,
+             bad ? "encryption key problem" : "encryption state changed");
+    }
+    if ((events_mask & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_SETTINGS_CHANGED) != 0)
+    {
+        emit(ROBOTWEAX_SRT_TELEMETRY_EVENT_SETTINGS_CHANGED, ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, 0,
+             0, static_cast<std::int64_t>(result->changed_fields &
+                                          ROBOTWEAX_SRT_TELEMETRY_CONN_SETTINGS_FIELDS),
+             "negotiated settings changed");
+    }
+    if ((events_mask & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_PEER_VERSION_CHANGED) != 0)
+    {
+        emit(ROBOTWEAX_SRT_TELEMETRY_EVENT_PEER_VERSION_CHANGED,
+             ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, 0, snapshot.peer_srt_version, 0,
+             "peer SRT version changed");
+    }
+    *count = produced;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}

@@ -369,6 +369,57 @@ void test_text_is_bounded()
     robotweax_srt_telemetry_public_srt_connection_monitor_destroy(monitor);
 }
 
+void test_journal_events()
+{
+    fake = {};
+    fake.state = SRTS_CONNECTING;
+    auto cfg = config(false);
+    robotweax_srt_telemetry_public_srt_connection_monitor *monitor = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_public_srt_connection_monitor_create(&cfg, &monitor));
+    robotweax_srt_telemetry_event_v1 events[8]{};
+    std::size_t count = 0;
+
+    const auto first = poll(monitor, 1);
+    check(robotweax_srt_telemetry_public_srt_connection_events(&first, 42, events, 8, &count) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              count == 0,
+          "a first poll while connecting yields no events");
+
+    fake.state = SRTS_CONNECTED;
+    fake.km_state = SRT_KM_S_BADSECRET;
+    fake.latency_ms = 250;
+    const auto second = poll(monitor, 2);
+    static_cast<void>(
+        robotweax_srt_telemetry_public_srt_connection_events(&second, 42, events, 8, &count));
+    check(count == 3 && events[0].kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_CONNECTED &&
+              events[0].previous_value == SRTS_CONNECTING &&
+              events[0].current_value == SRTS_CONNECTED && events[0].source_id == 42 &&
+              events[0].observed_at_unix_nano == 2,
+          "connected event with states, source and time");
+    check(count == 3 && events[1].kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_KM_STATE_CHANGED &&
+              events[1].severity == ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING &&
+              events[1].current_value == SRT_KM_S_BADSECRET,
+          "a bad-secret KM state is a warning");
+    check(count == 3 && events[2].kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_SETTINGS_CHANGED &&
+              (events[2].code & ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_RECEIVER_LATENCY_SECONDS) != 0,
+          "settings event names the changed fields");
+
+    fake.state = SRTS_BROKEN;
+    fake.reject = SRT_REJ_PEER;
+    const auto third = poll(monitor, 3);
+    static_cast<void>(
+        robotweax_srt_telemetry_public_srt_connection_events(&third, 42, events, 1, &count));
+    check(count == 1 && events[0].kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_DISCONNECTED &&
+              events[0].severity == ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING,
+          "capacity limits the output; disconnect comes first");
+    static_cast<void>(
+        robotweax_srt_telemetry_public_srt_connection_events(&third, 42, events, 8, &count));
+    check(count == 2 && events[1].kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_REJECTED &&
+              events[1].current_value == SRT_REJ_PEER,
+          "rejection event carries the reason");
+    robotweax_srt_telemetry_public_srt_connection_monitor_destroy(monitor);
+}
+
 } // namespace
 
 int main()
@@ -378,6 +429,7 @@ int main()
     test_rejection();
     test_validation();
     test_text_is_bounded();
+    test_journal_events();
     if (failures != 0)
     {
         std::cerr << failures << " connection monitor checks failed\n";
