@@ -68,6 +68,7 @@ enum Count : std::size_t
     C_UNIQUE_RECEIVED_BITS,
     C_UNIQUE_RECEIVED_PACKETS,
     C_RECEIVER_LOSS,
+    C_SENDER_LOSS,
     C_SENDER_DROP,
     C_RECEIVER_DROP,
     C_UNDECRYPTABLE,
@@ -81,6 +82,7 @@ constexpr std::array<robotweax_srt_telemetry_metric, COUNTS> count_metric = {
     ROBOTWEAX_SRT_TELEMETRY_METRIC_UNIQUE_RECEIVED_BITS_PER_SECOND,
     ROBOTWEAX_SRT_TELEMETRY_METRIC_UNIQUE_RECEIVED_PACKETS_PER_SECOND,
     ROBOTWEAX_SRT_TELEMETRY_METRIC_RECEIVER_LOSS_PACKETS_PER_SECOND,
+    ROBOTWEAX_SRT_TELEMETRY_METRIC_SENDER_LOSS_PACKETS_PER_SECOND,
     ROBOTWEAX_SRT_TELEMETRY_METRIC_SENDER_DROP_PACKETS_PER_SECOND,
     ROBOTWEAX_SRT_TELEMETRY_METRIC_RECEIVER_DROP_PACKETS_PER_SECOND,
     ROBOTWEAX_SRT_TELEMETRY_METRIC_UNDECRYPTABLE_PACKETS_PER_SECOND,
@@ -156,7 +158,11 @@ bool default_thresholds(const robotweax_srt_telemetry_endpoint_role role, const 
         out = {0.5, 0.8, 1.0};
         return sender;
     case PATH:
-        out = {0.75, 0.9, 1.05};
+        /* The providers' capacity estimate follows the arrival rate on a
+         * healthy path (fault lab: within about 10 %), so the ratio sits
+         * near 1; it rises only when the path delivers clearly less than
+         * is sent. */
+        out = {1.25, 1.5, 2.0};
         return sender;
     case BACKLOG:
         out = {0.35, 0.6, 0.9};
@@ -167,7 +173,9 @@ bool default_thresholds(const robotweax_srt_telemetry_endpoint_role role, const 
             out = {1.5, 2.5, 4.0};
             return true;
         }
-        out = {0.6, 0.85, 0.98};
+        /* Sender: the larger of flight / flow window and the share of the
+         * receive buffer held beyond what the latency explains. */
+        out = {0.25, 0.5, 0.9};
         return sender;
     default:
         return false;
@@ -248,6 +256,21 @@ struct robotweax_srt_telemetry_health_engine
     std::array<std::size_t, COUNTS> available_entries{};
     /* Time the count window actually covers (sum of sample intervals). */
     std::uint64_t covered_nano = 0;
+    /* Path RTT without queueing: the lowest RTT of loss-free samples over
+     * the last 5 minutes, in 10 s buckets. Lossy samples never raise it, so
+     * a congested path keeps its diagnosis; a route change without loss is
+     * adopted within 5 minutes. With no loss-free sample in 5 minutes the
+     * last baseline is kept. */
+    bool has_baseline_rtt = false;
+    double baseline_rtt = 0;
+    struct RttBucket
+    {
+        std::uint64_t start;
+        double min;
+    };
+    std::deque<RttBucket> rtt_buckets;
+    bool has_rtt_bucket = false;
+    RttBucket rtt_bucket{0, 0};
     /* Largest flow window seen: a receiver that stops reading shrinks it. */
     double max_flow_window = 0;
     /* Last sample that was not a source error. */
@@ -256,6 +279,10 @@ struct robotweax_srt_telemetry_health_engine
     /* Since when a required indicator has had no grade. */
     bool required_missing = false;
     std::uint64_t required_missing_since = 0;
+    /* Since when it has had one again: OK needs enter_hold of evidence
+     * after a gap, as a worse state does. */
+    bool required_seen = false;
+    std::uint64_t required_available_since = 0;
     std::uint64_t last_monotonic = 0;
     bool has_last = false;
 
@@ -324,6 +351,7 @@ struct GaugeView
     std::array<double, GAUGES> last{};
     /* Sent bits and covered time inside the gauge window. */
     double sent_bits = 0;
+    double retransmitted_bits = 0;
     double sent_interval = 0;
     /* Unique packets inside the gauge window: recent activity. */
     double received_packets = 0;
@@ -377,11 +405,32 @@ GaugeView gauge_view(const Engine &engine, const std::uint64_t now)
             if ((it->available & bit(count_metric[C_RETRANSMITTED_BITS])) != 0)
             {
                 view.sent_bits += it->counts[C_RETRANSMITTED_BITS];
+                view.retransmitted_bits += it->counts[C_RETRANSMITTED_BITS];
             }
             view.sent_interval += static_cast<double>(it->interval) / 1e9;
         }
     }
     return view;
+}
+
+/* A receiver that stopped reading shrinks the flow window; once its buffer
+ * overflows, the window can recover while the sender keeps dropping, so the
+ * evidence is kept for the count window. */
+bool flow_window_shrunk(const Engine &engine)
+{
+    if (engine.max_flow_window <= 0)
+    {
+        return false;
+    }
+    for (const auto &entry : engine.entries)
+    {
+        if ((entry.available & bit(gauge_metric[G_FLOW_WINDOW])) != 0 &&
+            entry.gauges[G_FLOW_WINDOW] < 0.5 * engine.max_flow_window)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool count_available(const Engine &engine, const Count c)
@@ -412,10 +461,20 @@ struct Evaluation
     bool has_latency;
     double latency = 0;
     double rtt = 0;
+    /* RTT well above its baseline with sustained loss: the path queues and
+     * drops (congestion). Latency does not fix that; the bitrate does. */
+    bool congested = false;
+    double congestion_rate = 0; /* bit/s the path delivers, for advice */
 };
+
+Advice bitrate_decrease(Reason reason, double bits_per_second);
 
 Advice latency_advice(const Evaluation &e, const Reason reason, const double loss_ratio)
 {
+    if (e.congested)
+    {
+        return bitrate_decrease(ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED, 0.8 * e.congestion_rate);
+    }
     Advice advice{reason, ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY,
                   ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE, 0.0};
     if (e.has_latency)
@@ -471,15 +530,51 @@ double receiver_loss_ratio(const Engine &engine)
 }
 
 /* Advice for drops that are not decryption failures. */
+/* Loss in most of the count window's samples is the path; a burst (an
+ * outage) is not. */
+bool sustained_loss(const Engine &engine, const Count c)
+{
+    std::size_t with_loss = 0;
+    std::size_t with_count = 0;
+    for (const auto &entry : engine.entries)
+    {
+        if ((entry.available & bit(count_metric[c])) != 0)
+        {
+            with_count += 1;
+            with_loss += entry.counts[c] > 0 ? 1u : 0u;
+        }
+    }
+    return with_count > 0 && 2 * with_loss >= with_count;
+}
+
 Advice drop_advice(const Evaluation &e, const Reason fallback)
 {
     const auto &engine = e.engine;
     const auto loss_ratio = receiver_loss_ratio(engine);
+    /* Arrivals stopped for longer than the latency (an outage): no
+     * retransmission recovers that gap and no setting brings it back. */
+    if (e.has_latency && e.receiver)
+    {
+        std::uint64_t gap = 0;
+        std::uint64_t longest = 0;
+        for (const auto &entry : engine.entries)
+        {
+            const bool arrived = (entry.available & bit(count_metric[C_UNIQUE_RECEIVED_PACKETS])) != 0 &&
+                                 entry.counts[C_UNIQUE_RECEIVED_PACKETS] > 0;
+            gap = arrived ? 0 : gap + entry.interval;
+            longest = std::max(longest, gap);
+        }
+        if (static_cast<double>(longest) / 1e9 > e.latency)
+        {
+            return {fallback, ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE, ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0};
+        }
+    }
     if (sum(engine, C_BELATED) > 0)
     {
         return latency_advice(e, ROBOTWEAX_SRT_TELEMETRY_REASON_LATE_REPAIRS, loss_ratio);
     }
-    if (e.has_latency && e.rtt > 0 && e.latency / e.rtt >= 8.0 && loss_ratio > 0.05)
+    const bool sustained = sustained_loss(engine, C_RECEIVER_LOSS);
+    if (sustained && e.has_latency && e.rtt > 0 && e.latency / e.rtt >= 8.0 && loss_ratio > 0.05)
     {
         /* Plenty of retransmission rounds and still losing: the path cannot
          * carry the stream plus its repairs. */
@@ -665,8 +760,22 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         {
             return unavailable(ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA);
         }
-        return graded(e, indicator, rate / capacity,
-                      bitrate_decrease(ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CAPACITY_EXCEEDED, 0.7 * capacity));
+        auto raw = graded(e, indicator, rate / capacity,
+                          bitrate_decrease(ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CAPACITY_EXCEEDED, 0.7 * capacity));
+        /* The estimate is not evidence on its own: it swings by about 25 %
+         * on a clean path and jitter pulls it far down (fault lab). The
+         * ratio is graded only with congestion evidence at this end: a
+         * filling send buffer or sender drops. */
+        const bool congested =
+            e.congested ||
+            (g.available[G_SEND_BUFFER_RATIO] && g.max[G_SEND_BUFFER_RATIO] > engine.thresholds[BACKLOG].watch) ||
+            sum(engine, C_SENDER_DROP) > 0;
+        if (!congested)
+        {
+            raw.grade = OK;
+            raw.advice = {};
+        }
+        return raw;
     }
     case BACKLOG:
     {
@@ -684,8 +793,14 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         {
             return unavailable(ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA);
         }
-        /* Advice: a path near capacity needs a lower bitrate; short latency
-         * for the RTT needs more latency; otherwise lower the bitrate. */
+        /* Advice follows the evidence (fault lab):
+         * 1. flow window shrunk: the receiving application is not reading;
+         * 2. sending at an absolute MAXBW: the cap is too low;
+         * 3. sending clearly above the estimated capacity: lower the bitrate;
+         * 4. latency short for the RTT: raise the latency;
+         * 5. heavy retransmission (congestion): lower the bitrate;
+         * 6. otherwise data waits without loss reports: acknowledgements
+         *    stopped (path or peer unresponsive); no knob helps. */
         Advice advice;
         const auto reason = drops > 0 ? ROBOTWEAX_SRT_TELEMETRY_REASON_SENDER_DROPS
                                       : ROBOTWEAX_SRT_TELEMETRY_REASON_SENDER_BACKLOG;
@@ -695,7 +810,29 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
                                     ? g.sum[G_LINK_CAPACITY] / static_cast<double>(g.samples[G_LINK_CAPACITY])
                                     : 0.0;
         const double rate = g.sent_interval > 0 ? g.sent_bits / g.sent_interval : 0.0;
-        if (capacity > 0 && rate / capacity > engine.thresholds[PATH].watch)
+        const double unique_rate = rate - (g.sent_interval > 0 ? g.retransmitted_bits / g.sent_interval : 0.0);
+        const bool shrunk = flow_window_shrunk(engine);
+        const auto max_bandwidth = engine.context.max_bandwidth_bytes_per_second;
+        const bool bandwidth_known =
+            (engine.context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS) != 0;
+        if (shrunk)
+        {
+            advice = {ROBOTWEAX_SRT_TELEMETRY_REASON_PEER_READ_STALL,
+                      ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION,
+                      ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK, 0.0};
+        }
+        else if (bandwidth_known && max_bandwidth > 0 && rate >= 0.9 * static_cast<double>(max_bandwidth) * 8.0)
+        {
+            /* What the application offers: what went out plus what the
+             * sender dropped, at the average packet size. */
+            const auto packets = sum(engine, C_UNIQUE_SENT_PACKETS);
+            const double packet_bits = packets > 0 ? sum(engine, C_UNIQUE_SENT_BITS) / packets : 0.0;
+            const double dropped_rate = count_seconds > 0 ? drops * packet_bits / count_seconds : 0.0;
+            advice = {reason, ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH,
+                      ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE,
+                      round_up(1.25 * (unique_rate + dropped_rate) / 8.0, 1000.0)};
+        }
+        else if (capacity > 0 && rate / capacity > engine.thresholds[PATH].watch)
         {
             advice = bitrate_decrease(reason, 0.7 * capacity);
         }
@@ -703,10 +840,14 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         {
             advice = latency_advice(e, reason, 0.0);
         }
+        else if (unique_rate > 0 && rate - unique_rate > 0.1 * unique_rate)
+        {
+            advice = bitrate_decrease(reason, 0.8 * unique_rate);
+        }
         else
         {
-            advice = bitrate_decrease(reason, count_seconds > 0 ? 0.8 * sum(engine, C_UNIQUE_SENT_BITS) / count_seconds
-                                                                : 0.0);
+            advice = {ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED, ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
+                      ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0};
         }
         const auto value = has_ratio ? g.max[G_SEND_BUFFER_RATIO] : 0.0;
         auto raw = graded(e, indicator, value, advice);
@@ -738,22 +879,36 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
                            ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION,
                            ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK, 0.0});
         }
-        if (!g.available[G_FLIGHT_TO_FLOW])
-        {
-            return unavailable(ROBOTWEAX_SRT_TELEMETRY_REASON_MISSING_METRIC, bit(gauge_metric[G_FLIGHT_TO_FLOW]));
-        }
         /* A receiver that stops reading shrinks the flow window it
-         * advertises. A full flight with an unchanged window means the
+         * advertises (its free buffer) long before the flight fills it. The
+         * part of the buffer held beyond about 1.5 latency periods of the
+         * stream is the stall. */
+        const bool has_window = g.available[G_FLOW_WINDOW] && engine.max_flow_window > 0;
+        if (!g.available[G_FLIGHT_TO_FLOW] && !has_window)
+        {
+            return unavailable(ROBOTWEAX_SRT_TELEMETRY_REASON_MISSING_METRIC,
+                               bit(gauge_metric[G_FLIGHT_TO_FLOW]) | bit(gauge_metric[G_FLOW_WINDOW]));
+        }
+        double occupancy = 0;
+        /* Without the latency the normal buffering is unknown: no grade. */
+        if (has_window && e.has_latency)
+        {
+            const double pps = g.sent_interval > 0 ? g.sent_packets / g.sent_interval : 0.0;
+            const double expected = e.has_latency ? 1.5 * (e.latency + e.rtt) * pps : 0.0;
+            occupancy = std::max(0.0, engine.max_flow_window - std::max(g.min[G_FLOW_WINDOW], 0.0) - expected) /
+                        engine.max_flow_window;
+        }
+        const double flight = g.available[G_FLIGHT_TO_FLOW] ? g.max[G_FLIGHT_TO_FLOW] : 0.0;
+        /* A full flight with an unchanged window means the
          * acknowledgements stopped (path or peer unresponsive). */
-        const bool shrunk = g.available[G_FLOW_WINDOW] && engine.max_flow_window > 0 &&
-                            g.min[G_FLOW_WINDOW] < 0.5 * engine.max_flow_window;
+        const bool shrunk = flow_window_shrunk(engine);
         const Advice advice = shrunk ? Advice{ROBOTWEAX_SRT_TELEMETRY_REASON_PEER_READ_STALL,
                                               ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION,
                                               ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK, 0.0}
                                      : Advice{ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED,
                                               ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
                                               ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0};
-        return graded(e, indicator, g.max[G_FLIGHT_TO_FLOW], advice);
+        return graded(e, indicator, std::max(flight, occupancy), advice);
     }
     default:
         return {};
@@ -1060,9 +1215,43 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             engine->headroom_seen = true;
             engine->headroom_last = now;
         }
-        if ((entry.available & bit(gauge_metric[G_FLOW_WINDOW])) != 0)
+        /* Libsrt grows the flow window by the packets the sender drops, so
+         * samples with sender drops do not raise the reference. */
+        const bool sender_dropped = (entry.available & bit(count_metric[C_SENDER_DROP])) != 0 &&
+                                    entry.counts[C_SENDER_DROP] > 0;
+        if ((entry.available & bit(gauge_metric[G_FLOW_WINDOW])) != 0 && !sender_dropped)
         {
             engine->max_flow_window = std::max(engine->max_flow_window, entry.gauges[G_FLOW_WINDOW]);
+        }
+        const auto loss_count = receiver ? C_RECEIVER_LOSS : C_SENDER_LOSS;
+        const bool lossy = (entry.available & bit(count_metric[loss_count])) != 0 && entry.counts[loss_count] > 0;
+        if ((entry.available & bit(gauge_metric[G_RTT])) != 0 && entry.gauges[G_RTT] > 0 && !lossy)
+        {
+            const auto rtt = entry.gauges[G_RTT];
+            constexpr std::uint64_t bucket_length = 10 * SECOND;
+            constexpr std::uint64_t horizon = 300 * SECOND;
+            if (engine->has_rtt_bucket && now - engine->rtt_bucket.start >= bucket_length)
+            {
+                engine->rtt_buckets.push_back(engine->rtt_bucket);
+                engine->has_rtt_bucket = false;
+            }
+            if (!engine->has_rtt_bucket)
+            {
+                engine->rtt_bucket = {now, rtt};
+                engine->has_rtt_bucket = true;
+            }
+            engine->rtt_bucket.min = std::min(engine->rtt_bucket.min, rtt);
+            while (!engine->rtt_buckets.empty() && engine->rtt_buckets.front().start + horizon < now)
+            {
+                engine->rtt_buckets.pop_front();
+            }
+            double baseline = engine->rtt_bucket.min;
+            for (const auto &bucket : engine->rtt_buckets)
+            {
+                baseline = std::min(baseline, bucket.min);
+            }
+            engine->baseline_rtt = baseline;
+            engine->has_baseline_rtt = true;
         }
         add_entry(*engine, entry);
         engine->has_good = true;
@@ -1075,6 +1264,32 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             e.has_latency = true;
             e.latency = e.gauges.last[latency_gauge];
             e.rtt = e.gauges.max[G_RTT];
+        }
+        if (e.gauges.available[G_RTT] && engine->has_baseline_rtt &&
+            e.gauges.max[G_RTT] > 2.0 * engine->baseline_rtt + 0.01 && engine->covered_nano > 0)
+        {
+            const double seconds = static_cast<double>(engine->covered_nano) / 1e9;
+            if (receiver)
+            {
+                const auto unique = engine->sums[C_UNIQUE_RECEIVED_PACKETS];
+                const auto loss = engine->sums[C_RECEIVER_LOSS];
+                if (sustained_loss(*engine, C_RECEIVER_LOSS) && unique + loss > 0 && loss / (unique + loss) > 0.05)
+                {
+                    e.congested = true;
+                    e.congestion_rate = std::max(0.0, engine->sums[C_UNIQUE_RECEIVED_BITS]) / seconds;
+                }
+            }
+            else
+            {
+                const auto unique = engine->sums[C_UNIQUE_SENT_PACKETS];
+                const auto loss = engine->sums[C_SENDER_LOSS];
+                if (sustained_loss(*engine, C_SENDER_LOSS) && unique > 0 && loss / unique > 0.05)
+                {
+                    e.congested = true;
+                    e.congestion_rate = std::max(0.0, engine->sums[C_UNIQUE_SENT_BITS]) / seconds *
+                                        std::clamp(1.0 - loss / unique, 0.1, 1.0);
+                }
+            }
         }
         for (std::size_t i = 0; i < INDICATORS; ++i)
         {
@@ -1195,7 +1410,12 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         }
         if (raws[i].available)
         {
+            if (engine->required_missing || !engine->required_seen)
+            {
+                engine->required_available_since = now;
+            }
             engine->required_missing = false;
+            engine->required_seen = true;
         }
         else if (!engine->required_missing)
         {
@@ -1204,7 +1424,18 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         }
         const bool missing_too_long =
             engine->required_missing && now - engine->required_missing_since >= engine->config.enter_hold_nano;
-        if (out.state == UNKNOWN || missing_too_long)
+        /* After a stream start or a gap, the counts may not yet show what
+         * the gap cost (drops arrive with the first packets after it). */
+        bool settling =
+            !engine->required_missing && now - engine->required_available_since < engine->config.enter_hold_nano;
+        /* An escalation that began while settling finishes first. */
+        for (std::size_t j = 0; j < INDICATORS && !settling; ++j)
+        {
+            const auto &h = engine->hysteresis[j];
+            settling = raws[j].applicable && h.up_pending &&
+                       h.up_since < engine->required_available_since + engine->config.enter_hold_nano;
+        }
+        if (out.state == UNKNOWN || missing_too_long || settling)
         {
             status->primary_indicator = static_cast<std::int32_t>(i);
             return finish(UNKNOWN, raws[i].available ? ROBOTWEAX_SRT_TELEMETRY_REASON_NONE : raws[i].advice.reason);
@@ -1306,6 +1537,8 @@ robotweax_srt_telemetry_health_reason_name(const robotweax_srt_telemetry_health_
         return "application_read_stall";
     case ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED:
         return "acknowledgements_stalled";
+    case ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED:
+        return "path_congested";
     }
     return "invalid";
 }

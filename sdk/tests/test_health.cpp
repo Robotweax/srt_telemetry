@@ -250,7 +250,9 @@ void test_clean_streams()
         Run run(role);
         Condition c;
         const auto first_ok = run.until(c, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, 5);
-        check(first_ok > 0 && first_ok <= 0.5, "clean stream is OK at once");
+        /* OK needs 2 s of evidence: never OK before the counts can show
+         * what the start cost. */
+        check(first_ok >= 2.0 && first_ok <= 2.5, "clean stream is OK after 2 s of evidence");
         check(run.feed(c, 60) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK && run.status.knob == 0,
               "clean stream stays OK without advice");
         check(run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_PATH_HEADROOM].flags == 0 ||
@@ -335,6 +337,29 @@ void test_receiver_classes()
               "late repairs: raise latency to 6 x RTT (360 ms)");
     }
     {
+        /* Congestion: RTT far above its baseline with sustained loss. More
+         * latency does not help; a lower bitrate does. */
+        Run run(RECEIVER);
+        Condition base = clean;
+        base.latency = 0.2;
+        run.feed(base, 5);
+        Condition c = base;
+        c.rtt = 0.28;
+        c.packets_per_second = 280;
+        c.loss_per_second = 220;
+        c.drops_per_second = 220;
+        c.belated_per_second = 2;
+        c.headroom = 0.0;
+        check(run.feed(c, 6) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE &&
+                  run.status.knob_direction == ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_DECREASE,
+              "congested path: lower bitrate, got " + describe(run.status));
+        /* 0.8 x what the path delivers (280 packets/s, mixed with 5 s at 300). */
+        check(run.status.suggested_value > 0.7 * 280 * packet_bits && run.status.suggested_value < 0.8 * 300 * packet_bits,
+              "congestion advice: 80 % of the delivered rate");
+    }
+    {
         /* RTT step: latency only 2 x RTT, no loss yet: AT_RISK, raise latency. */
         Run run(RECEIVER);
         Condition c = clean;
@@ -398,24 +423,66 @@ void test_sender_classes()
         Run run(SENDER);
         run.feed(clean, 3);
         Condition c = clean;
-        c.capacity_bps = 2.5e6; /* stream is ~3.16 Mbit/s */
+        c.capacity_bps = 2.0e6; /* stream is ~3.16 Mbit/s */
         c.send_buffer_ratio = 0.95;
         c.sender_drops_per_second = 20;
         check(run.feed(c, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
                   run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SENDER_DROPS &&
                   run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE &&
                   run.status.knob_direction == ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_DECREASE &&
-                  std::abs(run.status.suggested_value - 1.75e6) < 1.0,
+                  std::abs(run.status.suggested_value - 1.4e6) < 1.0,
               "bandwidth cap: FAILING, lower bitrate to 70 % of capacity");
     }
     {
-        /* Path near capacity without drops yet: AT_RISK from path headroom. */
+        /* Drops without loss reports, capacity or latency trouble: the
+         * acknowledgements stopped (outage); no knob. */
+        Run run(SENDER);
+        run.feed(clean, 3);
+        Condition c = clean;
+        c.send_buffer_ratio = 1.0;
+        c.sender_drops_per_second = 300;
+        check(run.feed(c, 4) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
+              "drops without evidence of a cause: acknowledgements stalled, no knob");
+    }
+    {
+        /* Sending at an absolute MAXBW with drops: raise MAXBW. */
+        Run run(SENDER);
+        robotweax_srt_telemetry_health_context_v1 context;
+        robotweax_srt_telemetry_health_context_init(&context);
+        context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        context.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS;
+        context.overhead_percent = 25;
+        context.max_bandwidth_bytes_per_second = 395'000; /* 3.16 Mbit/s: the stream is at the cap */
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context));
+        Condition c = clean;
+        c.send_buffer_ratio = 1.0;
+        c.sender_drops_per_second = 100;
+        check(run.feed(c, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH &&
+                  run.status.suggested_value > 395'000,
+              "drops at the MAXBW cap: raise MAXBW, got " + describe(run.status));
+    }
+    {
+        /* The capacity estimate follows the sending rate on a healthy path:
+         * a ratio near 1 is OK. */
         Run run(SENDER);
         Condition c = clean;
-        c.capacity_bps = 3.4e6; /* 3.16 / 3.4 = 0.93 */
+        c.capacity_bps = 3.0e6; /* 3.16 / 3.0 = 1.05 */
+        check(run.feed(c, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "estimate near the sending rate is OK");
+        /* Estimate clearly below the sending rate, nothing queues: not
+         * evidence on its own (jitter pulls the estimate down). */
+        c.capacity_bps = 2.0e6; /* 1.58 */
+        check(run.feed(c, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                  run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_PATH_HEADROOM].value > 1.5,
+              "estimate below the rate without congestion: value shown, still OK");
+        /* With the send buffer filling it is real: AT_RISK. */
+        c.send_buffer_ratio = 0.45;
         check(run.feed(c, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK &&
-                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CAPACITY_EXCEEDED,
-              "path near capacity: AT_RISK");
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CAPACITY_EXCEEDED &&
+                  std::abs(run.status.suggested_value - 1.4e6) < 1.0,
+              "estimate below the rate with a filling send buffer: AT_RISK, bitrate 70 % of capacity");
     }
     {
         /* Heavy repairs against a 25 % OHEADBW budget. */
@@ -503,6 +570,104 @@ void test_sender_classes()
                   run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_OVERHEAD_BUDGET].reason ==
                       ROBOTWEAX_SRT_TELEMETRY_REASON_MISSING_SETTING,
               "overhead budget needs the bandwidth settings");
+    }
+}
+
+void test_review_cases()
+{
+    Condition clean;
+    {
+        /* Persistent congestion keeps its diagnosis: lossy samples never
+         * raise the RTT baseline. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition c = clean;
+        c.latency = 0.2;
+        c.rtt = 0.28;
+        c.packets_per_second = 280;
+        c.loss_per_second = 220;
+        c.drops_per_second = 220;
+        c.belated_per_second = 2;
+        c.headroom = 0.0;
+        bool kept = true;
+        for (int second_index = 0; second_index < 120; ++second_index)
+        {
+            run.feed(c, 1);
+            if (second_index >= 10)
+            {
+                kept = kept && run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED;
+            }
+        }
+        check(kept, "two minutes of congestion stay path_congested, got " + describe(run.status));
+    }
+    {
+        /* A healthy RTT increase without loss is not congestion. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition c = clean;
+        c.latency = 0.6;
+        c.rtt = 0.09;
+        check(run.feed(c, 20) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "RTT rise without loss: OK");
+    }
+    {
+        /* An outage longer than the latency: drops with no knob. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition gap = clean;
+        gap.receiving = false;
+        run.feed(gap, 2);
+        Condition after = clean;
+        after.drops_per_second = 300;
+        after.loss_per_second = 300;
+        after.belated_per_second = 20; /* some repairs arrive late too */
+        run.feed(after, 0.5);
+        check(run.feed(clean, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
+              "drops after a gap longer than the latency: no knob, got " + describe(run.status));
+    }
+    {
+        /* After a gap, OK waits for evidence: the drops that arrive with the
+         * first packets must not follow an OK. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition gap = clean;
+        gap.receiving = false;
+        run.feed(gap, 3);
+        bool ok_seen = false;
+        const auto step = [&](const Condition &c)
+        {
+            const bool ok = run.feed(c, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK;
+            ok_seen = ok_seen || ok;
+        };
+        for (int i = 0; i < 3; ++i)
+        {
+            step(clean);
+        }
+        Condition after = clean;
+        after.drops_per_second = 300;
+        after.loss_per_second = 300;
+        step(after);
+        for (int i = 0; i < 30; ++i)
+        {
+            step(clean);
+        }
+        check(!ok_seen && run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
+              "no OK between a gap and its drops, got " + describe(run.status));
+    }
+    {
+        /* Libsrt grows the flow window by dropped packets: that must not
+         * become the reference and leave a stall bias afterwards. */
+        Run run(SENDER);
+        run.feed(clean, 3);
+        Condition outage = clean;
+        outage.send_buffer_ratio = 1.0;
+        outage.sender_drops_per_second = 300;
+        outage.flow_window = 11'000;
+        run.feed(outage, 2);
+        run.feed(clean, 30);
+        check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                  run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_PEER_READ_STALL].value <= 0.05 + 1e-9,
+              "no read-stall bias after an outage with drops, got " + describe(run.status));
     }
 }
 
@@ -830,6 +995,7 @@ int main()
     test_receiver_classes();
     test_sender_classes();
     test_unknown_and_context();
+    test_review_cases();
     test_sampler_health();
     if (failures != 0)
     {

@@ -1,0 +1,214 @@
+# Fault lab
+
+The fault lab checks the [health engine](../architecture/health-engine.md) on
+real SRT streams, with each provider, against the Phase 2 gate:
+
+> the right verdict in at least 9 of 10 lab fault classes per role, and never
+> a wrong OK.
+
+Executable: `robotweax_srt_telemetry_public_srt_fault_lab` (ctest label `lab`,
+built with the public SRT adapter). A full run takes about six and a half
+minutes. CI runs it for each provider after the other tests and keeps the
+report as an artifact.
+
+```sh
+fault_lab                    # all scenarios, gate verdict, exit 0 on pass
+fault_lab --list             # scenario names and descriptions
+fault_lab --scenario rtt_step --timeline   # one scenario, verdict timeline
+fault_lab --scenario bandwidth_cap --trace # plus per-second metrics
+```
+
+## Setup
+
+Each scenario connects a fresh SRT caller (the sender) to a listener (the
+receiver) through an impairing UDP relay inside the same process. The caller
+sends 500 packets/s of 1316 bytes (about 5.3 Mbit/s) unless noted. The relay
+adds 10 ms in each direction (20 ms RTT) and applies the fault:
+- loss, or loss bursts;
+- jitter;
+- a rate cap with a tail-drop queue;
+- a blackhole.
+
+Loss, jitter and the rate cap apply to the forward direction; delay and
+blackholes apply to both. The random generator has a fixed seed.
+
+Both sockets get a sampler source (100 ms period) with health enabled, and a
+connection monitor that feeds the health context. The lab reads both verdicts
+every 100 ms.
+
+Timeline per scenario: 6 s clean warm-up, the fault (12 s unless noted), then a
+settle period (4 s unless noted).
+
+No kernel netem is needed, so the lab runs unprivileged in CI and on any
+developer machine.
+
+## Scenarios
+
+**Controls** must be OK at every read after warm-up, with no Unknown:
+
+| Control | Condition |
+| --- | --- |
+| `clean` | no impairment, 60 s |
+| `rtt_rise_healthy` | RTT rises from 20 to 60 ms with 400 ms latency, no loss |
+| `high_bitrate` | 2500 packets/s (26 Mbit/s), no impairment |
+
+**Fault classes.** "Fine" means OK or Watch; "bad" means At risk or Failing.
+
+| Fault class | Fault | Sender expects | Receiver expects | Right knob, sender / receiver |
+| --- | --- | --- | --- | --- |
+| `random_loss_2pct` | 2 % random loss, 200 ms latency | fine | fine | — |
+| `burst_loss` | 30-packet burst every 2 s | fine | fine | — |
+| `jitter_reorder` | 0–20 ms jitter (heavy reordering) | fine | fine | — |
+| `heavy_loss_tight_latency` | 15 % loss, 60 ms latency on 20 ms RTT | Watch or worse | bad | latency / latency |
+| `rtt_step` | RTT 20 → 140 ms, 200 ms latency | bad | bad | latency / latency |
+| `bandwidth_cap` | 3 Mbit/s cap, 100 kB queue, 40 s | bad | bad | bitrate / bitrate |
+| `outage_6s` | blackhole for 6 s (peer idle timeout 10 s, settle 6 s) | bad | bad | none / none |
+| `receiver_stall` | receiving application stops reading (3 MB receive buffer) | bad | bad | receiving application / receiving application |
+| `maxbw_too_low` | sender SRTO_MAXBW 2.8 Mbit/s | bad | bad | MAXBW / not judged |
+| `connection_lost` | blackhole for good | Failing | Failing | — |
+
+Three of the ten fault classes (loss, bursts, jitter) are false-alarm checks:
+a role passes them by staying OK or Watch. Seven classes require detection.
+
+Where the expectations came from:
+- **Verdict sets:** written from what each end can observe before the first
+  run. The sender's "Watch or worse" for heavy loss reflects what a sender can
+  know: it sees loss reports and a latency of 3 × RTT, but not whether the
+  viewer lost data.
+- **Knob expectations:** added after the third calibration run, once advice
+  was judged.
+- **Outage:** the original 3 s outage was replaced after review, because its
+  fault ended before the detection grace, so a wrong OK could not be scored.
+  The receiver's knob was tightened from "none or latency" to "none".
+
+## Scoring
+
+For each role:
+
+- **Verdict:** the worst verdict from fault onset to the end of the settle
+  period must be in the expected set.
+- **Wrong OK:** a role whose expected set excludes OK must not report OK on
+  three consecutive reads in the scored window. The window runs from 4 s after
+  onset (1 s gauge window + 2 s hysteresis + 1 s margin) until 2 s after the
+  fault ends. Those last 2 s cover the aftermath, such as drops that arrive
+  with the first packets after an outage.
+- **Advice** (reported, not gated): the knob named most often at the worst
+  verdict, before any lost connection, must be one of the right knobs.
+
+**Gate:** for each role:
+- at least 90 % of the fault classes right (9 of 10);
+- no wrong OK;
+- every control OK.
+
+## Results (1 October 2026, loopback, this cloud workspace)
+
+Three consecutive full runs per provider with the final code, both providers
+running at the same time. Every run passed with the same scores:
+
+| Provider | Sender right | Receiver right | Wrong OK | Controls | Advice right, sender / receiver |
+| --- | --- | --- | --- | --- | --- |
+| Haivision SRT v1.5.5 | 10/10 | 10/10 | 0 | 3/3 OK | 6/6 / 5/5 |
+| Robotweax SRT | 10/10 | 10/10 | 0 | 3/3 OK | 6/6 / 5/5 |
+
+Typical verdicts (both providers alike unless noted):
+
+| Fault class | Sender | Receiver | Detected after onset |
+| --- | --- | --- | --- |
+| loss, bursts, jitter | OK | OK | — |
+| `heavy_loss_tight_latency` | Watch, latency low for RTT → latency 90–100 ms | At risk, late repairs → latency 130–150 ms | at once |
+| `rtt_step` | Failing, latency low for RTT → latency 570 ms | same | 2.2–2.5 s |
+| `bandwidth_cap` | Failing: latency low for RTT, then path congested → bitrate (Haivision later: path capacity exceeded) | Failing: path congested → bitrate, held for the whole 40 s | 2.2–2.3 s |
+| `outage_6s` | Failing, acknowledgements stalled (no knob) | OK for ~3 s, then Unknown (no data), then Failing, unrecovered loss (no knob) | 2.4 s / 8.1–8.3 s |
+| `receiver_stall` | Failing, peer read stall → receiving application | Failing, application read stall | 3.3–3.4 s / 2.1–2.2 s |
+| `maxbw_too_low` | Failing, sender drops → MAXBW 680–690 kB/s | Failing; advice latency or bitrate (it cannot see the sender's setting) | 2.8–3.0 s / 2.3 s |
+| `connection_lost` | Failing, acknowledgements stalled → connection lost | Unknown (no data) → Failing, connection lost | 2.4 s / 5.2 s |
+
+During a blackout, a receiver cannot tell a dead path from a paused source. It
+keeps its verdict for 1 s (the gauge window) plus 2 s, then says Unknown. After
+the path returns, it waits 2 s for evidence before OK, so the drops caused by
+the gap become Failing without an OK in between.
+
+## What the lab changed
+
+**First run.** The receiver gate passed on both providers. The sender gate
+failed: on Haivision 7/10 with a failing clean control, and one wrong OK on
+Robotweax. Fixes from the measured traces:
+
+- **Path headroom.**
+  - What the trace showed: the capacity estimate follows the arrival rate. On
+    a clean path it reads 4.1–5.7 Mbit/s for a 5.4 Mbit/s stream; with jitter
+    it falls to 3 Mbit/s.
+  - Fix: thresholds moved to 1.25 / 1.5 / 2.0. The ratio is graded only with
+    congestion evidence: a filling send buffer, sender drops, or the
+    congestion signature below.
+- **Sender read stall.**
+  - What the trace showed: when the receiving application stops, the flow
+    window drains (1900 → 0 packets in 4 s), while flight ÷ flow window stays
+    near 0.01.
+  - Fix: the sender grades receive-buffer occupancy beyond what the latency
+    explains.
+- **Sender-drop advice.** It is now evidence-based. An outage gives
+  `acknowledgements_stalled` with no knob, and MAXBW at the cap gives a MAXBW
+  increase.
+- **Congestion.**
+  - What the trace showed: under the cap, RTT went from 21 to 286 ms with 44 %
+    loss, and both ends advised more latency.
+  - Fix: RTT above 2 × baseline + 10 ms with sustained loss now gives
+    `path_congested` and a lower bitrate.
+
+**Independent review.** It found two defects that the 22 s scenarios could not
+show, plus weaknesses in the method. All are fixed, each with a unit test or a
+scenario:
+
+- **Congestion diagnosis faded after ~30 s.** The baseline RTT drifted toward
+  the congested RTT. The baseline is now the lowest RTT of loss-free samples
+  over 5 minutes; lossy samples never raise it. Tests: `bandwidth_cap` held
+  for 40 s, and a 2-minute unit test.
+- **The sender's flow-window reference ratcheted up after drops.** Libsrt
+  grows the flow window by dropped packets, which left a permanent false
+  read-stall bias. Samples with sender drops no longer raise the reference.
+- **The outage could not be scored for a wrong OK.** It also showed a real
+  gap: the receiver read OK for 2 s right after the path returned, before the
+  drops counted. Fixes:
+  - OK now needs 2 s of evidence after a gap or at stream start;
+  - escalations that begin in that time finish first;
+  - the outage lasts 6 s;
+  - the wrong-OK window covers 2 s of aftermath.
+- **CI flakiness.** A single OK read no longer fails the gate; it takes three
+  consecutive reads.
+- **Short controls.** Two controls were added (a healthy RTT rise and a
+  26 Mbit/s stream), and the clean control runs for 60 s.
+- **Congestion missed on a shallow queue.** RTT 21.8 → 59.5 ms with 60 % loss
+  fell under the old 2 × base + 20 ms threshold. The absolute term is now
+  10 ms, and path headroom counts congestion as evidence.
+
+## Provider differences seen
+
+- **Capacity estimate:**
+  - Haivision SRT reports a capacity estimate (`mbpsBandwidth`) that follows
+    the arrival rate.
+  - Robotweax SRT's field is a measured arrival rate, so path headroom does
+    not apply there.
+- **Reordering:**
+  - With 0–20 ms jitter, Haivision SRT retransmits heavily: 2.4–3.4 Mbit/s on
+    a 5.4 Mbit/s stream, with no receiver loss. Robotweax SRT does not.
+  - Neither side's viewer loses data, so both report OK; the overhead shows in
+    the retransmission panels.
+  - SRTO_LOSSMAXTTL is the knob. The engine does not advise it yet, because
+    the sender has no reorder signal.
+- **Stalled receiver:**
+  - Haivision SRT breaks the connection once the receive buffer overflows
+    ("SEQUENCE DISCREPANCY … BREAKING CONNECTION").
+  - Robotweax SRT keeps the connection, and the sender drops instead.
+
+## Limits
+
+- **Loopback only.** Real-network jitter, cross traffic and estimator
+  behaviour will differ. Wi-Fi or cellular RTT swings with random loss above
+  5 % may read as congestion. Thresholds stay defaults until field streams
+  calibrate them (Phase 4).
+- **Not yet covered:** variable-bitrate and bursty senders. Encryption, FEC
+  and bonding scenarios join the lab in Phase 4.
+- **Timing-based.** The slowest detection (sender in `receiver_stall`,
+  3.4 s) leaves about 0.6 s plus the three-read rule against the 4 s grace. A
+  heavily loaded runner can still miss it; the CI report shows the timeline.

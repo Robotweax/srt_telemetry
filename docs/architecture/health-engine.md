@@ -24,6 +24,9 @@ current data: the unrecovered ratio for a receiver, the sender backlog for a
 sender. When nothing has arrived (or been sent) within the gauge window for
 2 s more, the verdict becomes Unknown / `no_data` instead of keeping an old OK.
 Shorter gaps, such as a trickle stream between packets, keep the verdict.
+After such a gap, and at stream start, OK needs 2 s of fresh evidence. Any
+escalation that begins in those 2 s finishes first, so the drops that arrive
+with the first packets after an outage never follow an OK.
 
 ## Indicators
 
@@ -37,16 +40,27 @@ three thresholds (Watch, At risk, Failing).
 | Unrecovered ratio | receiver | dropped ÷ (unique received + dropped) over 10 s | higher | > 0 / 0.1 % / 1 % |
 | Recovery efficiency | receiver | 1 − (dropped − undecryptable) ÷ loss detected over 10 s, graded from 10 lost packets | lower | 0.99 / 0.9 / 0.5 |
 | Overhead budget | sender | retransmitted ÷ allowed overhead over 10 s; allowed = input × OHEADBW, or MAXBW − input | higher | 0.5 / 0.8 / 1.0 |
-| Path headroom | sender | (unique + retransmitted) rate ÷ estimated link capacity over 1 s | higher | 0.75 / 0.9 / 1.05 |
+| Path headroom | sender | (unique + retransmitted) rate ÷ estimated link capacity over 1 s; graded only with congestion evidence (send buffer above its Watch level, sender drops, or the congestion signature) | higher | 1.25 / 1.5 / 2.0 |
 | Sender backlog | sender | send buffer span ÷ too-late drop threshold, maximum over 1 s; any sender drop in 10 s is at least At risk, above 0.1 % Failing | higher | 0.35 / 0.6 / 0.9 |
-| Peer read stall | both | sender: flight ÷ flow window; receiver: receive buffer span ÷ latency (data waiting for the application); maximum over 1 s | higher | sender 0.6 / 0.85 / 0.98; receiver 1.5 / 2.5 / 4 |
+| Peer read stall | both | sender: the larger of flight ÷ flow window and the share of the receive buffer held beyond 1.5 × (latency + RTT) of the stream (flow window against its largest value); receiver: receive buffer span ÷ latency (data waiting for the application); maximum over 1 s | higher | sender 0.25 / 0.5 / 0.9; receiver 1.5 / 2.5 / 4 |
 
 A sender blames the receiving application only when the advertised flow window
-has shrunk to under half its largest value. A full flight with an unchanged
-window means acknowledgements stopped (`acknowledgements_stalled`, no knob):
-the path or the peer is unresponsive.
+shrank to under half its largest value within the last 10 s. Libsrt grows the
+flow window by the packets a sender drops, so samples with sender drops do
+not raise that reference. Without the latency in the statistics, occupancy is
+not graded. Haivision SRT
+breaks the connection once a stalled receiver's buffer overflows, and its flow
+window recovers before that, so the evidence is kept for the count window.
 
-The defaults are defaults until field streams calibrate them (Phase 4).
+Path headroom needs care: both providers' capacity estimate follows the
+arrival rate. On a clean loopback path it swings between about 4.1 and
+5.7 Mbit/s for a 5.4 Mbit/s stream, and 0–20 ms of jitter pulls it down to
+3 Mbit/s on a path with room (fault lab). The ratio is therefore not evidence
+on its own; it is graded only when this end also sees congestion.
+
+The defaults were checked against the [fault lab](../qualification/fault-lab.md)
+on loopback with both providers. They remain defaults until field streams
+calibrate them (Phase 4).
 Products override any of them with `health_engine_set_thresholds`, or
 `sampler_set_health_thresholds` per role.
 
@@ -86,14 +100,33 @@ stall) and a suggested knob with a direction and a value.
 | Reason | Knob | Suggested value |
 | --- | --- | --- |
 | `recovery_headroom_low`, `late_repairs`, `latency_low_for_rtt`, most `unrecovered_loss` | latency, increase | max(1.5 × current, 4 × RTT, or 6 × RTT above 1 % loss), in 10 ms steps |
-| `unrecovered_loss` / `recovery_inefficient` with latency ≥ 8 × RTT and loss above 5 % | bitrate, decrease | 80 % of the received rate |
+| any of the above while the path is congested: `path_congested` | bitrate, decrease | 80 % of what the path delivers (receiver: unique received rate; sender: unique rate × (1 − reported loss share)) |
+| `unrecovered_loss` / `recovery_inefficient` with latency ≥ 8 × RTT and loss above 5 % in most samples | bitrate, decrease | 80 % of the received rate |
 | `undecryptable` | passphrase, check | none |
 | `overhead_budget_high` (relative MAXBW) | OHEADBW, increase | 1.5 × the retransmission share, in 5 % steps, at least 5 % above the current value; above 100 % (SRT's maximum) lower the bitrate instead |
 | `overhead_budget_high` (absolute MAXBW) | MAXBW, increase | 1.25 × the sending rate, in bytes/s as SRTO_MAXBW takes it |
 | `path_capacity_exceeded` | bitrate, decrease | 70 % of the estimated capacity |
-| `sender_backlog`, `sender_drops` | bitrate, decrease (path near capacity, or by default); latency, increase (latency short for the RTT) | 70 % of capacity, or 80 % of the sending rate |
+| `sender_backlog`, `sender_drops` | by evidence, first match: flow window shrank → `peer_read_stall`, receiving application; sending at an absolute MAXBW → MAXBW, increase; above the estimated capacity → bitrate, decrease; latency short for the RTT → latency, increase; retransmissions above 10 % → bitrate, decrease; otherwise `acknowledgements_stalled` | 1.25 × offered rate (sent + dropped) in bytes/s; 70 % of capacity; latency as above; 80 % of the unique rate |
 | `peer_read_stall`, `application_read_stall` | receiving application, check | none |
-| `acknowledgements_stalled` | none | none |
+| `acknowledgements_stalled` | none: data waits without loss reports, so the path or the peer is not acknowledging (an outage); no setting fixes it | none |
+| receiver drops after arrivals stopped for longer than the latency | none: no retransmission recovers that gap | none |
+
+**Congestion.** The engine keeps a baseline RTT: the lowest RTT of loss-free
+samples over the last 5 minutes, in 10 s buckets. Lossy samples never raise
+it, so a congested path keeps its diagnosis for as long as it lasts. A route
+change without loss is adopted within 5 minutes. The path counts as congested
+when RTT exceeds 2 × baseline + 10 ms and loss above 5 % shows in most samples
+of the count window. A path that queues and
+drops is not helped by more latency, so latency advice turns into a bitrate
+decrease. In the fault lab, a 3 Mbit/s cap on a 5.4 Mbit/s stream raises RTT
+from 21 to 286 ms with 44 % loss. Both ends switch from latency advice to a
+lower bitrate within about 1.5 s of the verdict: 2.5 Mbit/s at the sender,
+2.7 Mbit/s at the receiver.
+
+**What one end cannot know.** When a sender's MAXBW is set too low, the receiver
+sees packets arrive late and headroom fall, and it advises more latency. Only
+the sender can see its own setting. Explaining the difference between the two
+ends is SRT Doctor's job.
 
 ## Context
 
@@ -144,5 +177,5 @@ robotweax_srt_telemetry_sampler_health_read(sampler, source_id, &status);
   clean loopback stream is OK on both ends; closing the caller turns the
   receiver Failing / `connection_lost` and journals it.
 
-The fault-lab gate (right verdict in at least 9 of 10 fault classes per role,
-never a wrong OK) runs on real SRT streams in the next part.
+- `robotweax_srt_telemetry_public_srt_fault_lab` (label `lab`, each provider):
+  the [fault-lab gate](../qualification/fault-lab.md) on real SRT streams.
