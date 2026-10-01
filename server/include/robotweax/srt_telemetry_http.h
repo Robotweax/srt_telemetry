@@ -72,8 +72,10 @@ extern "C"
         uint32_t max_connections;
         /* Live feed snapshot interval, 100 ms to 60 s; default 1000 ms. */
         uint32_t live_interval_ms;
-        /* Time a client has to send its request and to read the response;
-         * default 10000 ms. */
+        /* Time a client has from connecting to send its request head, and
+         * the longest a response may stall while the client does not read;
+         * default 5000 ms. When all connections are taken, the oldest one
+         * still waiting for its request head is closed to make room. */
         uint32_t request_timeout_ms;
         uint32_t reserved2;
         /* When not empty, every request needs "Authorization: Bearer <token>"

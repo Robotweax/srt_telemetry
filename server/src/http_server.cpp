@@ -483,8 +483,11 @@ struct Connection
      * reset. */
     bool draining = false;
     Clock::time_point drain_since;
-    /* HTTP: the request must arrive and its response be read by then. */
+    /* HTTP: the request head must arrive by the deadline; afterwards the
+     * response must keep moving (no request_timeout without progress). */
     Clock::time_point deadline;
+    bool head_received = false;
+    Clock::time_point accepted;
     /* WebSocket keepalive and backlog tracking. */
     Clock::time_point last_input;
     Clock::time_point last_ping;
@@ -826,7 +829,11 @@ bool host_allowed(const Server &server, const Request &request)
     {
         return false;
     }
-    const auto name = host_part(*host);
+    auto name = host_part(*host);
+    if (!name.empty() && name.back() == '.')
+    {
+        name.pop_back(); /* "name." is the same host */
+    }
     if (name == "localhost" || (name.size() > 10 && name.ends_with(".localhost")) || is_ip_literal(name))
     {
         return true;
@@ -848,7 +855,18 @@ bool same_origin(const Request &request)
     {
         return false;
     }
-    return origin_authority(*origin) == host_authority(*host);
+    const auto origin_hostport = origin_authority(*origin);
+    /* A Host without a port (behind a reverse proxy, often TLS) is compared
+     * by name: the proxy's scheme decides the port. */
+    const auto host_text = lower(*host);
+    const bool bracketed = !host_text.empty() && host_text.front() == '[';
+    const auto colon = host_text.rfind(':');
+    const bool host_has_port = colon != std::string::npos && (!bracketed || colon > host_text.find(']'));
+    if (!host_has_port)
+    {
+        return host_part(origin_hostport) == host_part(host_text);
+    }
+    return origin_hostport == host_authority(*host);
 }
 
 bool valid_websocket_key(const std::string &key)
@@ -889,9 +907,14 @@ void handle_request(Server &server, Connection &c, const Request &request)
         reply(405, text, "only GET and HEAD are served\n", "Allow: GET, HEAD\r\n");
         return;
     }
-    if (request.version == "HTTP/1.1" && request.header("host") == nullptr)
+    std::size_t hosts = 0;
+    for (const auto &h : request.headers)
     {
-        reply(400, text, "Host header required\n");
+        hosts += h.first == "host" ? 1u : 0u;
+    }
+    if ((request.version == "HTTP/1.1" && hosts == 0) || hosts > 1)
+    {
+        reply(400, text, "exactly one Host header required\n");
         return;
     }
     if (request.path == "/healthz")
@@ -1028,8 +1051,10 @@ void handle_request(Server &server, Connection &c, const Request &request)
         body += more ? "true" : "false";
         if (more)
         {
+            /* Always forward, so a client following pages cannot loop even
+             * if a clock step made start times go backwards. */
             body += ",\"next_since_ms\":";
-            json_u64(body, records[history_page].start_unix_nano / 1'000'000);
+            json_u64(body, std::max(records[history_page].start_unix_nano / 1'000'000, since_ms + 1));
         }
         body += ",\"records\":[";
         for (std::size_t i = 0; i < shown; ++i)
@@ -1172,7 +1197,7 @@ void handle_ws_input(Connection &c)
             {
                 const auto code = static_cast<std::uint16_t>((static_cast<unsigned char>(payload[0]) << 8) |
                                                              static_cast<unsigned char>(payload[1]));
-                const bool valid = (code >= 1000 && code <= 1003) || (code >= 1007 && code <= 1011) ||
+                const bool valid = (code >= 1000 && code <= 1003) || (code >= 1007 && code <= 1014) ||
                                    (code >= 3000 && code <= 4999);
                 ws_close(c, valid ? code : 1002);
             }
@@ -1373,6 +1398,7 @@ void handle_http_input(Server &server, Connection &c)
     }
     /* Bytes after the head: frames sent right behind an upgrade. */
     c.in.erase(0, end + 4);
+    c.head_received = true;
     handle_request(server, c, request);
     if (c.websocket)
     {
@@ -1438,7 +1464,7 @@ void run(Server &server)
             if (c.draining)
             {
                 char discard[8192];
-                while (true)
+                for (int reads = 0; reads < 16; ++reads) /* bounded per loop */
                 {
                     const auto n = ::recv(c.fd, discard, sizeof(discard), 0);
                     if (n > 0)
@@ -1504,6 +1530,10 @@ void run(Server &server)
                 if (n > 0)
                 {
                     c.out.erase(0, static_cast<std::size_t>(n));
+                    if (c.head_received)
+                    {
+                        c.deadline = now + request_timeout; /* progress */
+                    }
                     continue;
                 }
                 if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
@@ -1516,7 +1546,7 @@ void run(Server &server)
              * the deadline, measured from accept. */
             if (!c.websocket && !c.draining && now > c.deadline)
             {
-                if (!c.close_after_write && c.out.empty())
+                if (!c.head_received && !c.close_after_write && c.out.empty())
                 {
                     respond(c, 408, "text/plain; charset=utf-8", "request timeout\n");
                     c.deadline = now + request_timeout;
@@ -1547,7 +1577,7 @@ void run(Server &server)
                                  server.connections.end());
         if ((fds[1].revents & POLLIN) != 0)
         {
-            while (true)
+            for (int accepted = 0; accepted < 64; ++accepted) /* bounded per loop */
             {
                 const int fd = accept_connection(server.listen_fd);
                 if (fd < 0)
@@ -1566,6 +1596,30 @@ void run(Server &server)
 #endif
                 if (server.connections.size() >= server.config.max_connections)
                 {
+                    /* Full: make room by closing the oldest connection still
+                     * waiting for its request head, so slow or idle clients
+                     * cannot keep scrapes out. */
+                    Connection *oldest = nullptr;
+                    for (const auto &other : server.connections)
+                    {
+                        if (!other->websocket && !other->head_received && !other->abort && !other->close_after_write &&
+                            (oldest == nullptr || other->accepted < oldest->accepted))
+                        {
+                            oldest = other.get();
+                        }
+                    }
+                    if (oldest != nullptr)
+                    {
+                        oldest->abort = true;
+                        ::close(oldest->fd);
+                        oldest->fd = -1;
+                        server.connections.erase(std::find_if(server.connections.begin(), server.connections.end(),
+                                                              [oldest](const std::unique_ptr<Connection> &x)
+                                                              { return x.get() == oldest; }));
+                    }
+                }
+                if (server.connections.size() >= server.config.max_connections)
+                {
                     Connection refused;
                     respond(refused, 503, "text/plain; charset=utf-8", "too many connections\n", "Retry-After: 5\r\n");
                     static_cast<void>(::send(fd, refused.out.data(), refused.out.size(), MSG_NOSIGNAL));
@@ -1575,6 +1629,7 @@ void run(Server &server)
                 auto c = std::make_unique<Connection>();
                 c->fd = fd;
                 c->deadline = now + request_timeout;
+                c->accepted = now;
                 c->last_input = now;
                 server.connections.push_back(std::move(c));
             }
@@ -1632,7 +1687,7 @@ robotweax_srt_telemetry_http_server_config_default(robotweax_srt_telemetry_sampl
     std::strcpy(config->bind_address, "127.0.0.1");
     config->max_connections = 32;
     config->live_interval_ms = 1000;
-    config->request_timeout_ms = 10'000;
+    config->request_timeout_ms = 5'000;
 }
 
 extern "C" robotweax_srt_telemetry_error

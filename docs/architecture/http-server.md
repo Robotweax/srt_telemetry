@@ -27,7 +27,7 @@ robotweax_srt_telemetry_http_server_stop(server);   /* before destroying the sam
 | --- | --- |
 | `GET /metrics` | Prometheus text 0.0.4, default window ([names](metric-names.md)) |
 | `GET /api/v1/snapshot[?window=S]` | JSON snapshot, `srt-telemetry.snapshot.v1`; `S` must be a configured window length in seconds |
-| `GET /api/v1/sources/{id}/history[?since_ms=T]` | Compact per-window history of one source from `T` (Unix ms; default the last hour), at most 3,600 records per response. When `more` is true, fetch the next page with `since_ms=next_since_ms`. It needs `sampler_enable_history` |
+| `GET /api/v1/sources/{id}/history[?since_ms=T]` | Compact per-window history of one source from `T` (Unix ms; default the last hour), at most 3,600 records per response. When `more` is true, fetch the next page with `since_ms=next_since_ms`. Pages follow the order windows closed, which is time order unless the wall clock stepped back. `next_since_ms` always moves forward, so following it cannot loop. It needs `sampler_enable_history` |
 | `GET /api/v1/events[?after=N]` | Up to 1,000 journal events after sequence `N`, with `overwritten` and `more`. It needs `sampler_enable_journal` (else 404) |
 | `GET /api/v1/live[?window=S]` | WebSocket (RFC 6455) feed |
 | `GET /healthz` | `ok`, without authentication or host check, for liveness probes |
@@ -96,20 +96,27 @@ away).
   - an IP literal;
   - a name listed in `allowed_hosts`.
 
-  Any other host gets 421. With a token, any `Host` is accepted, because the
-  page cannot know the token.
+  Any other host gets 421. A trailing dot (`name.`) is ignored. With a token,
+  any `Host` is accepted, because the page cannot know the token.
 - **Cross-site feed.** A WebSocket request whose `Origin` names another host
   or port is refused (403), as is `Origin: null`. The default ports (80, 443)
-  are filled in before comparing.
+  are filled in before comparing. A `Host` without a port, as a reverse proxy
+  (often TLS) forwards it, is compared by name only.
 - **Read-only and bounded.**
-  - Only GET and HEAD are served (405 otherwise). HTTP/1.1 requests need
-    `Host` (400 otherwise).
+  - Only GET and HEAD are served (405 otherwise). A request needs exactly
+    one `Host` header (400 otherwise; HTTP/1.0 may omit it).
   - Requests over 16 KB get 413; unknown paths get 404.
-  - A client has `request_timeout_ms` (default 10 s) from accepting the
-    connection to send its request, then gets 408. Within that same time it
-    must read its response, or it is disconnected. Trickling bytes does not
-    extend the deadline.
-  - At most `max_connections` (default 32) connections; one more gets 503.
+  - A client has `request_timeout_ms` (default 5 s) from accepting the
+    connection to send its request head, then gets 408. Trickling bytes does
+    not extend this.
+  - A response may stall for at most `request_timeout_ms` while the client
+    does not read; slow but steady readers are not cut off.
+  - At most `max_connections` (default 32) connections. When they are all
+    taken, the oldest connection still waiting for its request head is
+    closed to make room. A new client gets 503 only when every connection is
+    a feed client or already being answered. Slow clients therefore cannot
+    keep scrapes out: 32 trickling sockets that reconnected every 9 s left
+    50 of 50 `/metrics` requests answered, against 18 of 50 before.
   - WebSocket input is read in bounded amounts per loop, frames are at most
     64 KB, and output is bounded as described under Live feed.
   - Descriptors are close-on-exec, so processes the host starts do not
@@ -140,7 +147,9 @@ before destroying the sampler, and never from a sampler callback.
   live events, ping and pong, and the close handshake;
 - RFC 6455 protocol errors, and frames sent right behind the upgrade;
 - the window choice, token handling (including `+`), the feed-slot reserve,
-  the connection limit, and going-away on stop;
+  eviction of the oldest idle connection when full, and going-away on stop;
+- a feed behind a TLS proxy (`https` Origin, `Host` without a port),
+  duplicate `Host`, and trailing dots;
 - history pages;
 - the abuse cases found in review:
   - DNS-rebinding hosts;

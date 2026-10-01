@@ -365,6 +365,10 @@ void test_endpoints()
     check(r.status == 200 && r.body.empty() && r.head.find("Content-Length: 0") == std::string::npos, "HEAD: headers only");
     r = request(port, "GET /metrics HTTP/1.1\r\n\r\n");
     check(r.status == 400, "HTTP/1.1 without Host: 400");
+    r = request(port, "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nHost: evil.example\r\n\r\n");
+    check(r.status == 400, "duplicate Host: 400");
+    r = request(port, "GET /api/v1/snapshot HTTP/1.1\r\nHost: localhost.\r\n\r\n");
+    check(r.status == 200, "trailing dot in the host name");
     r = request(port, "GET /metrics HTTP/1.1\r\nHost : 127.0.0.1\r\n\r\n");
     check(r.status == 400, "space before the header colon: 400");
     /* DNS rebinding: a page on another name resolving to 127.0.0.1. */
@@ -406,6 +410,19 @@ void test_live_feed()
     check(read_all(missing).rfind("HTTP/1.1 400", 0) == 0, "feed without upgrade: 400");
     ::close(missing);
 
+    /* Behind a TLS reverse proxy: Host without a port, https Origin. */
+    {
+        const int proxied = connect_to(port);
+        send_all(proxied, "GET /api/v1/live HTTP/1.1\r\nHost: localhost\r\nOrigin: https://localhost\r\n"
+                          "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
+        check(read_head(proxied).rfind("HTTP/1.1 101", 0) == 0, "feed behind a TLS proxy (https Origin, Host without port)");
+        ::close(proxied);
+        const int other_port = connect_to(port);
+        send_all(other_port, upgrade_request(port, "/api/v1/live", "Origin: http://127.0.0.1:1\r\n"));
+        check(read_all(other_port).rfind("HTTP/1.1 403", 0) == 0, "Origin on another port: 403");
+        ::close(other_port);
+    }
     const int fd = connect_to(port);
     send_all(fd, upgrade_request(port, "/api/v1/live", "Origin: http://127.0.0.1:" + std::to_string(port) + "\r\n"));
     const auto head = read_head(fd);
@@ -518,15 +535,19 @@ void test_token_and_limits()
     send_all(fd3, upgrade_request(port, "/api/v1/live?token=s3cret+token"));
     check(read_all(fd3).rfind("HTTP/1.1 503", 0) == 0, "third feed client: 503, slots kept for scrapes");
     ::close(fd3);
-    /* Six connections are the limit; the seventh gets 503. */
+    /* Six connections are the limit. When idle connections (no request
+     * yet) fill the rest, the oldest one makes room for a new client. */
     std::vector<int> idle;
     for (int i = 0; i < 4; ++i)
     {
         idle.push_back(connect_to(port));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     const auto r = get(port, "/healthz");
-    check(r.status == 503, "connection limit: 503");
+    check(r.status == 200, "full of idle connections: the oldest is evicted for a new request");
+    char probe = 0;
+    check(::recv(idle[0], &probe, 1, 0) == 0, "the oldest idle connection was closed");
     for (const int i : idle)
     {
         ::close(i);
