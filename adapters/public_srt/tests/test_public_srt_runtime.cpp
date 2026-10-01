@@ -6,6 +6,11 @@
 #include <srt/srt.h>
 #endif
 
+#if defined(ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
+#define ROBOTWEAX_SRT_TELEMETRY_USE_FLAT_SRT_HEADER
+#endif
+#include <robotweax/srt_telemetry_public_srt_host.h>
+
 #if defined(_WIN32)
 #include <winsock2.h>
 #else
@@ -23,6 +28,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <numeric>
@@ -95,6 +101,12 @@ class Socket final
     [[nodiscard]] SRTSOCKET get() const noexcept
     {
         return socket_;
+    }
+
+    void adopt(const SRTSOCKET socket) noexcept
+    {
+        static_cast<void>(close());
+        socket_ = socket;
     }
 
     int close() noexcept
@@ -1149,6 +1161,323 @@ int run_field_coverage()
     return caller_ok && accepted_ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+
+struct Monitor final
+{
+    ~Monitor()
+    {
+        robotweax_srt_telemetry_public_srt_connection_monitor_destroy(value);
+    }
+
+    robotweax_srt_telemetry_public_srt_connection_monitor *value = nullptr;
+};
+
+bool create_monitor(const SRTSOCKET socket, Monitor &monitor, const bool capture_stream_id = false)
+{
+    robotweax_srt_telemetry_public_srt_connection_config_v1 config{};
+    config.struct_size = sizeof(config);
+    config.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    config.socket = socket;
+    config.provider = runtime_provider;
+    config.capture_stream_id = capture_stream_id ? 1u : 0u;
+    robotweax_srt_telemetry_host_connection_functions(&config);
+    return robotweax_srt_telemetry_public_srt_connection_monitor_create(&config, &monitor.value) ==
+           ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+robotweax_srt_telemetry_public_srt_connection_result_v1 poll_monitor(Monitor &monitor)
+{
+    robotweax_srt_telemetry_public_srt_connection_result_v1 result{};
+    result.struct_size = sizeof(result);
+    result.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    const auto now = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+    if (robotweax_srt_telemetry_public_srt_connection_monitor_poll(monitor.value, now, now,
+                                                                   &result) !=
+        ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        std::cerr << "FAIL: connection monitor poll\n";
+    }
+    return result;
+}
+
+/* Polls until predicate(result) holds or the deadline passes; returns the
+ * union of all events seen and the last result. */
+template <typename Predicate>
+bool poll_until(Monitor &monitor, Predicate predicate,
+                robotweax_srt_telemetry_public_srt_connection_result_v1 &last,
+                std::uint64_t &seen_events, const std::chrono::milliseconds timeout)
+{
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (true)
+    {
+        last = poll_monitor(monitor);
+        seen_events |= last.events;
+        if (predicate(last))
+        {
+            return true;
+        }
+        if (std::chrono::steady_clock::now() >= deadline)
+        {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
+struct PairOptions
+{
+    const char *caller_passphrase = nullptr;
+    const char *listener_passphrase = nullptr;
+    const char *packet_filter = nullptr;
+    const char *stream_id = nullptr;
+};
+
+bool set_text(const SRTSOCKET socket, const SRT_SOCKOPT option, const char *value,
+              const std::string_view name)
+{
+    return value == nullptr ||
+           srt_ok(srt_setsockflag(socket, option, value, static_cast<int>(std::strlen(value))),
+                  name);
+}
+
+/* Connects caller to a listener. Returns false if the connection failed;
+ * accepted is left invalid in that case. */
+bool connect_pair(const PairOptions &options, Socket &listener, Socket &caller, Socket &accepted,
+                  const bool expect_failure = false)
+{
+    sockaddr_in address{};
+    if (listener.get() == SRT_INVALID_SOCK || caller.get() == SRT_INVALID_SOCK ||
+        !configure_caller(caller.get()) ||
+        !set_text(caller.get(), SRTO_PASSPHRASE, options.caller_passphrase, "caller passphrase") ||
+        !set_text(listener.get(), SRTO_PASSPHRASE, options.listener_passphrase,
+                  "listener passphrase") ||
+        !set_text(caller.get(), SRTO_PACKETFILTER, options.packet_filter, "caller filter") ||
+        !set_text(listener.get(), SRTO_PACKETFILTER, options.packet_filter, "listener filter") ||
+        !set_text(caller.get(), SRTO_STREAMID, options.stream_id, "stream id") ||
+        !bind_ephemeral_udp(listener.get(), address) ||
+        !srt_ok(srt_listen(listener.get(), 1), "srt_listen"))
+    {
+        return false;
+    }
+    const auto connected = srt_connect(caller.get(), reinterpret_cast<const sockaddr *>(&address),
+                                       static_cast<int>(sizeof(address)));
+    if (connected == SRT_ERROR)
+    {
+        if (!expect_failure)
+        {
+            std::cerr << "FAIL: srt_connect: " << srt_getlasterror_str() << '\n';
+        }
+        return false;
+    }
+    accepted.adopt(srt_accept(listener.get(), nullptr, nullptr));
+    if (accepted.get() == SRT_INVALID_SOCK || !configure_receiver(accepted.get()))
+    {
+        std::cerr << "FAIL: srt_accept\n";
+        return false;
+    }
+    return true;
+}
+
+bool scenario_plain_and_disconnect()
+{
+    Socket listener(srt_create_socket());
+    Socket caller(srt_create_socket());
+    Socket accepted;
+    PairOptions options;
+    options.stream_id = "telemetry-test-stream";
+    if (!connect_pair(options, listener, caller, accepted))
+    {
+        return false;
+    }
+    Monitor caller_monitor;
+    Monitor accepted_monitor;
+    if (!create_monitor(caller.get(), caller_monitor) ||
+        !create_monitor(accepted.get(), accepted_monitor, true))
+    {
+        std::cerr << "FAIL: monitor creation\n";
+        return false;
+    }
+    bool ok = true;
+    for (auto *monitor : {&caller_monitor, &accepted_monitor})
+    {
+        const auto first = poll_monitor(*monitor);
+        const auto &s = first.snapshot;
+        constexpr auto required =
+            ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_STATE |
+            ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_REJECT_REASON |
+            ROBOTWEAX_SRT_TELEMETRY_CONN_SETTINGS_FIELDS | ROBOTWEAX_SRT_TELEMETRY_CONN_KM_FIELDS |
+            ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_PEER_SRT_VERSION |
+            ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_LOCAL_SRT_VERSION;
+        if ((s.available_fields & required) != required)
+        {
+            std::cerr << "FAIL: connection fields missing 0x" << std::hex
+                      << (required & ~s.available_fields) << std::dec << '\n';
+            ok = false;
+        }
+        if ((first.events & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_CONNECTED) == 0 ||
+            s.state != SRTS_CONNECTED || s.reject_reason != 0 ||
+            std::abs(s.receiver_latency_seconds - 0.12) > 1e-9 || s.peer_srt_version == 0 ||
+            s.km_state != SRT_KM_S_UNSECURED || s.key_length_bytes != 0 ||
+            s.packet_filter[0] != '\0')
+        {
+            std::cerr << "FAIL: plain snapshot state " << s.state << ", latency "
+                      << s.receiver_latency_seconds << ", peer version " << s.peer_srt_version
+                      << ", KM " << s.km_state << '\n';
+            ok = false;
+        }
+        if (monitor == &caller_monitor &&
+            (s.available_fields & ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_STREAM_ID) != 0)
+        {
+            std::cerr << "FAIL: stream ID captured without opt-in\n";
+            ok = false;
+        }
+        if (monitor == &accepted_monitor &&
+            std::string_view(s.stream_id) != "telemetry-test-stream")
+        {
+            std::cerr << "FAIL: listener did not report the caller's stream ID: '" << s.stream_id
+                      << "'\n";
+            ok = false;
+        }
+    }
+
+    static_cast<void>(caller.close());
+    robotweax_srt_telemetry_public_srt_connection_result_v1 last{};
+    std::uint64_t seen = 0;
+    if (!poll_until(
+            accepted_monitor,
+            [](const auto &result) { return result.snapshot.state != SRTS_CONNECTED; }, last,
+            seen, std::chrono::milliseconds(5'000)) ||
+        (seen & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_DISCONNECTED) == 0)
+    {
+        std::cerr << "FAIL: peer close not reported as a disconnect (state "
+                  << last.snapshot.state << ")\n";
+        ok = false;
+    }
+    std::cout << "CONNECTION {\"provider\":\"" << runtime_provider_name
+              << "\",\"scenario\":\"peer-close\",\"stateAfterPeerClose\":" << last.snapshot.state
+              << "}\n";
+    return ok;
+}
+
+bool scenario_encrypted()
+{
+    Socket listener(srt_create_socket());
+    Socket caller(srt_create_socket());
+    Socket accepted;
+    PairOptions options;
+    options.caller_passphrase = "telemetry-passphrase";
+    options.listener_passphrase = "telemetry-passphrase";
+    if (!connect_pair(options, listener, caller, accepted))
+    {
+        return false;
+    }
+    bool ok = true;
+    for (const auto socket : {caller.get(), accepted.get()})
+    {
+        Monitor monitor;
+        if (!create_monitor(socket, monitor))
+        {
+            return false;
+        }
+        robotweax_srt_telemetry_public_srt_connection_result_v1 last{};
+        std::uint64_t seen = 0;
+        const auto secured = [](const auto &result)
+        {
+            const auto &s = result.snapshot;
+            return s.km_state == SRT_KM_S_SECURED && s.send_km_state == SRT_KM_S_SECURED &&
+                   s.receive_km_state == SRT_KM_S_SECURED;
+        };
+        if (!poll_until(monitor, secured, last, seen, std::chrono::milliseconds(3'000)) ||
+            last.snapshot.key_length_bytes != 16)
+        {
+            std::cerr << "FAIL: encrypted connection KM " << last.snapshot.km_state << "/"
+                      << last.snapshot.send_km_state << "/" << last.snapshot.receive_km_state
+                      << ", key length " << last.snapshot.key_length_bytes << '\n';
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+bool scenario_wrong_passphrase()
+{
+    Socket listener(srt_create_socket());
+    Socket caller(srt_create_socket());
+    Socket accepted;
+    PairOptions options;
+    options.caller_passphrase = "telemetry-passphrase";
+    options.listener_passphrase = "another-passphrase";
+    if (connect_pair(options, listener, caller, accepted, true))
+    {
+        std::cerr << "FAIL: mismatched passphrases connected\n";
+        return false;
+    }
+    Monitor monitor;
+    if (!create_monitor(caller.get(), monitor))
+    {
+        return false;
+    }
+    const auto result = poll_monitor(monitor);
+    std::cout << "CONNECTION {\"provider\":\"" << runtime_provider_name
+              << "\",\"scenario\":\"wrong-passphrase\",\"state\":" << result.snapshot.state
+              << ",\"rejectReason\":" << result.snapshot.reject_reason << "}\n";
+    if ((result.events & ROBOTWEAX_SRT_TELEMETRY_CONN_EVENT_REJECTED) == 0 ||
+        result.snapshot.reject_reason != SRT_REJ_BADSECRET)
+    {
+        std::cerr << "FAIL: wrong passphrase not reported as BADSECRET rejection ("
+                  << result.snapshot.reject_reason << ")\n";
+        return false;
+    }
+    return true;
+}
+
+bool scenario_packet_filter()
+{
+    Socket listener(srt_create_socket());
+    Socket caller(srt_create_socket());
+    Socket accepted;
+    PairOptions options;
+    options.packet_filter = "fec,cols:4,rows:2";
+    if (!connect_pair(options, listener, caller, accepted))
+    {
+        return false;
+    }
+    Monitor monitor;
+    if (!create_monitor(accepted.get(), monitor))
+    {
+        return false;
+    }
+    const auto result = poll_monitor(monitor);
+    const std::string_view filter(result.snapshot.packet_filter);
+    if (filter.substr(0, 4) != "fec," || filter.find("cols:4") == std::string_view::npos)
+    {
+        std::cerr << "FAIL: negotiated packet filter '" << filter << "'\n";
+        return false;
+    }
+    return true;
+}
+
+int run_connection_events()
+{
+    Runtime runtime;
+    if (!runtime.active())
+    {
+        std::cerr << "FAIL: srt_startup\n";
+        return EXIT_FAILURE;
+    }
+    const auto plain = scenario_plain_and_disconnect();
+    const auto encrypted = scenario_encrypted();
+    const auto rejected = scenario_wrong_passphrase();
+    const auto filter = scenario_packet_filter();
+    std::cout << "CONNECTION_EVENTS {\"provider\":\"" << runtime_provider_name
+              << "\",\"plainAndDisconnect\":" << plain << ",\"encrypted\":" << encrypted
+              << ",\"wrongPassphrase\":" << rejected << ",\"packetFilter\":" << filter << "}\n";
+    return plain && encrypted && rejected && filter ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 } // namespace
 
 int main(const int argc, char **argv)
@@ -1160,6 +1489,10 @@ int main(const int argc, char **argv)
     if (argc == 2 && std::string_view(argv[1]) == "--benchmark")
     {
         return run_sampling_benchmark();
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--connection-events")
+    {
+        return run_connection_events();
     }
     if (argc == 2 && std::string_view(argv[1]) == "--field-coverage")
     {
@@ -1184,7 +1517,7 @@ int main(const int argc, char **argv)
         const auto port = parse_port(argv[4]);
         return port == 0 ? EXIT_FAILURE : run_caller_peer(port);
     }
-    std::cerr << "usage: runtime-test [--benchmark | --field-coverage | --lifecycle | "
+    std::cerr << "usage: runtime-test [--benchmark | --field-coverage | --connection-events | --lifecycle | "
                  "--close-race | --role "
                  "listener | --role caller --port PORT]\n";
     return EXIT_FAILURE;
