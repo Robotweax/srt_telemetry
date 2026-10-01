@@ -156,6 +156,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [SRT statistics field map](docs/architecture/srt-stats-field-map.md)
 - [Public SRT API adapter](docs/architecture/public-srt-adapter.md)
 - [Connection monitor](docs/architecture/connection-monitor.md)
+- [Metrics and windows](docs/architecture/metrics-and-windows.md)
 - [Loss-shape observability decision](docs/architecture/loss-shape-observability.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
 - [Local incident analysis](docs/architecture/incident-analysis.md)
