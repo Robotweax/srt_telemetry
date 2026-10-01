@@ -6,6 +6,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -357,8 +359,25 @@ void test_endpoints()
     check(r.status == 400, "bad source id: 400");
     r = get(port, "/nowhere");
     check(r.status == 404, "unknown path: 404");
-    r = request(port, "POST /metrics HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\n\r\n");
-    check(r.status == 405 && r.head.find("Allow: GET") != std::string::npos, "POST: 405");
+    r = request(port, "POST /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n");
+    check(r.status == 405 && r.head.find("Allow: GET, HEAD") != std::string::npos, "POST: 405");
+    r = request(port, "HEAD /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+    check(r.status == 200 && r.body.empty() && r.head.find("Content-Length: 0") == std::string::npos, "HEAD: headers only");
+    r = request(port, "GET /metrics HTTP/1.1\r\n\r\n");
+    check(r.status == 400, "HTTP/1.1 without Host: 400");
+    r = request(port, "GET /metrics HTTP/1.1\r\nHost : 127.0.0.1\r\n\r\n");
+    check(r.status == 400, "space before the header colon: 400");
+    /* DNS rebinding: a page on another name resolving to 127.0.0.1. */
+    r = get(port, "/api/v1/snapshot", "");
+    check(r.status == 200, "IP literal host allowed");
+    r = request(port, "GET /api/v1/snapshot HTTP/1.1\r\nHost: rebind.attacker.example\r\n\r\n");
+    check(r.status == 421, "rebinding host: 421");
+    r = request(port, "GET /api/v1/snapshot HTTP/1.1\r\nHost: localhost:" + std::to_string(port) + "\r\n\r\n");
+    check(r.status == 200, "localhost allowed");
+    r = request(port, "GET /api/v1/snapshot HTTP/1.1\r\nHost: [::1]:" + std::to_string(port) + "\r\n\r\n");
+    check(r.status == 200, "IPv6 literal allowed");
+    r = get(port, "/api/v1/sources/1/history?since_ms=99999999999999999999");
+    check(r.status == 400, "since_ms overflow: 400");
     r = request(port, "garbage\r\n\r\n");
     check(r.status == 400, "bad request line: 400");
     r = request(port, "GET / HTTP/1.1\r\nX-Big: " + std::string(20'000, 'a') + "\r\n\r\n");
@@ -383,7 +402,7 @@ void test_live_feed()
     check(read_all(evil).rfind("HTTP/1.1 403", 0) == 0, "cross-origin feed: 403");
     ::close(evil);
     const int missing = connect_to(port);
-    send_all(missing, "GET /api/v1/live HTTP/1.1\r\nHost: x\r\n\r\n");
+    send_all(missing, "GET /api/v1/live HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
     check(read_all(missing).rfind("HTTP/1.1 400", 0) == 0, "feed without upgrade: 400");
     ::close(missing);
 
@@ -472,31 +491,262 @@ void test_token_and_limits()
     Setup s;
     robotweax_srt_telemetry_http_server_config_v1 config;
     robotweax_srt_telemetry_http_server_config_default(s.sampler, &config);
-    std::strcpy(config.bearer_token, "s3cret-token");
-    config.max_connections = 2;
+    std::strcpy(config.bearer_token, "s3cret+token");
+    config.max_connections = 6;
     robotweax_srt_telemetry_http_server *server = nullptr;
     robotweax_srt_telemetry_http_server_start(&config, &server);
     const auto port = robotweax_srt_telemetry_http_server_port(server);
 
     check(get(port, "/metrics").status == 401, "token required");
     check(get(port, "/metrics", "Authorization: Bearer wrong\r\n").status == 401, "wrong token");
-    check(get(port, "/metrics", "Authorization: Bearer s3cret-token\r\n").status == 200, "right token");
-    check(get(port, "/metrics?token=s3cret-token").status == 401, "query token only for the feed");
+    check(get(port, "/metrics", "Authorization: Bearer s3cret+token\r\n").status == 200, "right token");
+    check(get(port, "/metrics?token=s3cret+token").status == 401, "query token only for the feed");
     check(get(port, "/healthz").status == 200, "healthz needs no token");
     const int fd = connect_to(port);
-    send_all(fd, upgrade_request(port, "/api/v1/live?token=s3cret-token"));
+    send_all(fd, upgrade_request(port, "/api/v1/live?token=s3cret+token"));
     check(read_head(fd).rfind("HTTP/1.1 101", 0) == 0, "feed with a query token");
 
-    /* Two connections are the limit: one feed plus one idle; a third gets 503. */
-    const int idle = connect_to(port);
+    /* With a token, any Host is fine: a rebinding page cannot know it. */
+    check(request(port, "GET /metrics HTTP/1.1\r\nHost: telemetry.example\r\nAuthorization: Bearer s3cret+token\r\n\r\n")
+                  .status == 200,
+          "token: any host");
+    /* Feed clients may take all but 4 slots: 2 of 6 here. */
+    const int fd2 = connect_to(port);
+    send_all(fd2, upgrade_request(port, "/api/v1/live?token=s3cret+token"));
+    check(read_head(fd2).rfind("HTTP/1.1 101", 0) == 0, "second feed client");
+    const int fd3 = connect_to(port);
+    send_all(fd3, upgrade_request(port, "/api/v1/live?token=s3cret+token"));
+    check(read_all(fd3).rfind("HTTP/1.1 503", 0) == 0, "third feed client: 503, slots kept for scrapes");
+    ::close(fd3);
+    /* Six connections are the limit; the seventh gets 503. */
+    std::vector<int> idle;
+    for (int i = 0; i < 4; ++i)
+    {
+        idle.push_back(connect_to(port));
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     const auto r = get(port, "/healthz");
     check(r.status == 503, "connection limit: 503");
-    ::close(idle);
+    for (const int i : idle)
+    {
+        ::close(i);
+    }
     ::close(fd);
+    ::close(fd2);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     check(get(port, "/healthz").status == 200, "served again below the limit");
     robotweax_srt_telemetry_http_server_stop(server);
+}
+
+std::string masked(const int first_byte, const std::string &payload)
+{
+    std::string frame;
+    frame += static_cast<char>(first_byte);
+    frame += static_cast<char>(0x80 | payload.size());
+    const char mask[4] = {0x01, 0x02, 0x03, 0x04};
+    frame.append(mask, 4);
+    for (std::size_t i = 0; i < payload.size(); ++i)
+    {
+        frame += static_cast<char>(payload[i] ^ mask[i % 4]);
+    }
+    return frame;
+}
+
+/* Opens a feed and returns the close code the server answers frame with. */
+int close_code_after(const std::uint16_t port, const std::string &frame)
+{
+    const int fd = connect_to(port);
+    send_all(fd, upgrade_request(port, "/api/v1/live"));
+    read_head(fd);
+    send_all(fd, frame);
+    for (int i = 0; i < 20; ++i)
+    {
+        const auto f = read_frame(fd);
+        if (f.opcode < 0)
+        {
+            break;
+        }
+        if (f.opcode == 0x8 && f.payload.size() >= 2)
+        {
+            ::close(fd);
+            return (static_cast<unsigned char>(f.payload[0]) << 8) | static_cast<unsigned char>(f.payload[1]);
+        }
+    }
+    ::close(fd);
+    return -1;
+}
+
+double seconds_for(const std::uint16_t port, const std::string &target)
+{
+    const auto start = std::chrono::steady_clock::now();
+    const auto r = get(port, target);
+    const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    return r.status == 200 ? s : 999.0;
+}
+
+void test_abuse()
+{
+    Setup s;
+    robotweax_srt_telemetry_http_server_config_v1 config;
+    robotweax_srt_telemetry_http_server_config_default(s.sampler, &config);
+    config.request_timeout_ms = 500;
+    config.max_connections = 8;
+    robotweax_srt_telemetry_http_server *server = nullptr;
+    robotweax_srt_telemetry_http_server_start(&config, &server);
+    const auto port = robotweax_srt_telemetry_http_server_port(server);
+
+    /* RFC 6455 protocol errors close with 1002 (or 1009 for size). */
+    check(close_code_after(port, masked(0x89, std::string(126, 'x')).replace(1, 1, std::string(1, char(0x80 | 126)))
+                                     .insert(2, std::string("\x00\x7e", 2))) == 1002,
+          "control frame over 125 bytes: 1002");
+    check(close_code_after(port, masked(0xC1, "hi")) == 1002, "RSV bit set: 1002");
+    check(close_code_after(port, masked(0x83, "hi")) == 1002, "reserved opcode: 1002");
+    check(close_code_after(port, std::string("\x89\x02hi", 4)) == 1002, "unmasked client frame: 1002");
+    check(close_code_after(port, masked(0x88, "x")) == 1002, "one-byte close payload: 1002");
+    check(close_code_after(port, masked(0x88, std::string("\x03\xe8", 2))) == 1000, "normal close echoed");
+
+    /* Frames sent right behind the upgrade request are not lost. */
+    {
+        const int fd = connect_to(port);
+        send_all(fd, upgrade_request(port, "/api/v1/live") + masked(0x89, "early"));
+        read_head(fd);
+        bool pong = false;
+        for (int i = 0; i < 10 && !pong; ++i)
+        {
+            const auto f = read_frame(fd);
+            pong = f.opcode == 0xA && f.payload == "early";
+        }
+        check(pong, "ping in the same segment as the upgrade answered");
+        ::close(fd);
+    }
+
+    /* A ping flood from a client that never reads stays bounded, and the
+     * server keeps answering others. */
+    {
+        const int flood = connect_to(port);
+        send_all(flood, upgrade_request(port, "/api/v1/live"));
+        read_head(flood);
+        std::atomic<bool> stop{false};
+        std::thread flooder(
+            [&]
+            {
+                const auto ping = masked(0x89, "");
+                std::string batch;
+                for (int i = 0; i < 4096; ++i)
+                {
+                    batch += ping;
+                }
+                timeval tv{0, 200'000};
+                ::setsockopt(flood, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+                for (int i = 0; i < 400 && !stop; ++i)
+                {
+                    if (::send(flood, batch.data(), batch.size(), MSG_NOSIGNAL) <= 0 && errno != EAGAIN &&
+                        errno != EWOULDBLOCK)
+                    {
+                        break;
+                    }
+                }
+            });
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        double worst = 0;
+        for (int i = 0; i < 5; ++i)
+        {
+            worst = std::max(worst, seconds_for(port, "/healthz"));
+        }
+        check(worst < 1.0, "server answers during a ping flood (worst " + std::to_string(worst) + " s)");
+        stop = true;
+        flooder.join();
+        ::close(flood);
+    }
+
+    /* Slow request (one byte at a time): 408 within the deadline. */
+    {
+        const int fd = connect_to(port);
+        const std::string text = "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n";
+        const auto start = std::chrono::steady_clock::now();
+        std::string reply;
+        for (std::size_t i = 0; i < text.size(); ++i)
+        {
+            send_all(fd, text.substr(i, 1));
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            pollfd p{fd, POLLIN, 0};
+            if (::poll(&p, 1, 0) > 0)
+            {
+                break;
+            }
+        }
+        reply = read_all(fd);
+        const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        check(reply.rfind("HTTP/1.1 408", 0) == 0 && took < 2.0, "trickled request: 408 at the deadline");
+        ::close(fd);
+    }
+
+    /* Clients that never read their response lose their slot at the
+     * deadline; the server is reachable again afterwards. */
+    {
+        std::vector<int> hogs;
+        for (int i = 0; i < 8; ++i)
+        {
+            const int fd = connect_to(port);
+            int small = 4096;
+            ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &small, sizeof(small));
+            send_all(fd, "GET /api/v1/sources/1/history?since_ms=0 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+            hogs.push_back(fd);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        check(get(port, "/healthz").status == 503, "slots taken by readers that never read");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1'500));
+        check(get(port, "/healthz").status == 200, "slots freed after the response deadline");
+        for (const int fd : hogs)
+        {
+            ::close(fd);
+        }
+    }
+    robotweax_srt_telemetry_http_server_stop(server);
+}
+
+void test_history_pages()
+{
+    robotweax_srt_telemetry_sampler_config_v1 sc;
+    robotweax_srt_telemetry_sampler_config_default(&sc);
+    sc.windows.window_count = 1;
+    sc.windows.window_nano[0] = second;
+    robotweax_srt_telemetry_sampler *sampler = nullptr;
+    robotweax_srt_telemetry_sampler_create(&sc, &sampler);
+    robotweax_srt_telemetry_sampler_enable_history(sampler, 5000);
+    Fake fake;
+    robotweax_srt_telemetry_delta_engine_create(&fake.engine);
+    robotweax_srt_telemetry_source_config_v1 cfg{};
+    cfg.struct_size = sizeof(cfg);
+    cfg.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    cfg.sample = &fake_sample;
+    cfg.source_data = &fake;
+    cfg.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER;
+    std::uint64_t id = 0;
+    robotweax_srt_telemetry_sampler_add_source(sampler, &cfg, &id);
+    for (std::uint64_t i = 0; i <= 3700; ++i)
+    {
+        robotweax_srt_telemetry_sampler_tick(sampler, base_unix + i * second, second + i * second);
+    }
+    robotweax_srt_telemetry_http_server_config_v1 config;
+    robotweax_srt_telemetry_http_server_config_default(sampler, &config);
+    robotweax_srt_telemetry_http_server *server = nullptr;
+    robotweax_srt_telemetry_http_server_start(&config, &server);
+    const auto port = robotweax_srt_telemetry_http_server_port(server);
+    auto r = get(port, "/api/v1/sources/1/history?since_ms=0");
+    std::size_t records = 0;
+    for (std::size_t p = r.body.find("\"start_unix_ms\""); p != std::string::npos; p = r.body.find("\"start_unix_ms\"", p + 1))
+    {
+        ++records;
+    }
+    check(r.status == 200 && records == 3600 && r.body.find("\"more\":true") != std::string::npos &&
+              r.body.find("\"next_since_ms\":1800003600000") != std::string::npos,
+          "history pages of 3600 records with a continuation");
+    r = get(port, "/api/v1/sources/1/history?since_ms=1800003600000");
+    check(r.status == 200 && r.body.find("\"more\":false") != std::string::npos, "last history page");
+    robotweax_srt_telemetry_http_server_stop(server);
+    robotweax_srt_telemetry_sampler_destroy(sampler);
+    robotweax_srt_telemetry_delta_engine_destroy(fake.engine);
 }
 
 } // namespace
@@ -507,6 +757,8 @@ int main()
     test_endpoints();
     test_live_feed();
     test_token_and_limits();
+    test_abuse();
+    test_history_pages();
     if (failures != 0)
     {
         std::cerr << failures << " HTTP server checks failed\n";

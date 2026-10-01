@@ -14,10 +14,12 @@
  *                                        interval, new events as they arrive
  *   GET /healthz                         "ok"
  *
- * Security defaults: it binds to 127.0.0.1, serves nothing writable, limits
- * request size, connections and idle time, and can require a bearer token.
- * Exposing it beyond the host is the host's decision (bind_address). See
- * docs/architecture/http-server.md. */
+ * Security defaults: it binds to 127.0.0.1, serves nothing writable, bounds
+ * request size and time, connections, output backlog and WebSocket input,
+ * and can require a bearer token. Without a token it answers only requests
+ * addressed to localhost, an IP literal or an allowed host name (DNS
+ * rebinding). Exposing it beyond the host is the host's decision
+ * (bind_address). See docs/architecture/http-server.md. */
 
 #include <robotweax/srt_telemetry_sampler.h>
 
@@ -46,6 +48,7 @@ extern "C"
 
 #define ROBOTWEAX_SRT_TELEMETRY_HTTP_ADDRESS_CAPACITY 64u
 #define ROBOTWEAX_SRT_TELEMETRY_HTTP_TOKEN_CAPACITY 128u
+#define ROBOTWEAX_SRT_TELEMETRY_HTTP_HOSTS_CAPACITY 256u
 
 /* http_server_config_v1.flags */
 /* Do not serve the WebSocket feed. */
@@ -64,14 +67,23 @@ extern "C"
         uint16_t port;
         uint16_t reserved;
         uint32_t flags;
-        /* Simultaneous connections, including WebSocket clients; default 32. */
+        /* Simultaneous connections, including WebSocket clients; default 32.
+         * WebSocket clients may use all but 4, which stay free for scrapes. */
         uint32_t max_connections;
-        /* Live feed snapshot interval; default 1000 ms. */
+        /* Live feed snapshot interval, 100 ms to 60 s; default 1000 ms. */
         uint32_t live_interval_ms;
+        /* Time a client has to send its request and to read the response;
+         * default 10000 ms. */
+        uint32_t request_timeout_ms;
+        uint32_t reserved2;
         /* When not empty, every request needs "Authorization: Bearer <token>"
          * (the WebSocket feed also accepts "?token=<token>", for browsers).
-         * Printable ASCII. */
+         * Printable ASCII without spaces. */
         char bearer_token[ROBOTWEAX_SRT_TELEMETRY_HTTP_TOKEN_CAPACITY];
+        /* Without a token: comma-separated host names, besides localhost and
+         * IP literals, that requests may address (Host header), e.g.
+         * "encoder-7.studio.lan". Empty: localhost and IP literals only. */
+        char allowed_hosts[ROBOTWEAX_SRT_TELEMETRY_HTTP_HOSTS_CAPACITY];
     } robotweax_srt_telemetry_http_server_config_v1;
 
     ROBOTWEAX_SRT_TELEMETRY_HTTP_API void
