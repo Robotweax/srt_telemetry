@@ -54,7 +54,12 @@ extern "C"
         uint16_t quality_flags;
         uint16_t sample_count;
         uint32_t available;
-        uint32_t reserved;
+        /* Worst health verdict and its reason during the window, when the
+         * sampler runs the health engine (health_verdict / health_reason
+         * values); 0 = unknown / none. */
+        uint8_t health_verdict;
+        uint8_t health_reason;
+        uint16_t reserved;
 
         float unique_sent_bits_per_second;
         float retransmitted_bits_per_second;

@@ -420,6 +420,46 @@ void test_journal_events()
     robotweax_srt_telemetry_public_srt_connection_monitor_destroy(monitor);
 }
 
+void test_health_context()
+{
+    fake = {};
+    fake.state = SRTS_CONNECTING;
+    auto cfg = config(false);
+    robotweax_srt_telemetry_public_srt_connection_monitor *monitor = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_public_srt_connection_monitor_create(&cfg, &monitor));
+    robotweax_srt_telemetry_health_context_v1 context;
+    robotweax_srt_telemetry_health_context_init(&context);
+
+    auto result = poll(monitor, 1);
+    check(robotweax_srt_telemetry_public_srt_health_context(&result, &context) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTING,
+          "health context: connecting");
+    fake.state = SRTS_CONNECTED;
+    result = poll(monitor, 2);
+    static_cast<void>(robotweax_srt_telemetry_public_srt_health_context(&result, &context));
+    check(context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED &&
+              (context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS) != 0 &&
+              context.overhead_percent == 25 && context.max_bandwidth_bytes_per_second == -1,
+          "health context: connected, with OHEADBW and MAXBW");
+    /* Haivision SRT reports OPENED after a broken connection. */
+    fake.state = SRTS_OPENED;
+    result = poll(monitor, 3);
+    static_cast<void>(robotweax_srt_telemetry_public_srt_health_context(&result, &context));
+    check(context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST &&
+              context.overhead_percent == 25,
+          "health context: OPENED after connected is lost; settings kept");
+    robotweax_srt_telemetry_health_context_v1 fresh;
+    robotweax_srt_telemetry_health_context_init(&fresh);
+    fake.state = SRTS_BROKEN;
+    result = poll(monitor, 4);
+    static_cast<void>(robotweax_srt_telemetry_public_srt_health_context(&result, &fresh));
+    check(fresh.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST, "health context: broken is lost");
+    check(robotweax_srt_telemetry_public_srt_health_context(nullptr, &fresh) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "health context: null result");
+    robotweax_srt_telemetry_public_srt_connection_monitor_destroy(monitor);
+}
+
 } // namespace
 
 int main()
@@ -430,6 +470,7 @@ int main()
     test_validation();
     test_text_is_bounded();
     test_journal_events();
+    test_health_context();
     if (failures != 0)
     {
         std::cerr << failures << " connection monitor checks failed\n";

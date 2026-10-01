@@ -7,6 +7,7 @@
  * makes one srt_getsockstate, one srt_getrejectreason and about 25
  * srt_getsockflag calls. */
 
+#include <robotweax/srt_telemetry_health.h>
 #include <robotweax/srt_telemetry_history.h>
 #include <robotweax/srt_telemetry_public_srt.h>
 
@@ -218,6 +219,18 @@ extern "C"
     robotweax_srt_telemetry_public_srt_connection_events(
         const robotweax_srt_telemetry_public_srt_connection_result_v1 *result, uint64_t source_id,
         robotweax_srt_telemetry_event_v1 *events, size_t capacity, size_t *count);
+
+    /* Updates a health context from a poll: connection condition, OHEADBW
+     * and MAXBW. context is in/out: pass the context from the previous call
+     * (or one from health_context_init) so a socket that falls back to
+     * OPENED after a failure, as Haivision SRT does, still counts as lost.
+     * Connected: CONNECTED. Rejected, broken, closing, closed, nonexistent,
+     * or OPENED/INIT after having been connected: LOST. Otherwise
+     * CONNECTING. */
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_public_srt_health_context(
+        const robotweax_srt_telemetry_public_srt_connection_result_v1 *result,
+        robotweax_srt_telemetry_health_context_v1 *context);
 
 #ifdef __cplusplus
 }
