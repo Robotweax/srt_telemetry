@@ -65,6 +65,14 @@ not as silence followed by one stale window.
 [History and events](history-and-events.md). `sampler_enable_health` runs a
 health engine per source; see [Health engine](health-engine.md).
 
+## Snapshots and export
+
+`sampler_source_ids`, `sampler_window_read` (the latest closed window of a
+configured length) and `sampler_latest_metrics` read the current state.
+`sampler_render_to` / `sampler_render` format every source as Prometheus text
+or as the JSON snapshot; see [Metric names](metric-names.md). Rendering copies
+the state under the sampler lock, then calls the writer without it.
+
 ## Callbacks and threading
 
 `on_sample` (every sample, with the metrics), `on_window` (each closed window),

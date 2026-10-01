@@ -1,0 +1,854 @@
+#include "export_internal.h"
+
+#include <array>
+#include <cinttypes>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <string_view>
+
+namespace
+{
+
+using robotweax_srt_telemetry_internal::ExportSource;
+using robotweax_srt_telemetry_internal::ExportView;
+
+struct MetricName
+{
+    const char *otel;
+    const char *prometheus;
+    const char *scope;
+    const char *help;
+};
+
+/* Schema version 1. Order follows robotweax_srt_telemetry_metric. */
+constexpr std::array<MetricName, ROBOTWEAX_SRT_TELEMETRY_METRIC_DEFINED_COUNT> names = {{
+    {"srt.sender.sent.bitrate", "srt_sender_sent_bits_per_second", "sender",
+     "Bits sent on the wire, original and retransmitted."},
+    {"srt.sender.unique_sent.bitrate", "srt_sender_unique_sent_bits_per_second", "sender",
+     "Bits of original (first-time) packets sent."},
+    {"srt.sender.retransmitted.bitrate", "srt_sender_retransmitted_bits_per_second", "sender",
+     "Bits of retransmitted packets sent."},
+    {"srt.receiver.received.bitrate", "srt_receiver_received_bits_per_second", "receiver",
+     "Bits received on the wire, including duplicates and retransmissions."},
+    {"srt.receiver.unique_received.bitrate", "srt_receiver_unique_received_bits_per_second", "receiver",
+     "Bits of distinct packets received."},
+    {"srt.sender.unique_sent.packet_rate", "srt_sender_unique_sent_packets_per_second", "sender",
+     "Original packets sent."},
+    {"srt.receiver.unique_received.packet_rate", "srt_receiver_unique_received_packets_per_second", "receiver",
+     "Distinct packets received."},
+    {"srt.sender.loss_reported.packet_rate", "srt_sender_loss_reported_packets_per_second", "sender",
+     "Packets the receiver reported lost (NAK)."},
+    {"srt.receiver.lost.packet_rate", "srt_receiver_lost_packets_per_second", "receiver",
+     "Packets detected missing at the receiver (before repair)."},
+    {"srt.sender.retransmitted.packet_rate", "srt_sender_retransmitted_packets_per_second", "sender",
+     "Packets retransmitted."},
+    {"srt.receiver.retransmitted.packet_rate", "srt_receiver_retransmitted_packets_per_second", "receiver",
+     "Retransmitted packets received."},
+    {"srt.sender.dropped.packet_rate", "srt_sender_dropped_packets_per_second", "sender",
+     "Packets the sender dropped as too late to send (not network loss)."},
+    {"srt.receiver.dropped.packet_rate", "srt_receiver_dropped_packets_per_second", "receiver",
+     "Packets never delivered to the application (skipped), including undecryptable ones."},
+    {"srt.receiver.undecryptable.packet_rate", "srt_receiver_undecryptable_packets_per_second", "receiver",
+     "Packets that could not be decrypted."},
+    {"srt.receiver.belated.packet_rate", "srt_receiver_belated_packets_per_second", "receiver",
+     "Packets that arrived after their play time."},
+    {"srt.receiver.fec_recovered.packet_rate", "srt_receiver_fec_recovered_packets_per_second", "receiver",
+     "Packets rebuilt by the packet filter (FEC)."},
+    {"srt.receiver.fec_unrecovered.packet_rate", "srt_receiver_fec_unrecovered_packets_per_second", "receiver",
+     "Packets the packet filter (FEC) could not rebuild."},
+    {"srt.receiver.nak_sent.packet_rate", "srt_receiver_nak_sent_packets_per_second", "receiver",
+     "Loss reports (NAK packets) sent."},
+    {"srt.sender.nak_received.packet_rate", "srt_sender_nak_received_packets_per_second", "sender",
+     "Loss reports (NAK packets) received."},
+    {"srt.connection.rtt", "srt_connection_rtt_seconds", "connection", "Smoothed round-trip time."},
+    {"srt.sender.buffer.duration", "srt_sender_buffer_seconds", "sender", "Time span of data in the send buffer."},
+    {"srt.receiver.buffer.duration", "srt_receiver_buffer_seconds", "receiver",
+     "Time span of data in the receive buffer."},
+    {"srt.receiver.latency", "srt_receiver_latency_seconds", "receiver", "Receiver latency (TSBPD delay)."},
+    {"srt.sender.peer_latency", "srt_sender_peer_latency_seconds", "sender",
+     "Latency the receiver applies, as negotiated."},
+    {"srt.sender.flight_size", "srt_sender_flight_size_packets", "sender", "Packets sent and not yet acknowledged."},
+    {"srt.sender.flow_window", "srt_sender_flow_window_packets", "sender",
+     "Free receive buffer the peer advertises, in packets."},
+    {"srt.receiver.buffer.available", "srt_receiver_buffer_available_bytes", "receiver",
+     "Free space in the receive buffer."},
+    {"srt.sender.packet_send_period", "srt_sender_packet_send_period_seconds", "sender",
+     "Interval between packets set by the sender's pacing."},
+    {"srt.connection.link_capacity", "srt_connection_link_capacity_bits_per_second", "connection",
+     "Link capacity estimate (Haivision SRT; follows the arrival rate)."},
+    {"srt.receiver.recovery_headroom", "srt_receiver_recovery_headroom_ratio", "receiver",
+     "Receive buffer span / latency: time left to repair a gap, normalised; about 1 when nothing is missing."},
+    {"srt.sender.flight_to_flow_window", "srt_sender_flight_to_flow_window_ratio", "sender",
+     "Flight size / flow window: near 1 when the peer stops taking data."},
+    {"srt.sender.buffer.drop_threshold_ratio", "srt_sender_buffer_to_drop_threshold_ratio", "sender",
+     "Send buffer span / too-late drop threshold: near 1 just before sender drops."},
+}};
+
+struct CounterName
+{
+    std::uint64_t field;
+    std::uint64_t robotweax_srt_telemetry_raw_sample_v1::*value;
+    const char *otel;
+    const char *prometheus;
+    const char *scope;
+    const char *help;
+};
+
+const std::array<CounterName, 10> counters = {{
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_PACKET_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::unique_sent_packet_total, "srt.sender.unique_sent.packets",
+     "srt_sender_unique_sent_packets_total", "sender", "Original packets sent since the connection started."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_SENT_WIRE_BYTE_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::unique_sent_wire_byte_total, "srt.sender.unique_sent.bytes",
+     "srt_sender_unique_sent_bytes_total", "sender", "Bytes of original packets sent."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_RETRANSMITTED_PACKET_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::retransmitted_packet_total, "srt.sender.retransmitted.packets",
+     "srt_sender_retransmitted_packets_total", "sender", "Packets retransmitted."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_LOSS_PACKET_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::sender_loss_packet_total, "srt.sender.loss_reported.packets",
+     "srt_sender_loss_reported_packets_total", "sender", "Packets reported lost by the receiver."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_SENDER_DROP_PACKET_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::sender_drop_packet_total, "srt.sender.dropped.packets",
+     "srt_sender_dropped_packets_total", "sender", "Packets dropped by the sender as too late."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::unique_received_packet_total, "srt.receiver.unique_received.packets",
+     "srt_receiver_unique_received_packets_total", "receiver", "Distinct packets received."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_WIRE_BYTE_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::unique_received_wire_byte_total, "srt.receiver.unique_received.bytes",
+     "srt_receiver_unique_received_bytes_total", "receiver", "Bytes of distinct packets received."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_LOSS_PACKET_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::receiver_loss_packet_total, "srt.receiver.lost.packets",
+     "srt_receiver_lost_packets_total", "receiver", "Packets detected missing (before repair)."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_DROP_PACKET_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::receiver_drop_packet_total, "srt.receiver.dropped.packets",
+     "srt_receiver_dropped_packets_total", "receiver", "Packets never delivered to the application."},
+    {ROBOTWEAX_SRT_TELEMETRY_FIELD_RECEIVER_UNDECRYPTABLE_PACKET_TOTAL,
+     &robotweax_srt_telemetry_raw_sample_v1::receiver_undecryptable_packet_total,
+     "srt.receiver.undecryptable.packets", "srt_receiver_undecryptable_packets_total", "receiver",
+     "Packets that could not be decrypted."},
+}};
+
+struct Flag
+{
+    std::uint32_t bit;
+    const char *name;
+};
+constexpr std::array<Flag, 6> window_flags = {{
+    {ROBOTWEAX_SRT_TELEMETRY_WINDOW_PARTIAL, "partial"},
+    {ROBOTWEAX_SRT_TELEMETRY_WINDOW_SAMPLING_GAP, "sampling_gap"},
+    {ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP, "clock_step"},
+    {ROBOTWEAX_SRT_TELEMETRY_WINDOW_COUNTER_RESET, "counter_reset"},
+    {ROBOTWEAX_SRT_TELEMETRY_WINDOW_BASELINE, "baseline"},
+    {ROBOTWEAX_SRT_TELEMETRY_WINDOW_SOURCE_ERROR, "source_error"},
+}};
+
+const char *role_name(const robotweax_srt_telemetry_endpoint_role role)
+{
+    switch (role)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER:
+        return "sender";
+    case ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER:
+        return "receiver";
+    default:
+        return "unknown";
+    }
+}
+
+const char *connection_name(const robotweax_srt_telemetry_connection_condition c)
+{
+    switch (c)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTING:
+        return "connecting";
+    case ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED:
+        return "connected";
+    case ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST:
+        return "lost";
+    default:
+        return "unreported";
+    }
+}
+
+const char *direction_name(const robotweax_srt_telemetry_knob_direction d)
+{
+    switch (d)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE:
+        return "increase";
+    case ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_DECREASE:
+        return "decrease";
+    case ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK:
+        return "check";
+    default:
+        return "none";
+    }
+}
+
+/* A source exports the metrics of its own role and of the connection;
+ * a source of unknown role exports everything. */
+bool in_scope(const ExportSource &source, const char *scope)
+{
+    if (source.role == ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN || std::strcmp(scope, "connection") == 0)
+    {
+        return true;
+    }
+    return std::strcmp(scope, role_name(source.role)) == 0;
+}
+
+/* Locale-independent number text; false for NaN and infinities. */
+bool number(std::string &out, const double value)
+{
+    if (!std::isfinite(value))
+    {
+        return false;
+    }
+    char text[40];
+    const int n = std::snprintf(text, sizeof(text), "%.9g", value);
+    for (int i = 0; i < n; ++i)
+    {
+        out += text[i] == ',' ? '.' : text[i];
+    }
+    return true;
+}
+
+void integer(std::string &out, const std::uint64_t value)
+{
+    char text[24];
+    std::snprintf(text, sizeof(text), "%" PRIu64, value);
+    out += text;
+}
+
+/* ------------------------------------------------------------- Prometheus */
+
+void prometheus_escape(std::string &out, const std::string_view value)
+{
+    for (const char c : value)
+    {
+        if (c == '\\')
+        {
+            out += "\\\\";
+        }
+        else if (c == '"')
+        {
+            out += "\\\"";
+        }
+        else if (c == '\n')
+        {
+            out += "\\n";
+        }
+        else
+        {
+            out += c;
+        }
+    }
+}
+
+bool reserved_label(const std::string_view key)
+{
+    return key == "source_id" || key == "role" || key == "stat" || key == "flag" || key == "indicator" ||
+           key == "verdict" || key == "reason" || key == "knob" || key == "direction" || key == "job" ||
+           key == "instance" || key.substr(0, 2) == "__";
+}
+
+std::string prometheus_labels(const ExportSource &source)
+{
+    std::string text = "source_id=\"";
+    integer(text, source.id);
+    text += "\",role=\"";
+    text += role_name(source.role);
+    text += '"';
+    for (const auto &[key, value] : source.labels)
+    {
+        text += ',';
+        if (reserved_label(key))
+        {
+            text += "host_";
+        }
+        text += key;
+        text += "=\"";
+        prometheus_escape(text, value);
+        text += '"';
+    }
+    return text;
+}
+
+void family(std::string &out, const char *name, const char *type, const char *help)
+{
+    out += "# HELP ";
+    out += name;
+    out += ' ';
+    out += help;
+    out += "\n# TYPE ";
+    out += name;
+    out += ' ';
+    out += type;
+    out += '\n';
+}
+
+void sample(std::string &out, const char *name, const std::string &labels, const std::string &extra, const double value)
+{
+    std::string number_text;
+    if (!number(number_text, value))
+    {
+        return;
+    }
+    out += name;
+    out += '{';
+    out += labels;
+    if (!extra.empty())
+    {
+        out += ',';
+        out += extra;
+    }
+    out += "} ";
+    out += number_text;
+    out += '\n';
+}
+
+bool window_usable(const ExportSource &s)
+{
+    return s.has_window && !s.window_stale;
+}
+
+} // namespace
+
+std::string robotweax_srt_telemetry_internal::render_prometheus(const ExportView &view)
+{
+    std::string out;
+    std::vector<std::string> labels;
+    labels.reserve(view.sources.size());
+    for (const auto &s : view.sources)
+    {
+        labels.push_back(prometheus_labels(s));
+    }
+    const auto each = [&](auto &&body)
+    {
+        for (std::size_t i = 0; i < view.sources.size(); ++i)
+        {
+            body(view.sources[i], labels[i]);
+        }
+    };
+
+    family(out, "srt_telemetry_schema_info", "gauge",
+           "Metric naming scheme version of this exporter (value 1, version in the label).");
+    out += "srt_telemetry_schema_info{version=\"";
+    integer(out, ROBOTWEAX_SRT_TELEMETRY_METRIC_SCHEMA_VERSION);
+    out += "\"} 1\n";
+
+    family(out, "srt_source_up", "gauge", "1 while the source's statistics read succeeds, 0 while it fails.");
+    each([&](const ExportSource &s, const std::string &l) { sample(out, "srt_source_up", l, "", s.failed ? 0.0 : 1.0); });
+
+    family(out, "srt_window_seconds", "gauge", "Length of the exported statistics window.");
+    each(
+        [&](const ExportSource &s, const std::string &l)
+        {
+            if (window_usable(s))
+            {
+                sample(out, "srt_window_seconds", l, "", static_cast<double>(s.window.window_nano) / 1e9);
+            }
+        });
+    family(out, "srt_window_samples", "gauge", "Samples in the exported window.");
+    each(
+        [&](const ExportSource &s, const std::string &l)
+        {
+            if (window_usable(s))
+            {
+                sample(out, "srt_window_samples", l, "", s.window.sample_count);
+            }
+        });
+    family(out, "srt_window_quality", "gauge", "1 when the exported window carries the data-quality flag.");
+    each(
+        [&](const ExportSource &s, const std::string &l)
+        {
+            if (!window_usable(s))
+            {
+                return;
+            }
+            for (const auto &f : window_flags)
+            {
+                sample(out, "srt_window_quality", l, std::string("flag=\"") + f.name + '"',
+                       (s.window.quality_flags & f.bit) != 0 ? 1.0 : 0.0);
+            }
+        });
+
+    for (std::size_t m = 0; m < names.size(); ++m)
+    {
+        const auto metric = static_cast<robotweax_srt_telemetry_metric>(m);
+        const auto *info = robotweax_srt_telemetry_metric_info(metric);
+        const bool rate = info->kind == ROBOTWEAX_SRT_TELEMETRY_METRIC_KIND_RATE;
+        std::string help = names[m].help;
+        help += rate ? " Window statistic in label stat: rate (exact over the window), max and p95 of 100 ms "
+                       "samples."
+                     : " Window statistic in label stat: min, max, mean, last, p95.";
+        bool any = false;
+        each(
+            [&](const ExportSource &s, const std::string &)
+            {
+                any = any || (window_usable(s) && in_scope(s, names[m].scope) &&
+                              (s.window.available_metrics & ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(metric)) != 0);
+            });
+        if (!any)
+        {
+            continue;
+        }
+        family(out, names[m].prometheus, "gauge", help.c_str());
+        each(
+            [&](const ExportSource &s, const std::string &l)
+            {
+                if (!window_usable(s) || !in_scope(s, names[m].scope) ||
+                    (s.window.available_metrics & ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(metric)) == 0)
+                {
+                    return;
+                }
+                const auto &x = s.window.metrics[m];
+                const bool p95 = (x.flags & ROBOTWEAX_SRT_TELEMETRY_METRIC_SUMMARY_PERCENTILE_AVAILABLE) != 0;
+                if (rate)
+                {
+                    sample(out, names[m].prometheus, l, "stat=\"rate\"", x.rate);
+                    sample(out, names[m].prometheus, l, "stat=\"max\"", x.max);
+                }
+                else
+                {
+                    sample(out, names[m].prometheus, l, "stat=\"min\"", x.min);
+                    sample(out, names[m].prometheus, l, "stat=\"max\"", x.max);
+                    sample(out, names[m].prometheus, l, "stat=\"mean\"", x.mean);
+                    sample(out, names[m].prometheus, l, "stat=\"last\"", x.last);
+                }
+                if (p95)
+                {
+                    sample(out, names[m].prometheus, l, "stat=\"p95\"", x.p95);
+                }
+            });
+    }
+
+    if ((view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_COUNTERS) == 0)
+    {
+        for (const auto &c : counters)
+        {
+            bool any = false;
+            each([&](const ExportSource &s, const std::string &)
+                 { any = any || (s.has_raw && in_scope(s, c.scope) && (s.raw.available_fields & c.field) != 0); });
+            if (!any)
+            {
+                continue;
+            }
+            family(out, c.prometheus, "counter", c.help);
+            each(
+                [&](const ExportSource &s, const std::string &l)
+                {
+                    if (s.has_raw && in_scope(s, c.scope) && (s.raw.available_fields & c.field) != 0)
+                    {
+                        sample(out, c.prometheus, l, "", static_cast<double>(s.raw.*(c.value)));
+                    }
+                });
+        }
+    }
+
+    bool any_health = false;
+    each([&](const ExportSource &s, const std::string &) { any_health = any_health || s.has_health; });
+    if (any_health)
+    {
+        family(out, "srt_health_verdict", "gauge",
+               "Health verdict: 0 unknown, 1 ok, 2 watch, 3 at risk, 4 failing.");
+        each(
+            [&](const ExportSource &s, const std::string &l)
+            {
+                if (s.has_health)
+                {
+                    sample(out, "srt_health_verdict", l, "", static_cast<double>(s.health.verdict));
+                }
+            });
+        family(out, "srt_health_info", "gauge", "Current verdict, reason and suggested knob (value 1).");
+        each(
+            [&](const ExportSource &s, const std::string &l)
+            {
+                if (!s.has_health)
+                {
+                    return;
+                }
+                std::string extra = "verdict=\"";
+                extra += robotweax_srt_telemetry_health_verdict_name(s.health.verdict);
+                extra += "\",reason=\"";
+                extra += robotweax_srt_telemetry_health_reason_name(s.health.reason);
+                extra += "\",knob=\"";
+                extra += robotweax_srt_telemetry_health_knob_name(s.health.knob);
+                extra += "\",direction=\"";
+                extra += direction_name(s.health.knob_direction);
+                extra += '"';
+                sample(out, "srt_health_info", l, extra, 1.0);
+            });
+        family(out, "srt_health_suggested_value", "gauge",
+               "Suggested value for the knob in srt_health_info, in the knob's unit (s, bit/s, bytes/s, percent).");
+        each(
+            [&](const ExportSource &s, const std::string &l)
+            {
+                if (s.has_health && s.health.suggested_value != 0)
+                {
+                    sample(out, "srt_health_suggested_value", l,
+                           std::string("knob=\"") + robotweax_srt_telemetry_health_knob_name(s.health.knob) + '"',
+                           s.health.suggested_value);
+                }
+            });
+        if ((view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_INDICATORS) == 0)
+        {
+            family(out, "srt_health_indicator_state", "gauge",
+                   "Indicator state after hysteresis: 0 unknown, 1 ok, 2 watch, 3 at risk, 4 failing.");
+            each(
+                [&](const ExportSource &s, const std::string &l)
+                {
+                    if (!s.has_health)
+                    {
+                        return;
+                    }
+                    for (std::size_t i = 0; i < ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT; ++i)
+                    {
+                        const auto &ind = s.health.indicators[i];
+                        if ((ind.flags & ROBOTWEAX_SRT_TELEMETRY_INDICATOR_APPLICABLE) == 0)
+                        {
+                            continue;
+                        }
+                        sample(out, "srt_health_indicator_state", l,
+                               std::string("indicator=\"") +
+                                   robotweax_srt_telemetry_health_indicator_name(
+                                       static_cast<robotweax_srt_telemetry_health_indicator>(i)) +
+                                   '"',
+                               static_cast<double>(ind.state));
+                    }
+                });
+            family(out, "srt_health_indicator_value", "gauge", "Indicator value (see docs/architecture/health-engine.md).");
+            each(
+                [&](const ExportSource &s, const std::string &l)
+                {
+                    if (!s.has_health)
+                    {
+                        return;
+                    }
+                    for (std::size_t i = 0; i < ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT; ++i)
+                    {
+                        const auto &ind = s.health.indicators[i];
+                        if ((ind.flags & ROBOTWEAX_SRT_TELEMETRY_INDICATOR_AVAILABLE) == 0)
+                        {
+                            continue;
+                        }
+                        sample(out, "srt_health_indicator_value", l,
+                               std::string("indicator=\"") +
+                                   robotweax_srt_telemetry_health_indicator_name(
+                                       static_cast<robotweax_srt_telemetry_health_indicator>(i)) +
+                                   '"',
+                               ind.value);
+                    }
+                });
+        }
+    }
+    return out;
+}
+
+/* ------------------------------------------------------------------- JSON */
+
+namespace
+{
+
+void json_string(std::string &out, const std::string_view value)
+{
+    out += '"';
+    for (const char c : value)
+    {
+        const auto byte = static_cast<unsigned char>(c);
+        if (c == '"' || c == '\\')
+        {
+            out += '\\';
+            out += c;
+        }
+        else if (byte < 0x20 || byte == 0x7f)
+        {
+            char escape[8];
+            std::snprintf(escape, sizeof(escape), "\\u%04x", byte);
+            out += escape;
+        }
+        else
+        {
+            out += c;
+        }
+    }
+    out += '"';
+}
+
+void json_number(std::string &out, const double value)
+{
+    if (!number(out, value))
+    {
+        out += "null";
+    }
+}
+
+/* Appends ,"key":value for a finite value. */
+void json_field(std::string &out, const char *key, const double value, bool &first)
+{
+    std::string text;
+    if (!number(text, value))
+    {
+        return;
+    }
+    if (!first)
+    {
+        out += ',';
+    }
+    first = false;
+    json_string(out, key);
+    out += ':';
+    out += text;
+}
+
+} // namespace
+
+std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view)
+{
+    std::string out = "{\"schema\":\"srt-telemetry.snapshot.v1\",\"metric_schema\":";
+    integer(out, ROBOTWEAX_SRT_TELEMETRY_METRIC_SCHEMA_VERSION);
+    out += ",\"generated_unix_nano\":";
+    integer(out, view.generated_unix_nano);
+    out += ",\"window_seconds\":";
+    json_number(out, static_cast<double>(view.window_nano) / 1e9);
+    out += ",\"sources\":[";
+    bool first_source = true;
+    for (const auto &s : view.sources)
+    {
+        out += first_source ? "" : ",";
+        first_source = false;
+        out += "{\"id\":";
+        integer(out, s.id);
+        out += ",\"role\":";
+        json_string(out, role_name(s.role));
+        out += ",\"labels\":{";
+        bool first = true;
+        for (const auto &[key, value] : s.labels)
+        {
+            out += first ? "" : ",";
+            first = false;
+            json_string(out, key);
+            out += ':';
+            json_string(out, value);
+        }
+        out += "},\"up\":";
+        out += s.failed ? "false" : "true";
+        out += ",\"connection\":";
+        json_string(out, connection_name(s.connection));
+
+        if (window_usable(s))
+        {
+            out += ",\"window\":{\"start_unix_nano\":";
+            integer(out, s.window.start_unix_nano);
+            out += ",\"end_unix_nano\":";
+            integer(out, s.window.end_unix_nano);
+            out += ",\"samples\":";
+            integer(out, s.window.sample_count);
+            out += ",\"quality\":[";
+            first = true;
+            for (const auto &f : window_flags)
+            {
+                if ((s.window.quality_flags & f.bit) != 0)
+                {
+                    out += first ? "" : ",";
+                    first = false;
+                    json_string(out, f.name);
+                }
+            }
+            out += "],\"metrics\":{";
+            first = true;
+            for (std::size_t m = 0; m < names.size(); ++m)
+            {
+                const auto metric = static_cast<robotweax_srt_telemetry_metric>(m);
+                if (!in_scope(s, names[m].scope) ||
+                    (s.window.available_metrics & ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(metric)) == 0)
+                {
+                    continue;
+                }
+                const auto *info = robotweax_srt_telemetry_metric_info(metric);
+                const auto &x = s.window.metrics[m];
+                out += first ? "" : ",";
+                first = false;
+                json_string(out, names[m].otel);
+                out += ":{\"unit\":";
+                json_string(out, info->unit);
+                bool inner = false;
+                if (info->kind == ROBOTWEAX_SRT_TELEMETRY_METRIC_KIND_RATE)
+                {
+                    json_field(out, "rate", x.rate, inner);
+                    json_field(out, "total", x.total, inner);
+                }
+                json_field(out, "min", x.min, inner);
+                json_field(out, "max", x.max, inner);
+                json_field(out, "mean", x.mean, inner);
+                json_field(out, "last", x.last, inner);
+                if ((x.flags & ROBOTWEAX_SRT_TELEMETRY_METRIC_SUMMARY_PERCENTILE_AVAILABLE) != 0)
+                {
+                    json_field(out, "p95", x.p95, inner);
+                }
+                out += '}';
+            }
+            out += "}}";
+        }
+
+        if (s.has_metrics)
+        {
+            out += ",\"latest\":{\"observed_unix_nano\":";
+            integer(out, s.metrics.observed_at_unix_nano);
+            out += ",\"metrics\":{";
+            first = true;
+            for (std::size_t m = 0; m < names.size(); ++m)
+            {
+                const auto metric = static_cast<robotweax_srt_telemetry_metric>(m);
+                if (!in_scope(s, names[m].scope) ||
+                    (s.metrics.available_metrics & ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(metric)) == 0)
+                {
+                    continue;
+                }
+                std::string text;
+                if (!number(text, s.metrics.values[m]))
+                {
+                    continue;
+                }
+                out += first ? "" : ",";
+                first = false;
+                json_string(out, names[m].otel);
+                out += ':';
+                out += text;
+            }
+            out += "}}";
+        }
+
+        if (s.has_raw && (view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_COUNTERS) == 0)
+        {
+            out += ",\"counters\":{";
+            first = true;
+            for (const auto &c : counters)
+            {
+                if (!in_scope(s, c.scope) || (s.raw.available_fields & c.field) == 0)
+                {
+                    continue;
+                }
+                out += first ? "" : ",";
+                first = false;
+                json_string(out, c.otel);
+                out += ':';
+                integer(out, s.raw.*(c.value));
+            }
+            out += '}';
+        }
+
+        if (s.has_health)
+        {
+            const auto &h = s.health;
+            out += ",\"health\":{\"verdict\":";
+            json_string(out, robotweax_srt_telemetry_health_verdict_name(h.verdict));
+            out += ",\"reason\":";
+            json_string(out, robotweax_srt_telemetry_health_reason_name(h.reason));
+            out += ",\"knob\":";
+            json_string(out, robotweax_srt_telemetry_health_knob_name(h.knob));
+            out += ",\"direction\":";
+            json_string(out, direction_name(h.knob_direction));
+            out += ",\"suggested_value\":";
+            json_number(out, h.suggested_value);
+            out += ",\"since_monotonic_nano\":";
+            integer(out, h.verdict_since_monotonic_nano);
+            out += ",\"primary_indicator\":";
+            if (h.primary_indicator >= 0 && h.primary_indicator < ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT)
+            {
+                json_string(out, robotweax_srt_telemetry_health_indicator_name(
+                                     static_cast<robotweax_srt_telemetry_health_indicator>(h.primary_indicator)));
+            }
+            else
+            {
+                out += "null";
+            }
+            out += ",\"missing_metrics\":[";
+            first = true;
+            for (std::size_t m = 0; m < names.size(); ++m)
+            {
+                if ((h.missing_metrics & ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(static_cast<robotweax_srt_telemetry_metric>(m))) !=
+                    0)
+                {
+                    out += first ? "" : ",";
+                    first = false;
+                    json_string(out, names[m].otel);
+                }
+            }
+            out += ']';
+            if ((view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_INDICATORS) == 0)
+            {
+                out += ",\"indicators\":[";
+                first = true;
+                for (std::size_t i = 0; i < ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT; ++i)
+                {
+                    const auto &ind = h.indicators[i];
+                    if ((ind.flags & ROBOTWEAX_SRT_TELEMETRY_INDICATOR_APPLICABLE) == 0)
+                    {
+                        continue;
+                    }
+                    out += first ? "" : ",";
+                    first = false;
+                    out += "{\"name\":";
+                    json_string(out, robotweax_srt_telemetry_health_indicator_name(
+                                         static_cast<robotweax_srt_telemetry_health_indicator>(i)));
+                    out += ",\"state\":";
+                    json_string(out, robotweax_srt_telemetry_health_verdict_name(ind.state));
+                    out += ",\"reason\":";
+                    json_string(out, robotweax_srt_telemetry_health_reason_name(ind.reason));
+                    out += ",\"required\":";
+                    out += (ind.flags & ROBOTWEAX_SRT_TELEMETRY_INDICATOR_REQUIRED) != 0 ? "true" : "false";
+                    out += ",\"value\":";
+                    if ((ind.flags & ROBOTWEAX_SRT_TELEMETRY_INDICATOR_AVAILABLE) != 0)
+                    {
+                        json_number(out, ind.value);
+                    }
+                    else
+                    {
+                        out += "null";
+                    }
+                    out += '}';
+                }
+                out += ']';
+            }
+            out += '}';
+        }
+        out += '}';
+    }
+    out += "]}\n";
+    return out;
+}
+
+/* --------------------------------------------------------------- C ABI */
+
+extern "C" const char *robotweax_srt_telemetry_metric_otel_name(const robotweax_srt_telemetry_metric metric)
+{
+    const auto index = static_cast<std::size_t>(metric);
+    return index < names.size() ? names[index].otel : nullptr;
+}
+
+extern "C" const char *robotweax_srt_telemetry_metric_prometheus_name(const robotweax_srt_telemetry_metric metric)
+{
+    const auto index = static_cast<std::size_t>(metric);
+    return index < names.size() ? names[index].prometheus : nullptr;
+}
+
+extern "C" const char *robotweax_srt_telemetry_metric_scope(const robotweax_srt_telemetry_metric metric)
+{
+    const auto index = static_cast<std::size_t>(metric);
+    return index < names.size() ? names[index].scope : nullptr;
+}
+
+extern "C" void robotweax_srt_telemetry_render_options_default(const robotweax_srt_telemetry_render_format format,
+                                                               robotweax_srt_telemetry_render_options_v1 *options)
+{
+    if (options == nullptr)
+    {
+        return;
+    }
+    std::memset(options, 0, sizeof(*options));
+    options->struct_size = sizeof(*options);
+    options->abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    options->format = format;
+}

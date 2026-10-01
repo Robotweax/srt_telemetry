@@ -1639,6 +1639,29 @@ int run_sampler()
         }
     }
 
+    /* Export: both formats render the live sources. */
+    std::string prometheus;
+    std::string snapshot;
+    {
+        robotweax_srt_telemetry_render_options_v1 options;
+        const auto collect = [](void *user, const char *data, const std::size_t size)
+        {
+            static_cast<std::string *>(user)->append(data, size);
+            return 0;
+        };
+        robotweax_srt_telemetry_render_options_default(ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS, &options);
+        options.window_nano = UINT64_C(500'000'000);
+        static_cast<void>(robotweax_srt_telemetry_sampler_render_to(sampler, &options, collect, &prometheus));
+        robotweax_srt_telemetry_render_options_default(ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON, &options);
+        options.window_nano = UINT64_C(500'000'000);
+        static_cast<void>(robotweax_srt_telemetry_sampler_render_to(sampler, &options, collect, &snapshot));
+    }
+    const bool exported =
+        prometheus.find("srt_receiver_recovery_headroom_ratio{source_id=") != std::string::npos &&
+        prometheus.find("srt_sender_unique_sent_packets_total{source_id=") != std::string::npos &&
+        prometheus.find("srt_health_verdict{") != std::string::npos &&
+        snapshot.find("\"srt.receiver.unique_received.packet_rate\"") != std::string::npos;
+
     /* Connection events into the journal: watch the receiver while the
      * caller closes, as a host would. */
     Monitor monitor;
@@ -1750,7 +1773,8 @@ int run_sampler()
               << ",\"historyRecords\":" << history_count
               << ",\"bestHistoryReceivedBps\":" << best_history_rate
               << ",\"journalEvents\":" << journal_count
-              << ",\"disconnectJournaled\":" << disconnect_journaled
+              << ",\"disconnectJournaled\":" << disconnect_journaled << ",\"exported\":" << exported
+              << ",\"prometheusBytes\":" << prometheus.size()
               << ",\"senderVerdict\":\"" << robotweax_srt_telemetry_health_verdict_name(sender_health.verdict)
               << "\",\"receiverVerdict\":\""
               << robotweax_srt_telemetry_health_verdict_name(receiver_health.verdict) << "\",\"receiverReason\":\""
@@ -1763,7 +1787,7 @@ int run_sampler()
                     sent_pps > 200.0 && sent_pps < 400.0 && received_pps > 200.0 &&
                     received_pps < 400.0 && headroom > 0.5 && rtt >= 0.0 &&
                     observed.role_label[sender_id] == "sender" &&
-                    history_count >= 2 && best_history_rate > 2e6 && added == 2 &&
+                    history_count >= 2 && best_history_rate > 2e6 && added == 2 && exported &&
                     disconnect_journaled &&
                     receiver_health.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
                     (sender_health.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK ||

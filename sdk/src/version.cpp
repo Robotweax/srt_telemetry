@@ -26,6 +26,8 @@ robotweax_srt_telemetry_error_string(const robotweax_srt_telemetry_error error)
         return "invalid state for this call";
     case ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND:
         return "not found";
+    case ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL:
+        return "buffer too small";
     }
     return "unknown telemetry error";
 }
