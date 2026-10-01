@@ -22,6 +22,10 @@ robotweax_srt_telemetry_error_string(const robotweax_srt_telemetry_error error)
         return "provider sample failure";
     case ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE:
         return "telemetry sink failure";
+    case ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE:
+        return "invalid state for this call";
+    case ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND:
+        return "not found";
     }
     return "unknown telemetry error";
 }

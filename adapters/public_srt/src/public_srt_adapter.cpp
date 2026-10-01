@@ -495,3 +495,57 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_sess
                                                            &ext_result->ext, &result->delta,
                                                            &ext_result->ext_delta);
 }
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_source_sample(
+    void *session, const std::uint64_t observed_at_unix_nano,
+    const std::uint64_t sample_monotonic_nano, robotweax_srt_telemetry_source_output_v1 *output)
+{
+    if (session == nullptr || output == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (output->struct_size < sizeof(*output) ||
+        output->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    robotweax_srt_telemetry_public_srt_result_v1 result{};
+    result.struct_size = sizeof(result);
+    result.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    robotweax_srt_telemetry_public_srt_ext_result_v1 ext{};
+    ext.struct_size = sizeof(ext);
+    ext.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    const auto error = robotweax_srt_telemetry_public_srt_session_sample_ext(
+        static_cast<robotweax_srt_telemetry_public_srt_session *>(session), observed_at_unix_nano,
+        sample_monotonic_nano, &result, &ext);
+    output->native_result = result.native_result;
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    output->raw = result.raw;
+    output->delta = result.delta;
+    output->ext = ext.ext;
+    output->ext_delta = ext.ext_delta;
+    output->has_ext = 1;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" void robotweax_srt_telemetry_public_srt_source_config(
+    robotweax_srt_telemetry_public_srt_session *session,
+    const robotweax_srt_telemetry_endpoint_role role, const robotweax_srt_telemetry_label_v1 *labels,
+    const std::uint32_t label_count, robotweax_srt_telemetry_source_config_v1 *config)
+{
+    if (config == nullptr)
+    {
+        return;
+    }
+    std::memset(config, 0, sizeof(*config));
+    config->struct_size = sizeof(*config);
+    config->abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    config->sample = &robotweax_srt_telemetry_public_srt_source_sample;
+    config->source_data = session;
+    config->role = role;
+    config->labels = labels;
+    config->label_count = label_count;
+}

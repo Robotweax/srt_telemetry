@@ -32,6 +32,8 @@
 #include <iomanip>
 #include <iostream>
 #include <numeric>
+#include <mutex>
+#include <map>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -1478,6 +1480,188 @@ int run_connection_events()
     return plain && encrypted && rejected && filter ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+
+struct SamplerObserved
+{
+    std::mutex mutex;
+    std::map<std::uint64_t, std::vector<robotweax_srt_telemetry_window_summary_v1>> windows;
+    std::map<std::uint64_t, int> samples;
+    std::map<std::uint64_t, int> errors;
+    std::map<std::uint64_t, std::string> role_label;
+};
+
+void sampler_on_sample(void *user, const robotweax_srt_telemetry_source_info_v1 *source,
+                       const robotweax_srt_telemetry_source_output_v1 *,
+                       const robotweax_srt_telemetry_metric_sample_v1 *)
+{
+    auto &observed = *static_cast<SamplerObserved *>(user);
+    std::lock_guard lock(observed.mutex);
+    observed.samples[source->source_id] += 1;
+    if (source->label_count > 0)
+    {
+        observed.role_label[source->source_id] = source->labels[0].value;
+    }
+}
+
+void sampler_on_window(void *user, const robotweax_srt_telemetry_source_info_v1 *source,
+                       const robotweax_srt_telemetry_window_summary_v1 *window)
+{
+    auto &observed = *static_cast<SamplerObserved *>(user);
+    std::lock_guard lock(observed.mutex);
+    observed.windows[source->source_id].push_back(*window);
+}
+
+void sampler_on_error(void *user, const robotweax_srt_telemetry_source_info_v1 *source,
+                      robotweax_srt_telemetry_error, std::int32_t)
+{
+    auto &observed = *static_cast<SamplerObserved *>(user);
+    std::lock_guard lock(observed.mutex);
+    observed.errors[source->source_id] += 1;
+}
+
+int run_sampler()
+{
+    Runtime runtime;
+    if (!runtime.active())
+    {
+        std::cerr << "FAIL: srt_startup\n";
+        return EXIT_FAILURE;
+    }
+    Socket listener(srt_create_socket());
+    Socket caller(srt_create_socket());
+    Socket accepted;
+    if (!connect_pair(PairOptions{}, listener, caller, accepted))
+    {
+        return EXIT_FAILURE;
+    }
+    Session caller_session;
+    Session accepted_session;
+    if (!create_full_session(caller.get(), caller_session) ||
+        !create_full_session(accepted.get(), accepted_session))
+    {
+        std::cerr << "FAIL: session creation\n";
+        return EXIT_FAILURE;
+    }
+
+    SamplerObserved observed;
+    robotweax_srt_telemetry_sampler_config_v1 config{};
+    robotweax_srt_telemetry_sampler_config_default(&config);
+    config.period_nano = UINT64_C(50'000'000);
+    config.windows.expected_period_nano = config.period_nano;
+    config.windows.window_count = 1;
+    config.windows.window_nano[0] = UINT64_C(500'000'000);
+    config.callbacks.user_data = &observed;
+    config.callbacks.on_sample = &sampler_on_sample;
+    config.callbacks.on_window = &sampler_on_window;
+    config.callbacks.on_error = &sampler_on_error;
+    robotweax_srt_telemetry_sampler *sampler = nullptr;
+    if (robotweax_srt_telemetry_sampler_create(&config, &sampler) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        std::cerr << "FAIL: sampler creation\n";
+        return EXIT_FAILURE;
+    }
+
+    const robotweax_srt_telemetry_label_v1 sender_labels[] = {{"endpoint", "sender"}};
+    const robotweax_srt_telemetry_label_v1 receiver_labels[] = {{"endpoint", "receiver"}};
+    robotweax_srt_telemetry_source_config_v1 sender_source{};
+    robotweax_srt_telemetry_source_config_v1 receiver_source{};
+    robotweax_srt_telemetry_public_srt_source_config(caller_session.value,
+                                                     ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                     sender_labels, 1, &sender_source);
+    robotweax_srt_telemetry_public_srt_source_config(accepted_session.value,
+                                                     ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER,
+                                                     receiver_labels, 1, &receiver_source);
+    std::uint64_t sender_id = 0;
+    std::uint64_t receiver_id = 0;
+    if (robotweax_srt_telemetry_sampler_add_source(sampler, &sender_source, &sender_id) !=
+            ROBOTWEAX_SRT_TELEMETRY_OK ||
+        robotweax_srt_telemetry_sampler_add_source(sampler, &receiver_source, &receiver_id) !=
+            ROBOTWEAX_SRT_TELEMETRY_OK ||
+        robotweax_srt_telemetry_sampler_start(sampler) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        std::cerr << "FAIL: sampler setup\n";
+        robotweax_srt_telemetry_sampler_destroy(sampler);
+        return EXIT_FAILURE;
+    }
+
+    /* About 300 packets/s for 1.5 s, received on a second thread. */
+    constexpr int message_count = 450;
+    std::atomic<int> received{0};
+    std::thread reader(
+        [&]
+        {
+            for (int index = 0; index < message_count; ++index)
+            {
+                if (!receive_payload(accepted.get(), static_cast<char>('a' + index % 26)))
+                {
+                    return;
+                }
+                received.fetch_add(1);
+            }
+        });
+    bool sent_all = true;
+    const auto start = std::chrono::steady_clock::now();
+    for (int index = 0; index < message_count; ++index)
+    {
+        std::this_thread::sleep_until(start + std::chrono::microseconds(3'333 * index));
+        sent_all = send_payload(caller.get(), static_cast<char>('a' + index % 26)) && sent_all;
+    }
+    reader.join();
+
+    /* Remove before destroying sessions or closing sockets. */
+    const auto removed =
+        robotweax_srt_telemetry_sampler_remove_source(sampler, sender_id) ==
+            ROBOTWEAX_SRT_TELEMETRY_OK &&
+        robotweax_srt_telemetry_sampler_remove_source(sampler, receiver_id) ==
+            ROBOTWEAX_SRT_TELEMETRY_OK;
+    robotweax_srt_telemetry_sampler_destroy(sampler);
+
+    std::lock_guard lock(observed.mutex);
+    const auto best = [&](const std::uint64_t id, const robotweax_srt_telemetry_metric metric)
+    {
+        double value = 0.0;
+        bool found = false;
+        for (const auto &window : observed.windows[id])
+        {
+            if ((window.available_metrics & (UINT64_C(1) << metric)) != 0 &&
+                (window.quality_flags & ROBOTWEAX_SRT_TELEMETRY_WINDOW_PARTIAL) == 0)
+            {
+                value = std::max(value, window.metrics[metric].rate > 0.0
+                                            ? window.metrics[metric].rate
+                                            : window.metrics[metric].mean);
+                found = true;
+            }
+        }
+        return found ? value : -1.0;
+    };
+    const auto sent_pps = best(sender_id, ROBOTWEAX_SRT_TELEMETRY_METRIC_UNIQUE_SENT_PACKETS_PER_SECOND);
+    const auto received_pps =
+        best(receiver_id, ROBOTWEAX_SRT_TELEMETRY_METRIC_UNIQUE_RECEIVED_PACKETS_PER_SECOND);
+    const auto headroom = best(receiver_id, ROBOTWEAX_SRT_TELEMETRY_METRIC_RECOVERY_HEADROOM_RATIO);
+    const auto rtt = best(sender_id, ROBOTWEAX_SRT_TELEMETRY_METRIC_RTT_SECONDS);
+    std::cout << std::setprecision(6) << "SAMPLER {\"provider\":\"" << runtime_provider_name
+              << "\",\"senderSamples\":" << observed.samples[sender_id]
+              << ",\"receiverSamples\":" << observed.samples[receiver_id]
+              << ",\"senderWindows\":" << observed.windows[sender_id].size()
+              << ",\"sentPacketsPerSecond\":" << sent_pps
+              << ",\"receivedPacketsPerSecond\":" << received_pps
+              << ",\"bestRecoveryHeadroom\":" << headroom << ",\"rttSeconds\":" << rtt
+              << ",\"errors\":" << observed.errors[sender_id] + observed.errors[receiver_id]
+              << "}\n";
+
+    const auto ok = sent_all && received.load() == message_count && removed &&
+                    observed.samples[sender_id] >= 20 && observed.windows[sender_id].size() >= 3 &&
+                    sent_pps > 200.0 && sent_pps < 400.0 && received_pps > 200.0 &&
+                    received_pps < 400.0 && headroom > 0.5 && rtt >= 0.0 &&
+                    observed.role_label[sender_id] == "sender" &&
+                    observed.errors[sender_id] + observed.errors[receiver_id] == 0;
+    if (!ok)
+    {
+        std::cerr << "FAIL: sampler over live SRT (received " << received.load() << ")\n";
+    }
+    return ok ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 } // namespace
 
 int main(const int argc, char **argv)
@@ -1489,6 +1673,10 @@ int main(const int argc, char **argv)
     if (argc == 2 && std::string_view(argv[1]) == "--benchmark")
     {
         return run_sampling_benchmark();
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--sampler")
+    {
+        return run_sampler();
     }
     if (argc == 2 && std::string_view(argv[1]) == "--connection-events")
     {
@@ -1517,7 +1705,8 @@ int main(const int argc, char **argv)
         const auto port = parse_port(argv[4]);
         return port == 0 ? EXIT_FAILURE : run_caller_peer(port);
     }
-    std::cerr << "usage: runtime-test [--benchmark | --field-coverage | --connection-events | --lifecycle | "
+    std::cerr << "usage: runtime-test [--benchmark | --field-coverage | --connection-events | --sampler | "
+                 "--lifecycle | "
                  "--close-race | --role "
                  "listener | --role caller --port PORT]\n";
     return EXIT_FAILURE;

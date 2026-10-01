@@ -2,6 +2,7 @@
 #define ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_H
 
 #include <robotweax/srt_telemetry.h>
+#include <robotweax/srt_telemetry_sampler.h>
 
 #include <stdint.h>
 
@@ -197,6 +198,21 @@ extern "C"
         robotweax_srt_telemetry_public_srt_session *session, uint64_t observed_at_unix_nano,
         uint64_t sample_monotonic_nano, robotweax_srt_telemetry_public_srt_result_v1 *result,
         robotweax_srt_telemetry_public_srt_ext_result_v1 *ext_result);
+
+    /* Sampler source for a session: source_data is the session. One
+     * srt_bistats call per tick fills the v1 and extended samples. Remove the
+     * source from the sampler before destroying the session. */
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_public_srt_source_sample(
+        void *session, uint64_t observed_at_unix_nano, uint64_t sample_monotonic_nano,
+        robotweax_srt_telemetry_source_output_v1 *output);
+
+    /* Fills a sampler source config for a session. labels are copied by
+     * sampler_add_source, so they only need to live until that call. */
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API void robotweax_srt_telemetry_public_srt_source_config(
+        robotweax_srt_telemetry_public_srt_session *session,
+        robotweax_srt_telemetry_endpoint_role role, const robotweax_srt_telemetry_label_v1 *labels,
+        uint32_t label_count, robotweax_srt_telemetry_source_config_v1 *config);
 
 #ifdef __cplusplus
 }
