@@ -23,21 +23,22 @@ during Phase 0.
 
 **Gate:** CI green on both providers; the IPv6-only test skips cleanly.
 
-## Phase 1: complete metric model (2 EW): in progress
+## Phase 1: complete metric model (2 EW): done
 
 - every distinct observation of `SRT_TRACEBSTATS` (54) accounted for per role
   in the [field map](architecture/srt-stats-field-map.md): 52 mapped through
-  `raw_sample_v1` plus the new `ext_sample_v1`, 2 deliberately excluded:
-  **done**;
-- buffer gauges read with `instantaneous=1`: **done** (already the adapter's
-  behaviour);
-- FEC capability gating and the group field set: **done** (live FEC and
-  bonding values move to Phase 4);
-- socket state, negotiated options, KM state and reject reason as events:
-  next.
+  `raw_sample_v1` plus `ext_sample_v1`, 2 deliberately excluded;
+- buffer gauges read with `instantaneous=1`;
+- FEC capability gating and the group field set (live FEC and bonding values
+  move to Phase 4); and
+- the [connection monitor](architecture/connection-monitor.md): socket state,
+  reject reason, negotiated options, encryption state, packet filter and
+  opt-in stream ID, with change detection and derived events.
 
-**Gate:** field-coverage test makes all 52 mapped observations available on
-both providers: **passing** on Haivision SRT v1.5.5 and Robotweax SRT `main`.
+**Gate:** the field-coverage test makes all 52 mapped observations available
+on both providers, and the connection-events test passes plain, encrypted,
+wrong-passphrase, FEC and peer-close scenarios on both: **passing** on
+Haivision SRT v1.5.5 and Robotweax SRT `main`.
 
 ## Phase 2: sampler, windows, health engine (3 EW)
 

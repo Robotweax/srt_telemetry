@@ -49,11 +49,12 @@ value remains to be measured.
 
 ## Status
 
-**Pre-alpha.** Phase 0 (licence, CI, scope) is in progress. Available today:
-the telemetry contract, provider model, versioned C ABI, non-destructive delta
-engine, bounded recorder with versioned JSONL export, and the injected public
-SRT adapter, verified against Haivision SRT v1.5.5 and Robotweax SRT. The
-sampler, health engine, exporters and dashboards are not built yet.
+**Pre-alpha.** Phases 0 and 1 are done. Available today: the telemetry
+contract, provider model, versioned C ABI, non-destructive delta engine,
+bounded recorder with versioned JSONL export, the injected public SRT adapter
+covering every statistics observation, and the connection monitor, all
+verified against Haivision SRT v1.5.5 and Robotweax SRT. The sampler, health
+engine, exporters and dashboards (Phases 2 and 3) are not built yet.
 
 ## Scope
 
@@ -154,6 +155,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Provider and capability model](docs/architecture/provider-model.md)
 - [SRT statistics field map](docs/architecture/srt-stats-field-map.md)
 - [Public SRT API adapter](docs/architecture/public-srt-adapter.md)
+- [Connection monitor](docs/architecture/connection-monitor.md)
 - [Loss-shape observability decision](docs/architecture/loss-shape-observability.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
 - [Local incident analysis](docs/architecture/incident-analysis.md)

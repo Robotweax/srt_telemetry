@@ -72,7 +72,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
     endif()
 
     add_library(robotweax_srt_telemetry_public_srt_adapter
-        adapters/public_srt/src/public_srt_adapter.cpp)
+        adapters/public_srt/src/public_srt_adapter.cpp
+        adapters/public_srt/src/public_srt_connection.cpp)
     add_library(RobotweaxSRTTelemetry::public_srt_adapter ALIAS
         robotweax_srt_telemetry_public_srt_adapter)
     target_compile_features(robotweax_srt_telemetry_public_srt_adapter
@@ -122,6 +123,17 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
         add_test(NAME robotweax_srt_telemetry_public_srt_adapter_tests
             COMMAND robotweax_srt_telemetry_public_srt_adapter_tests)
 
+        add_executable(robotweax_srt_telemetry_public_srt_connection_tests
+            adapters/public_srt/tests/test_public_srt_connection.cpp)
+        target_include_directories(robotweax_srt_telemetry_public_srt_connection_tests
+            PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
+        target_link_libraries(robotweax_srt_telemetry_public_srt_connection_tests
+            PRIVATE RobotweaxSRTTelemetry::public_srt_adapter)
+        target_compile_features(robotweax_srt_telemetry_public_srt_connection_tests
+            PRIVATE cxx_std_20)
+        add_test(NAME robotweax_srt_telemetry_public_srt_connection_tests
+            COMMAND robotweax_srt_telemetry_public_srt_connection_tests)
+
         if(ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY)
             find_package(Threads REQUIRED)
             if(NOT ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER STREQUAL "robotweax-srt" AND
@@ -167,6 +179,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --lifecycle)
             add_test(NAME robotweax_srt_telemetry_public_srt_field_coverage_test
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --field-coverage)
+            add_test(NAME robotweax_srt_telemetry_public_srt_connection_events_test
+                COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --connection-events)
             find_package(Python3 COMPONENTS Interpreter QUIET)
             if(Python3_Interpreter_FOUND)
                 add_test(NAME robotweax_srt_telemetry_public_srt_trigger_recording_test
@@ -205,6 +219,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 PROPERTIES TIMEOUT 15)
             set_tests_properties(robotweax_srt_telemetry_public_srt_field_coverage_test
                 PROPERTIES TIMEOUT 15)
+            set_tests_properties(robotweax_srt_telemetry_public_srt_connection_events_test
+                PROPERTIES TIMEOUT 30)
         endif()
     endif()
 endif()
