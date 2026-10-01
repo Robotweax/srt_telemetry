@@ -5,9 +5,9 @@
  * against the verdicts that role should report.
  *
  * Gate (roadmap Phase 2): per role, the right verdict in at least 9 of 10
- * fault classes, the clean control OK, and never a wrong OK: once a fault
- * has been active for the detection grace, a role that should see it must
- * not report OK until the fault ends.
+ * fault classes, every control OK throughout, and never a wrong OK: once a
+ * fault has been active for the detection grace, a role that should see it
+ * must not report OK (three consecutive reads) until 2 s after it ends.
  *
  * Usage: fault_lab [--scenario NAME] [--list] [--timeline] */
 
@@ -71,8 +71,8 @@ constexpr Verdict WATCH = ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH;
 constexpr Verdict AT_RISK = ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK;
 constexpr Verdict FAILING = ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING;
 
-/* 500 packets/s of 1316 bytes: about 5.3 Mbit/s of payload. */
-constexpr int packets_per_second = 500;
+/* Default stream: 500 packets/s of 1316 bytes, about 5.3 Mbit/s of
+ * payload. */
 constexpr int payload_bytes = 1316;
 
 double seconds_since(const Clock::time_point start)
@@ -312,6 +312,8 @@ struct Scenario
     std::string name;
     std::string description;
     int latency_ms = 200;
+    int packets_per_second = 500;
+    int peer_idle_timeout_ms = 0; /* 0: provider default (5 s) */
     Impairment base;
     /* Applied at fault onset; restores the base at fault end unless the
      * fault is permanent. */
@@ -348,7 +350,30 @@ std::vector<Scenario> scenarios()
     {
         Scenario s;
         s.name = "clean";
-        s.description = "control: 20 ms RTT, 200 ms latency, no impairment";
+        s.description = "control: 20 ms RTT, 200 ms latency, no impairment, 60 s";
+        s.fault = s.base;
+        s.fault_seconds = 60;
+        s.expect_sender = {OK};
+        s.expect_receiver = {OK};
+        s.control = true;
+        list.push_back(s);
+    }
+    {
+        Scenario s;
+        s.name = "rtt_rise_healthy";
+        s.description = "control: RTT rises from 20 to 60 ms with 400 ms latency, no loss";
+        s.latency_ms = 400;
+        s.fault.delay_ms = 30;
+        s.expect_sender = {OK};
+        s.expect_receiver = {OK};
+        s.control = true;
+        list.push_back(s);
+    }
+    {
+        Scenario s;
+        s.name = "high_bitrate";
+        s.description = "control: 2500 packets/s (26 Mbit/s), no impairment";
+        s.packets_per_second = 2500;
         s.fault = s.base;
         s.expect_sender = {OK};
         s.expect_receiver = {OK};
@@ -409,7 +434,8 @@ std::vector<Scenario> scenarios()
     {
         Scenario s;
         s.name = "bandwidth_cap";
-        s.description = "path capped at 3 Mbit/s for a 5.3 Mbit/s stream (100 kB queue)";
+        s.description = "path capped at 3 Mbit/s for a 5.3 Mbit/s stream (100 kB queue), 40 s";
+        s.fault_seconds = 40;
         s.fault.forward_rate_bps = 3e6;
         s.fault.queue_limit_bytes = 100'000;
         s.expect_sender = bad;
@@ -420,16 +446,19 @@ std::vector<Scenario> scenarios()
     }
     {
         Scenario s;
-        s.name = "outage_3s";
-        s.description = "path blackholed for 3 s, then restored";
+        s.name = "outage_6s";
+        s.description = "path blackholed for 6 s, then restored (peer idle timeout 10 s)";
         s.fault.blackhole = true;
-        s.fault_seconds = 3;
+        s.peer_idle_timeout_ms = 10'000;
+        s.fault_seconds = 6;
         s.settle_seconds = 6;
+        /* The receiver cannot tell an outage from a paused source while it
+         * lasts: Unknown, then Failing for the drops after the gap. */
         s.expect_sender = bad;
         s.expect_receiver = bad;
-        /* No setting fixes a 3 s outage; a latency above it would hide it. */
+        /* No setting recovers a gap longer than the latency. */
         s.knob_sender = {K_NONE};
-        s.knob_receiver = {K_NONE, K_LATENCY};
+        s.knob_receiver = {K_NONE};
         list.push_back(s);
     }
     {
@@ -649,6 +678,7 @@ RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expec
     result.scored = true;
     constexpr double grace = 4.0; /* gauge window 1 s + enter hold 2 s + margin */
     const bool ok_allowed = expected.count(OK) != 0;
+    int ok_run = 0; /* consecutive OK reads: one read is not a verdict */
     for (const auto &p : points)
     {
         if (p.t < onset || p.t > end)
@@ -675,7 +705,10 @@ RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expec
         {
             result.first_detection = p.t - onset;
         }
-        if (!ok_allowed && p.verdict == OK && p.t >= onset + grace && p.t <= fault_end)
+        ok_run = p.verdict == OK ? ok_run + 1 : 0;
+        /* The aftermath counts too: the first 2 s after a fault ends (drops
+         * that arrive with the first packets after an outage). */
+        if (!ok_allowed && ok_run >= 3 && p.t >= onset + grace && p.t <= fault_end + 2.0)
         {
             result.wrong_ok = true;
         }
@@ -775,7 +808,10 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
     listen_address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     socklen_t address_size = sizeof(listen_address);
     const int timeout_ms = 200;
-    bool ok = set_int(listener, SRTO_LATENCY, scenario.latency_ms) &&
+    bool ok = (scenario.peer_idle_timeout_ms == 0 ||
+               (set_int(listener, SRTO_PEERIDLETIMEO, scenario.peer_idle_timeout_ms) &&
+                set_int(caller, SRTO_PEERIDLETIMEO, scenario.peer_idle_timeout_ms))) &&
+              set_int(listener, SRTO_LATENCY, scenario.latency_ms) &&
               set_int(caller, SRTO_LATENCY, scenario.latency_ms) && set_int(caller, SRTO_CONNTIMEO, 3000) &&
               set_int(caller, SRTO_SNDTIMEO, timeout_ms);
     if (ok && scenario.small_receive_buffer)
@@ -866,7 +902,7 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
             std::array<char, payload_bytes> payload{};
             payload.fill('x');
             const auto start = Clock::now();
-            const auto period = std::chrono::microseconds(1'000'000 / packets_per_second);
+            const auto period = std::chrono::nanoseconds(1'000'000'000 / scenario.packets_per_second);
             for (std::int64_t index = 0; streaming; ++index)
             {
                 std::this_thread::sleep_until(start + period * index);

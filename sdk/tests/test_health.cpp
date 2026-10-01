@@ -250,7 +250,9 @@ void test_clean_streams()
         Run run(role);
         Condition c;
         const auto first_ok = run.until(c, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, 5);
-        check(first_ok > 0 && first_ok <= 0.5, "clean stream is OK at once");
+        /* OK needs 2 s of evidence: never OK before the counts can show
+         * what the start cost. */
+        check(first_ok >= 2.0 && first_ok <= 2.5, "clean stream is OK after 2 s of evidence");
         check(run.feed(c, 60) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK && run.status.knob == 0,
               "clean stream stays OK without advice");
         check(run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_PATH_HEADROOM].flags == 0 ||
@@ -568,6 +570,104 @@ void test_sender_classes()
                   run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_OVERHEAD_BUDGET].reason ==
                       ROBOTWEAX_SRT_TELEMETRY_REASON_MISSING_SETTING,
               "overhead budget needs the bandwidth settings");
+    }
+}
+
+void test_review_cases()
+{
+    Condition clean;
+    {
+        /* Persistent congestion keeps its diagnosis: lossy samples never
+         * raise the RTT baseline. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition c = clean;
+        c.latency = 0.2;
+        c.rtt = 0.28;
+        c.packets_per_second = 280;
+        c.loss_per_second = 220;
+        c.drops_per_second = 220;
+        c.belated_per_second = 2;
+        c.headroom = 0.0;
+        bool kept = true;
+        for (int second_index = 0; second_index < 120; ++second_index)
+        {
+            run.feed(c, 1);
+            if (second_index >= 10)
+            {
+                kept = kept && run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED;
+            }
+        }
+        check(kept, "two minutes of congestion stay path_congested, got " + describe(run.status));
+    }
+    {
+        /* A healthy RTT increase without loss is not congestion. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition c = clean;
+        c.latency = 0.6;
+        c.rtt = 0.09;
+        check(run.feed(c, 20) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "RTT rise without loss: OK");
+    }
+    {
+        /* An outage longer than the latency: drops with no knob. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition gap = clean;
+        gap.receiving = false;
+        run.feed(gap, 2);
+        Condition after = clean;
+        after.drops_per_second = 300;
+        after.loss_per_second = 300;
+        after.belated_per_second = 20; /* some repairs arrive late too */
+        run.feed(after, 0.5);
+        check(run.feed(clean, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
+              "drops after a gap longer than the latency: no knob, got " + describe(run.status));
+    }
+    {
+        /* After a gap, OK waits for evidence: the drops that arrive with the
+         * first packets must not follow an OK. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition gap = clean;
+        gap.receiving = false;
+        run.feed(gap, 3);
+        bool ok_seen = false;
+        const auto step = [&](const Condition &c)
+        {
+            const bool ok = run.feed(c, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK;
+            ok_seen = ok_seen || ok;
+        };
+        for (int i = 0; i < 3; ++i)
+        {
+            step(clean);
+        }
+        Condition after = clean;
+        after.drops_per_second = 300;
+        after.loss_per_second = 300;
+        step(after);
+        for (int i = 0; i < 30; ++i)
+        {
+            step(clean);
+        }
+        check(!ok_seen && run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
+              "no OK between a gap and its drops, got " + describe(run.status));
+    }
+    {
+        /* Libsrt grows the flow window by dropped packets: that must not
+         * become the reference and leave a stall bias afterwards. */
+        Run run(SENDER);
+        run.feed(clean, 3);
+        Condition outage = clean;
+        outage.send_buffer_ratio = 1.0;
+        outage.sender_drops_per_second = 300;
+        outage.flow_window = 11'000;
+        run.feed(outage, 2);
+        run.feed(clean, 30);
+        check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                  run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_PEER_READ_STALL].value <= 0.05 + 1e-9,
+              "no read-stall bias after an outage with drops, got " + describe(run.status));
     }
 }
 
@@ -895,6 +995,7 @@ int main()
     test_receiver_classes();
     test_sender_classes();
     test_unknown_and_context();
+    test_review_cases();
     test_sampler_health();
     if (failures != 0)
     {

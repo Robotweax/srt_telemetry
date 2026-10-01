@@ -1592,8 +1592,9 @@ int run_sampler()
         return EXIT_FAILURE;
     }
 
-    /* About 300 packets/s for 1.5 s, received on a second thread. */
-    constexpr int message_count = 450;
+    /* About 300 packets/s for 3 s, received on a second thread (health
+     * needs 2 s of evidence before it says OK). */
+    constexpr int message_count = 900;
     std::atomic<int> received{0};
     std::thread reader(
         [&]

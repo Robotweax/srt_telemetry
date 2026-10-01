@@ -256,11 +256,21 @@ struct robotweax_srt_telemetry_health_engine
     std::array<std::size_t, COUNTS> available_entries{};
     /* Time the count window actually covers (sum of sample intervals). */
     std::uint64_t covered_nano = 0;
-    /* Path RTT without queueing: the lowest RTT seen, drifting up toward
-     * the current RTT over about a minute so a route change is adopted. */
+    /* Path RTT without queueing: the lowest RTT of loss-free samples over
+     * the last 5 minutes, in 10 s buckets. Lossy samples never raise it, so
+     * a congested path keeps its diagnosis; a route change without loss is
+     * adopted within 5 minutes. With no loss-free sample in 5 minutes the
+     * last baseline is kept. */
     bool has_baseline_rtt = false;
     double baseline_rtt = 0;
-    std::uint64_t baseline_updated = 0;
+    struct RttBucket
+    {
+        std::uint64_t start;
+        double min;
+    };
+    std::deque<RttBucket> rtt_buckets;
+    bool has_rtt_bucket = false;
+    RttBucket rtt_bucket{0, 0};
     /* Largest flow window seen: a receiver that stops reading shrinks it. */
     double max_flow_window = 0;
     /* Last sample that was not a source error. */
@@ -269,6 +279,10 @@ struct robotweax_srt_telemetry_health_engine
     /* Since when a required indicator has had no grade. */
     bool required_missing = false;
     std::uint64_t required_missing_since = 0;
+    /* Since when it has had one again: OK needs enter_hold of evidence
+     * after a gap, as a worse state does. */
+    bool required_seen = false;
+    std::uint64_t required_available_since = 0;
     std::uint64_t last_monotonic = 0;
     bool has_last = false;
 
@@ -537,6 +551,24 @@ Advice drop_advice(const Evaluation &e, const Reason fallback)
 {
     const auto &engine = e.engine;
     const auto loss_ratio = receiver_loss_ratio(engine);
+    /* Arrivals stopped for longer than the latency (an outage): no
+     * retransmission recovers that gap and no setting brings it back. */
+    if (e.has_latency && e.receiver)
+    {
+        std::uint64_t gap = 0;
+        std::uint64_t longest = 0;
+        for (const auto &entry : engine.entries)
+        {
+            const bool arrived = (entry.available & bit(count_metric[C_UNIQUE_RECEIVED_PACKETS])) != 0 &&
+                                 entry.counts[C_UNIQUE_RECEIVED_PACKETS] > 0;
+            gap = arrived ? 0 : gap + entry.interval;
+            longest = std::max(longest, gap);
+        }
+        if (static_cast<double>(longest) / 1e9 > e.latency)
+        {
+            return {fallback, ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE, ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0};
+        }
+    }
     if (sum(engine, C_BELATED) > 0)
     {
         return latency_advice(e, ROBOTWEAX_SRT_TELEMETRY_REASON_LATE_REPAIRS, loss_ratio);
@@ -735,6 +767,7 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
          * ratio is graded only with congestion evidence at this end: a
          * filling send buffer or sender drops. */
         const bool congested =
+            e.congested ||
             (g.available[G_SEND_BUFFER_RATIO] && g.max[G_SEND_BUFFER_RATIO] > engine.thresholds[BACKLOG].watch) ||
             sum(engine, C_SENDER_DROP) > 0;
         if (!congested)
@@ -857,7 +890,8 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
                                bit(gauge_metric[G_FLIGHT_TO_FLOW]) | bit(gauge_metric[G_FLOW_WINDOW]));
         }
         double occupancy = 0;
-        if (has_window)
+        /* Without the latency the normal buffering is unknown: no grade. */
+        if (has_window && e.has_latency)
         {
             const double pps = g.sent_interval > 0 ? g.sent_packets / g.sent_interval : 0.0;
             const double expected = e.has_latency ? 1.5 * (e.latency + e.rtt) * pps : 0.0;
@@ -1181,24 +1215,43 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             engine->headroom_seen = true;
             engine->headroom_last = now;
         }
-        if ((entry.available & bit(gauge_metric[G_FLOW_WINDOW])) != 0)
+        /* Libsrt grows the flow window by the packets the sender drops, so
+         * samples with sender drops do not raise the reference. */
+        const bool sender_dropped = (entry.available & bit(count_metric[C_SENDER_DROP])) != 0 &&
+                                    entry.counts[C_SENDER_DROP] > 0;
+        if ((entry.available & bit(gauge_metric[G_FLOW_WINDOW])) != 0 && !sender_dropped)
         {
             engine->max_flow_window = std::max(engine->max_flow_window, entry.gauges[G_FLOW_WINDOW]);
         }
-        if ((entry.available & bit(gauge_metric[G_RTT])) != 0 && entry.gauges[G_RTT] > 0)
+        const auto loss_count = receiver ? C_RECEIVER_LOSS : C_SENDER_LOSS;
+        const bool lossy = (entry.available & bit(count_metric[loss_count])) != 0 && entry.counts[loss_count] > 0;
+        if ((entry.available & bit(gauge_metric[G_RTT])) != 0 && entry.gauges[G_RTT] > 0 && !lossy)
         {
             const auto rtt = entry.gauges[G_RTT];
-            if (!engine->has_baseline_rtt || rtt < engine->baseline_rtt)
+            constexpr std::uint64_t bucket_length = 10 * SECOND;
+            constexpr std::uint64_t horizon = 300 * SECOND;
+            if (engine->has_rtt_bucket && now - engine->rtt_bucket.start >= bucket_length)
             {
-                engine->baseline_rtt = rtt;
+                engine->rtt_buckets.push_back(engine->rtt_bucket);
+                engine->has_rtt_bucket = false;
             }
-            else if (now > engine->baseline_updated)
+            if (!engine->has_rtt_bucket)
             {
-                const double dt = static_cast<double>(now - engine->baseline_updated) / 1e9;
-                engine->baseline_rtt += (rtt - engine->baseline_rtt) * std::min(1.0, dt / 60.0);
+                engine->rtt_bucket = {now, rtt};
+                engine->has_rtt_bucket = true;
             }
+            engine->rtt_bucket.min = std::min(engine->rtt_bucket.min, rtt);
+            while (!engine->rtt_buckets.empty() && engine->rtt_buckets.front().start + horizon < now)
+            {
+                engine->rtt_buckets.pop_front();
+            }
+            double baseline = engine->rtt_bucket.min;
+            for (const auto &bucket : engine->rtt_buckets)
+            {
+                baseline = std::min(baseline, bucket.min);
+            }
+            engine->baseline_rtt = baseline;
             engine->has_baseline_rtt = true;
-            engine->baseline_updated = now;
         }
         add_entry(*engine, entry);
         engine->has_good = true;
@@ -1213,7 +1266,7 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             e.rtt = e.gauges.max[G_RTT];
         }
         if (e.gauges.available[G_RTT] && engine->has_baseline_rtt &&
-            e.gauges.max[G_RTT] > 2.0 * engine->baseline_rtt + 0.02 && engine->covered_nano > 0)
+            e.gauges.max[G_RTT] > 2.0 * engine->baseline_rtt + 0.01 && engine->covered_nano > 0)
         {
             const double seconds = static_cast<double>(engine->covered_nano) / 1e9;
             if (receiver)
@@ -1234,7 +1287,7 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
                 {
                     e.congested = true;
                     e.congestion_rate = std::max(0.0, engine->sums[C_UNIQUE_SENT_BITS]) / seconds *
-                                        std::max(0.0, 1.0 - loss / unique);
+                                        std::clamp(1.0 - loss / unique, 0.1, 1.0);
                 }
             }
         }
@@ -1357,7 +1410,12 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         }
         if (raws[i].available)
         {
+            if (engine->required_missing || !engine->required_seen)
+            {
+                engine->required_available_since = now;
+            }
             engine->required_missing = false;
+            engine->required_seen = true;
         }
         else if (!engine->required_missing)
         {
@@ -1366,7 +1424,18 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         }
         const bool missing_too_long =
             engine->required_missing && now - engine->required_missing_since >= engine->config.enter_hold_nano;
-        if (out.state == UNKNOWN || missing_too_long)
+        /* After a stream start or a gap, the counts may not yet show what
+         * the gap cost (drops arrive with the first packets after it). */
+        bool settling =
+            !engine->required_missing && now - engine->required_available_since < engine->config.enter_hold_nano;
+        /* An escalation that began while settling finishes first. */
+        for (std::size_t j = 0; j < INDICATORS && !settling; ++j)
+        {
+            const auto &h = engine->hysteresis[j];
+            settling = raws[j].applicable && h.up_pending &&
+                       h.up_since < engine->required_available_since + engine->config.enter_hold_nano;
+        }
+        if (out.state == UNKNOWN || missing_too_long || settling)
         {
             status->primary_indicator = static_cast<std::int32_t>(i);
             return finish(UNKNOWN, raws[i].available ? ROBOTWEAX_SRT_TELEMETRY_REASON_NONE : raws[i].advice.reason);
