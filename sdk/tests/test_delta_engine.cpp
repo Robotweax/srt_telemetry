@@ -200,6 +200,138 @@ void test_jsonl_snapshot_export()
 
 } // namespace
 
+robotweax_srt_telemetry_ext_sample_v1 ext_sample()
+{
+    robotweax_srt_telemetry_ext_sample_v1 sample{};
+    sample.struct_size = sizeof(sample);
+    sample.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    return sample;
+}
+
+robotweax_srt_telemetry_delta_v1 empty_delta()
+{
+    robotweax_srt_telemetry_delta_v1 delta{};
+    delta.struct_size = sizeof(delta);
+    delta.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    return delta;
+}
+
+robotweax_srt_telemetry_ext_delta_v1 empty_ext_delta()
+{
+    robotweax_srt_telemetry_ext_delta_v1 delta{};
+    delta.struct_size = sizeof(delta);
+    delta.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    return delta;
+}
+
+void test_ext_counters_share_interval_and_resets()
+{
+    robotweax_srt_telemetry_delta_engine *engine = nullptr;
+    check(robotweax_srt_telemetry_delta_engine_create(&engine) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "engine creation for ext deltas");
+
+    auto first = sample_at(1'000'000'000ULL);
+    auto first_ext = ext_sample();
+    first_ext.available_fields = ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_ACK_PACKET_TOTAL |
+                                 ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_BELATED_PACKET_SINCE_CLEAR |
+                                 ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_MSS_BYTES;
+    first_ext.sent_ack_packet_total = 50;
+    first_ext.belated_packet_since_clear = 9;
+    first_ext.mss_bytes = 1'500;
+
+    auto delta = empty_delta();
+    auto ext_delta = empty_ext_delta();
+    check(robotweax_srt_telemetry_delta_engine_update_ext(engine, &first, &first_ext, &delta,
+                                                          &ext_delta) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "first ext update");
+    check((delta.quality_flags & ROBOTWEAX_SRT_TELEMETRY_QUALITY_FIRST_SAMPLE) != 0,
+          "first ext sample is a baseline");
+    check(ext_delta.available_delta_fields == 0, "no ext delta on the baseline");
+
+    auto second = first;
+    second.sample_monotonic_nano += 500'000'000ULL;
+    auto second_ext = first_ext;
+    second_ext.sent_ack_packet_total = 70;
+    second_ext.belated_packet_since_clear = 2; /* host cleared interval statistics */
+    check(robotweax_srt_telemetry_delta_engine_update_ext(engine, &second, &second_ext, &delta,
+                                                          &ext_delta) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "second ext update");
+    check(delta.interval_nano == 500'000'000ULL, "ext deltas share the v1 interval");
+    check(ext_delta.sent_ack_packet_delta == 20 &&
+              (ext_delta.available_delta_fields &
+               ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_ACK_PACKET_TOTAL) != 0,
+          "ACK delta");
+    check((ext_delta.counter_reset_fields &
+           ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_BELATED_PACKET_SINCE_CLEAR) != 0 &&
+              (ext_delta.available_delta_fields &
+               ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_BELATED_PACKET_SINCE_CLEAR) == 0,
+          "a host clear is a field-local reset, not a negative delta");
+    check((delta.quality_flags & ROBOTWEAX_SRT_TELEMETRY_QUALITY_COUNTER_RESET) == 0,
+          "an ext (host-clear) reset does not mark the v1 lifetime interval as reset");
+    check((ext_delta.available_delta_fields & ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_MSS_BYTES) == 0,
+          "gauges never produce deltas");
+
+    auto third = second;
+    third.sample_monotonic_nano += 500'000'000ULL;
+    auto third_ext = second_ext;
+    third_ext.available_fields &= ~ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_ACK_PACKET_TOTAL;
+    third_ext.sent_ack_packet_total = 0;
+    check(robotweax_srt_telemetry_delta_engine_update_ext(engine, &third, &third_ext, &delta,
+                                                          &ext_delta) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "third ext update");
+    check((ext_delta.available_delta_fields &
+           ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_ACK_PACKET_TOTAL) == 0 &&
+              (ext_delta.counter_reset_fields &
+               ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENT_ACK_PACKET_TOTAL) == 0,
+          "an unavailable field is neither a delta nor a reset");
+
+    robotweax_srt_telemetry_delta_engine_destroy(engine);
+}
+
+void test_ext_baseline_after_plain_update()
+{
+    robotweax_srt_telemetry_delta_engine *engine = nullptr;
+    check(robotweax_srt_telemetry_delta_engine_create(&engine) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "engine creation for mixed updates");
+    auto raw = sample_at(1'000'000'000ULL);
+    auto ext = ext_sample();
+    ext.available_fields = ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_RECEIVED_NAK_PACKET_TOTAL;
+    ext.received_nak_packet_total = 3;
+    auto delta = empty_delta();
+    auto ext_delta = empty_ext_delta();
+    static_cast<void>(
+        robotweax_srt_telemetry_delta_engine_update_ext(engine, &raw, &ext, &delta, &ext_delta));
+
+    raw.sample_monotonic_nano += 1'000'000'000ULL;
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_update(engine, &raw, &delta));
+
+    raw.sample_monotonic_nano += 1'000'000'000ULL;
+    ext.received_nak_packet_total = 10;
+    static_cast<void>(
+        robotweax_srt_telemetry_delta_engine_update_ext(engine, &raw, &ext, &delta, &ext_delta));
+    check(delta.interval_nano == 1'000'000'000ULL, "v1 interval continues across mixed calls");
+    check(ext_delta.available_delta_fields == 0,
+          "ext deltas never span an interval the ext sample did not observe");
+
+    raw.sample_monotonic_nano += 1'000'000'000ULL;
+    ext.received_nak_packet_total = 12;
+    static_cast<void>(
+        robotweax_srt_telemetry_delta_engine_update_ext(engine, &raw, &ext, &delta, &ext_delta));
+    check(ext_delta.received_nak_packet_delta == 2, "ext deltas resume after two ext samples");
+
+    check(robotweax_srt_telemetry_delta_engine_update_ext(engine, &raw, nullptr, &delta,
+                                                          &ext_delta) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "null ext sample is rejected");
+    auto short_ext = ext;
+    short_ext.struct_size = 8;
+    check(robotweax_srt_telemetry_delta_engine_update_ext(engine, &raw, &short_ext, &delta,
+                                                          &ext_delta) ==
+              ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH,
+          "truncated ext sample is an ABI mismatch");
+    robotweax_srt_telemetry_delta_engine_destroy(engine);
+}
+
 int main()
 {
     test_first_sample_and_rates();
@@ -208,6 +340,8 @@ int main()
     test_clock_and_provider_discontinuities();
     test_bounded_recorder_overwrite_order();
     test_jsonl_snapshot_export();
+    test_ext_counters_share_interval_and_resets();
+    test_ext_baseline_after_plain_update();
     if (failures != 0)
     {
         std::cerr << failures << " test checks failed\n";

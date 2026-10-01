@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -972,6 +973,182 @@ int run_unsafe_close_sample_race()
     return EXIT_SUCCESS;
 }
 
+
+constexpr std::uint64_t coverage_fields = ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_V1_5_5_CANDIDATE_FIELDS;
+constexpr std::uint64_t coverage_ext_fields =
+#if defined(ROBOTWEAX_SRT_TELEMETRY_RUNTIME_PROVIDER_ROBOTWEAX)
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_ROBOTWEAX_EXT_CANDIDATE_FIELDS;
+#else
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_HAIVISION_V1_5_5_EXT_CANDIDATE_FIELDS;
+#endif
+
+bool create_full_session(const SRTSOCKET socket, Session &session)
+{
+    robotweax_srt_telemetry_public_srt_config_v2 config{};
+    config.struct_size = sizeof(config);
+    config.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    config.socket = socket;
+    config.provider = runtime_provider;
+    config.capabilities =
+        ROBOTWEAX_SRT_TELEMETRY_CAP_COMMON_STATS_V1 | ROBOTWEAX_SRT_TELEMETRY_CAP_FEC_STATS_V1;
+    config.qualified_fields = coverage_fields;
+    config.qualified_ext_fields = coverage_ext_fields;
+    config.bistats = &srt_bistats;
+    return robotweax_srt_telemetry_public_srt_session_create_v2(&config, &session.value) ==
+           ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+bool sample_full(Session &session, robotweax_srt_telemetry_public_srt_result_v1 &result,
+                 robotweax_srt_telemetry_public_srt_ext_result_v1 &ext)
+{
+    const auto unix_nano =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                       std::chrono::system_clock::now().time_since_epoch())
+                                       .count());
+    const auto monotonic_nano =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                       std::chrono::steady_clock::now().time_since_epoch())
+                                       .count());
+    result = {};
+    result.struct_size = sizeof(result);
+    result.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    ext = {};
+    ext.struct_size = sizeof(ext);
+    ext.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    return robotweax_srt_telemetry_public_srt_session_sample_ext(
+               session.value, unix_nano, monotonic_nano, &result, &ext) ==
+           ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+void report_missing(const std::string_view endpoint, const std::string_view set,
+                    const std::uint64_t expected, const std::uint64_t actual)
+{
+    const auto missing = expected & ~actual;
+    if (missing != 0)
+    {
+        std::cerr << "FAIL: " << endpoint << " " << set << " missing bits 0x" << std::hex
+                  << missing << std::dec << '\n';
+    }
+}
+
+bool endpoint_covered(const std::string_view endpoint,
+                      const robotweax_srt_telemetry_public_srt_result_v1 &result,
+                      const robotweax_srt_telemetry_public_srt_ext_result_v1 &ext)
+{
+    constexpr auto ext_counters = coverage_ext_fields & ROBOTWEAX_SRT_TELEMETRY_EXT_COUNTER_FIELDS;
+    report_missing(endpoint, "v1 fields", coverage_fields, result.raw.available_fields);
+    report_missing(endpoint, "ext fields", coverage_ext_fields, ext.ext.available_fields);
+    report_missing(endpoint, "ext deltas", ext_counters, ext.ext_delta.available_delta_fields);
+    const auto complete = result.raw.available_fields == coverage_fields &&
+                          ext.ext.available_fields == coverage_ext_fields &&
+                          ext.ext_delta.available_delta_fields == ext_counters;
+    /* Sanity relations that hold on a healthy bidirectional loopback. */
+    const auto plausible = ext.ext.connection_age_seconds > 0.0 && ext.ext.mss_bytes > 0 &&
+                           ext.ext_delta.sent_ack_packet_delta > 0 &&
+                           ext.ext_delta.received_ack_packet_delta > 0 &&
+                           ext.ext_delta.sender_active_nano_delta > 0 &&
+                           ext.ext.filter_unrecovered_packet_total == 0;
+    if (!plausible)
+    {
+        std::cerr << "FAIL: " << endpoint << " implausible values: age "
+                  << ext.ext.connection_age_seconds << " s, MSS " << ext.ext.mss_bytes
+                  << ", ACK sent/received delta " << ext.ext_delta.sent_ack_packet_delta << "/"
+                  << ext.ext_delta.received_ack_packet_delta << ", sender-active delta "
+                  << ext.ext_delta.sender_active_nano_delta << " ns\n";
+    }
+    return complete && plausible;
+}
+
+int run_field_coverage()
+{
+    Runtime runtime;
+    if (!runtime.active())
+    {
+        std::cerr << "FAIL: srt_startup\n";
+        return EXIT_FAILURE;
+    }
+    Socket listener(srt_create_socket());
+    Socket caller(srt_create_socket());
+    sockaddr_in address{};
+    if (listener.get() == SRT_INVALID_SOCK || caller.get() == SRT_INVALID_SOCK ||
+        !configure_caller(caller.get()) || !bind_ephemeral_udp(listener.get(), address) ||
+        !srt_ok(srt_listen(listener.get(), 1), "srt_listen") ||
+        !srt_ok(srt_connect(caller.get(), reinterpret_cast<const sockaddr *>(&address),
+                            static_cast<int>(sizeof(address))),
+                "srt_connect"))
+    {
+        return EXIT_FAILURE;
+    }
+    Socket accepted(srt_accept(listener.get(), nullptr, nullptr));
+    if (accepted.get() == SRT_INVALID_SOCK || !configure_receiver(accepted.get()))
+    {
+        std::cerr << "FAIL: srt_accept\n";
+        return EXIT_FAILURE;
+    }
+
+    Session caller_session;
+    Session accepted_session;
+    if (!create_full_session(caller.get(), caller_session) ||
+        !create_full_session(accepted.get(), accepted_session))
+    {
+        std::cerr << "FAIL: full-field session creation\n";
+        return EXIT_FAILURE;
+    }
+
+    robotweax_srt_telemetry_public_srt_result_v1 caller_result{};
+    robotweax_srt_telemetry_public_srt_result_v1 accepted_result{};
+    robotweax_srt_telemetry_public_srt_ext_result_v1 caller_ext{};
+    robotweax_srt_telemetry_public_srt_ext_result_v1 accepted_ext{};
+    if (!sample_full(caller_session, caller_result, caller_ext) ||
+        !sample_full(accepted_session, accepted_result, accepted_ext))
+    {
+        std::cerr << "FAIL: baseline full-field sample\n";
+        return EXIT_FAILURE;
+    }
+
+    /* Pipeline the messages: a ping-pong exchange would wait out the TSBPD
+     * latency (120 ms by default) for every message. */
+    constexpr int message_count = 50;
+    for (int message = 0; message < message_count; ++message)
+    {
+        const auto fill = static_cast<char>('a' + message % 26);
+        if (!send_payload(caller.get(), fill) || !send_payload(accepted.get(), fill))
+        {
+            std::cerr << "FAIL: payload send " << message << '\n';
+            return EXIT_FAILURE;
+        }
+    }
+    for (int message = 0; message < message_count; ++message)
+    {
+        const auto fill = static_cast<char>('a' + message % 26);
+        if (!receive_payload(accepted.get(), fill) || !receive_payload(caller.get(), fill))
+        {
+            std::cerr << "FAIL: payload receive " << message << '\n';
+            return EXIT_FAILURE;
+        }
+    }
+    /* Full ACKs run every 10 ms; 200 ms leaves margin on a loaded CI host. */
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    if (!sample_full(caller_session, caller_result, caller_ext) ||
+        !sample_full(accepted_session, accepted_result, accepted_ext))
+    {
+        std::cerr << "FAIL: full-field sample after exchange\n";
+        return EXIT_FAILURE;
+    }
+
+    const auto caller_ok = endpoint_covered("caller", caller_result, caller_ext);
+    const auto accepted_ok = endpoint_covered("listener", accepted_result, accepted_ext);
+    const auto mapped = std::popcount(coverage_fields) + std::popcount(coverage_ext_fields);
+    std::cout << "FIELD_COVERAGE {\"provider\":\"" << runtime_provider_name
+              << "\",\"mappedObservations\":" << mapped
+              << ",\"v1Fields\":" << std::popcount(coverage_fields)
+              << ",\"extFields\":" << std::popcount(coverage_ext_fields)
+              << ",\"excludedObservations\":2,\"complete\":"
+              << (caller_ok && accepted_ok ? "true" : "false") << "}\n";
+    return caller_ok && accepted_ok ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 } // namespace
 
 int main(const int argc, char **argv)
@@ -983,6 +1160,10 @@ int main(const int argc, char **argv)
     if (argc == 2 && std::string_view(argv[1]) == "--benchmark")
     {
         return run_sampling_benchmark();
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--field-coverage")
+    {
+        return run_field_coverage();
     }
     if (argc == 2 && std::string_view(argv[1]) == "--lifecycle")
     {
@@ -1003,7 +1184,8 @@ int main(const int argc, char **argv)
         const auto port = parse_port(argv[4]);
         return port == 0 ? EXIT_FAILURE : run_caller_peer(port);
     }
-    std::cerr << "usage: runtime-test [--benchmark | --lifecycle | --close-race | --role "
+    std::cerr << "usage: runtime-test [--benchmark | --field-coverage | --lifecycle | "
+                 "--close-race | --role "
                  "listener | --role caller --port PORT]\n";
     return EXIT_FAILURE;
 }

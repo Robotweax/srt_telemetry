@@ -165,6 +165,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests)
             add_test(NAME robotweax_srt_telemetry_public_srt_lifecycle_tests
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --lifecycle)
+            add_test(NAME robotweax_srt_telemetry_public_srt_field_coverage_test
+                COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --field-coverage)
             find_package(Python3 COMPONENTS Interpreter QUIET)
             if(Python3_Interpreter_FOUND)
                 add_test(NAME robotweax_srt_telemetry_public_srt_trigger_recording_test
@@ -200,6 +202,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
             set_tests_properties(robotweax_srt_telemetry_public_srt_runtime_tests
                 PROPERTIES TIMEOUT 15)
             set_tests_properties(robotweax_srt_telemetry_public_srt_lifecycle_tests
+                PROPERTIES TIMEOUT 15)
+            set_tests_properties(robotweax_srt_telemetry_public_srt_field_coverage_test
                 PROPERTIES TIMEOUT 15)
         endif()
     endif()

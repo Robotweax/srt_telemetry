@@ -13,7 +13,7 @@
 
 struct robotweax_srt_telemetry_public_srt_session
 {
-    robotweax_srt_telemetry_public_srt_config_v1 config{};
+    robotweax_srt_telemetry_public_srt_config_v2 config{};
     robotweax_srt_telemetry_delta_engine *delta_engine = nullptr;
 };
 
@@ -22,6 +22,36 @@ namespace
 
 constexpr std::uint64_t candidate_fields =
     ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_V1_5_5_CANDIDATE_FIELDS;
+
+/* mbpsBandwidth has a provider-specific meaning, so each provider may only
+ * qualify its own interpretation. */
+std::uint64_t ext_candidate_fields(const robotweax_srt_telemetry_provider provider)
+{
+    switch (provider)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_PROVIDER_HAIVISION_SRT:
+        return ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_HAIVISION_V1_5_5_EXT_CANDIDATE_FIELDS;
+    case ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT:
+        return ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_ROBOTWEAX_EXT_CANDIDATE_FIELDS;
+    default:
+        return 0;
+    }
+}
+
+robotweax_srt_telemetry_public_srt_config_v2
+widen_config(const robotweax_srt_telemetry_public_srt_config_v1 &config)
+{
+    robotweax_srt_telemetry_public_srt_config_v2 widened{};
+    widened.struct_size = sizeof(widened);
+    widened.abi_version = config.abi_version;
+    widened.socket = config.socket;
+    widened.provider = config.provider;
+    widened.capabilities = config.capabilities;
+    widened.qualified_fields = config.qualified_fields;
+    widened.qualified_ext_fields = 0;
+    widened.bistats = config.bistats;
+    return widened;
+}
 
 bool valid_config(const robotweax_srt_telemetry_public_srt_config_v1 *config)
 {
@@ -37,6 +67,49 @@ bool valid_config(const robotweax_srt_telemetry_public_srt_config_v1 *config)
            config->abi_version == ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION && config->socket >= 0 &&
            known_provider && common_capability_matches_fields && config->bistats != nullptr &&
            (config->qualified_fields & ~candidate_fields) == 0;
+}
+
+bool valid_config_v2(const robotweax_srt_telemetry_public_srt_config_v2 *config)
+{
+    if (config == nullptr ||
+        config->struct_size < sizeof(robotweax_srt_telemetry_public_srt_config_v2))
+    {
+        return false;
+    }
+    robotweax_srt_telemetry_public_srt_config_v1 common{};
+    common.struct_size = sizeof(common);
+    common.abi_version = config->abi_version;
+    common.socket = config->socket;
+    common.provider = config->provider;
+    common.capabilities = config->capabilities;
+    common.qualified_fields = config->qualified_fields;
+    common.bistats = config->bistats;
+    const auto ext = config->qualified_ext_fields;
+    const auto filter_ok =
+        (ext & ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_EXT_FILTER_CANDIDATE_FIELDS) == 0 ||
+        (config->capabilities & ROBOTWEAX_SRT_TELEMETRY_CAP_FEC_STATS_V1) != 0;
+    const auto common_ok =
+        ext == 0 || (config->capabilities & ROBOTWEAX_SRT_TELEMETRY_CAP_COMMON_STATS_V1) != 0;
+    return valid_config(&common) && (ext & ~ext_candidate_fields(config->provider)) == 0 &&
+           filter_ok && common_ok;
+}
+
+bool valid_ext_result(const robotweax_srt_telemetry_public_srt_ext_result_v1 *result)
+{
+    return result != nullptr &&
+           result->struct_size >= sizeof(robotweax_srt_telemetry_public_srt_ext_result_v1) &&
+           result->abi_version == ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+}
+
+void initialize_ext_result(robotweax_srt_telemetry_public_srt_ext_result_v1 &result)
+{
+    std::memset(&result, 0, sizeof(result));
+    result.struct_size = sizeof(result);
+    result.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    result.ext.struct_size = sizeof(result.ext);
+    result.ext.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    result.ext_delta.struct_size = sizeof(result.ext_delta);
+    result.ext_delta.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
 }
 
 bool valid_result(const robotweax_srt_telemetry_public_srt_result_v1 *result)
@@ -100,7 +173,7 @@ void map_milliseconds(const std::uint64_t field, const std::uint64_t qualified_f
 }
 
 void populate_raw(const SRT_TRACEBSTATS &statistics,
-                  const robotweax_srt_telemetry_public_srt_config_v1 &config,
+                  const robotweax_srt_telemetry_public_srt_config_v2 &config,
                   const std::uint64_t observed_at_unix_nano,
                   const std::uint64_t sample_monotonic_nano,
                   robotweax_srt_telemetry_raw_sample_v1 &raw)
@@ -190,6 +263,123 @@ void populate_raw(const SRT_TRACEBSTATS &statistics,
                      raw.receiver_tsbpd_delay_seconds, raw.available_fields);
 }
 
+void map_scaled(const std::uint64_t field, const std::uint64_t qualified_fields, const double source,
+                const double scale, double &destination, std::uint64_t &available_fields)
+{
+    if ((qualified_fields & field) == 0 || !std::isfinite(source) || source < 0.0)
+    {
+        return;
+    }
+    destination = source * scale;
+    available_fields |= field;
+}
+
+void map_microseconds_to_nano(const std::uint64_t field, const std::uint64_t qualified_fields,
+                              const std::int64_t source, std::uint64_t &destination,
+                              std::uint64_t &available_fields)
+{
+    constexpr std::int64_t limit = INT64_MAX / 1'000;
+    if ((qualified_fields & field) == 0 || source < 0 || source > limit)
+    {
+        return;
+    }
+    destination = static_cast<std::uint64_t>(source) * 1'000U;
+    available_fields |= field;
+}
+
+void populate_ext(const SRT_TRACEBSTATS &statistics,
+                  const robotweax_srt_telemetry_public_srt_config_v2 &config,
+                  robotweax_srt_telemetry_ext_sample_v1 &ext)
+{
+    const auto qualified = config.qualified_ext_fields;
+    auto &available = ext.available_fields;
+
+    map_scaled(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_CONNECTION_AGE_SECONDS, qualified,
+               static_cast<double>(statistics.msTimeStamp), 1e-3, ext.connection_age_seconds,
+               available);
+
+#define ROBOTWEAX_MAP_EXT_SIGNED(field_suffix, source_name, destination_name)                      \
+    map_signed_counter(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_##field_suffix, qualified,                \
+                       statistics.source_name, ext.destination_name, available)
+
+    ROBOTWEAX_MAP_EXT_SIGNED(SENT_ACK_PACKET_TOTAL, pktSentACKTotal, sent_ack_packet_total);
+    ROBOTWEAX_MAP_EXT_SIGNED(RECEIVED_ACK_PACKET_TOTAL, pktRecvACKTotal, received_ack_packet_total);
+    ROBOTWEAX_MAP_EXT_SIGNED(SENT_NAK_PACKET_TOTAL, pktSentNAKTotal, sent_nak_packet_total);
+    ROBOTWEAX_MAP_EXT_SIGNED(RECEIVED_NAK_PACKET_TOTAL, pktRecvNAKTotal, received_nak_packet_total);
+    ROBOTWEAX_MAP_EXT_SIGNED(SENT_FILTER_EXTRA_PACKET_TOTAL, pktSndFilterExtraTotal,
+                             sent_filter_extra_packet_total);
+    ROBOTWEAX_MAP_EXT_SIGNED(RECEIVED_FILTER_EXTRA_PACKET_TOTAL, pktRcvFilterExtraTotal,
+                             received_filter_extra_packet_total);
+    ROBOTWEAX_MAP_EXT_SIGNED(FILTER_RECOVERED_PACKET_TOTAL, pktRcvFilterSupplyTotal,
+                             filter_recovered_packet_total);
+    ROBOTWEAX_MAP_EXT_SIGNED(FILTER_UNRECOVERED_PACKET_TOTAL, pktRcvFilterLossTotal,
+                             filter_unrecovered_packet_total);
+    ROBOTWEAX_MAP_EXT_SIGNED(RECEIVED_RETRANSMITTED_PACKET_SINCE_CLEAR, pktRcvRetrans,
+                             received_retransmitted_packet_since_clear);
+    ROBOTWEAX_MAP_EXT_SIGNED(BELATED_PACKET_SINCE_CLEAR, pktRcvBelated, belated_packet_since_clear);
+    ROBOTWEAX_MAP_EXT_SIGNED(REORDER_DISTANCE_PACKETS, pktReorderDistance,
+                             reorder_distance_packets);
+    ROBOTWEAX_MAP_EXT_SIGNED(MSS_BYTES, byteMSS, mss_bytes);
+    ROBOTWEAX_MAP_EXT_SIGNED(SEND_BUFFER_PACKETS, pktSndBuf, send_buffer_packets);
+    ROBOTWEAX_MAP_EXT_SIGNED(RECEIVE_BUFFER_PACKETS, pktRcvBuf, receive_buffer_packets);
+    ROBOTWEAX_MAP_EXT_SIGNED(REORDER_TOLERANCE_PACKETS, pktReorderTolerance,
+                             reorder_tolerance_packets);
+
+#undef ROBOTWEAX_MAP_EXT_SIGNED
+
+#define ROBOTWEAX_MAP_EXT_UNSIGNED(field_suffix, source_name, destination_name)                    \
+    map_unsigned_counter(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_##field_suffix, qualified,              \
+                         statistics.source_name, ext.destination_name, available)
+
+    ROBOTWEAX_MAP_EXT_UNSIGNED(RECEIVER_LOSS_WIRE_BYTE_TOTAL, byteRcvLossTotal,
+                               receiver_loss_wire_byte_total);
+    ROBOTWEAX_MAP_EXT_UNSIGNED(SENDER_DROP_WIRE_BYTE_TOTAL, byteSndDropTotal,
+                               sender_drop_wire_byte_total);
+    ROBOTWEAX_MAP_EXT_UNSIGNED(RECEIVER_DROP_WIRE_BYTE_TOTAL, byteRcvDropTotal,
+                               receiver_drop_wire_byte_total);
+    ROBOTWEAX_MAP_EXT_UNSIGNED(RECEIVER_UNDECRYPTABLE_PAYLOAD_BYTE_TOTAL, byteRcvUndecryptTotal,
+                               receiver_undecryptable_payload_byte_total);
+
+#undef ROBOTWEAX_MAP_EXT_UNSIGNED
+
+    map_microseconds_to_nano(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SENDER_ACTIVE_NANO_TOTAL, qualified,
+                             statistics.usSndDurationTotal, ext.sender_active_nano_total,
+                             available);
+
+    constexpr double megabit = 1'000'000.0;
+    map_scaled(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_PACKET_SEND_PERIOD_SECONDS, qualified,
+               statistics.usPktSndPeriod, 1e-6, ext.packet_send_period_seconds, available);
+    map_scaled(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_ESTIMATED_LINK_CAPACITY_BITS_PER_SECOND, qualified,
+               statistics.mbpsBandwidth, megabit, ext.estimated_link_capacity_bits_per_second,
+               available);
+    map_scaled(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_DATA_ARRIVAL_RATE_BITS_PER_SECOND, qualified,
+               statistics.mbpsBandwidth, megabit, ext.data_arrival_rate_bits_per_second, available);
+    map_scaled(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_SEND_BANDWIDTH_LIMIT_BITS_PER_SECOND, qualified,
+               statistics.mbpsMaxBW, megabit, ext.send_bandwidth_limit_bits_per_second, available);
+    map_scaled(ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_AVERAGE_BELATED_SECONDS, qualified,
+               statistics.pktRcvAvgBelatedTime, 1e-3, ext.average_belated_seconds, available);
+}
+
+robotweax_srt_telemetry_error
+create_session(const robotweax_srt_telemetry_public_srt_config_v2 &config,
+               robotweax_srt_telemetry_public_srt_session **session)
+{
+    auto *created = new (std::nothrow) robotweax_srt_telemetry_public_srt_session{};
+    if (created == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    created->config = config;
+    const auto error = robotweax_srt_telemetry_delta_engine_create(&created->delta_engine);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        delete created;
+        return error;
+    }
+    *session = created;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
 } // namespace
 
 extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_session_create(
@@ -208,20 +398,25 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_sess
                    : ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
 
-    auto *created = new (std::nothrow) robotweax_srt_telemetry_public_srt_session{};
-    if (created == nullptr)
+    return create_session(widen_config(*config), session);
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_session_create_v2(
+    const robotweax_srt_telemetry_public_srt_config_v2 *config,
+    robotweax_srt_telemetry_public_srt_session **session)
+{
+    if (session == nullptr)
     {
-        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
-    created->config = *config;
-    const auto error = robotweax_srt_telemetry_delta_engine_create(&created->delta_engine);
-    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    *session = nullptr;
+    if (!valid_config_v2(config))
     {
-        delete created;
-        return error;
+        return config != nullptr && config->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION
+                   ? ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH
+                   : ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
-    *session = created;
-    return ROBOTWEAX_SRT_TELEMETRY_OK;
+    return create_session(*config, session);
 }
 
 extern "C" void robotweax_srt_telemetry_public_srt_session_destroy(
@@ -268,4 +463,35 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_sess
                  result->raw);
     return robotweax_srt_telemetry_delta_engine_update(session->delta_engine, &result->raw,
                                                        &result->delta);
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_session_sample_ext(
+    robotweax_srt_telemetry_public_srt_session *session, const std::uint64_t observed_at_unix_nano,
+    const std::uint64_t sample_monotonic_nano, robotweax_srt_telemetry_public_srt_result_v1 *result,
+    robotweax_srt_telemetry_public_srt_ext_result_v1 *ext_result)
+{
+    if (session == nullptr || result == nullptr || ext_result == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (!valid_result(result) || !valid_ext_result(ext_result))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+
+    initialize_result(*result);
+    initialize_ext_result(*ext_result);
+    SRT_TRACEBSTATS statistics{};
+    result->native_result = session->config.bistats(session->config.socket, &statistics, 0, 1);
+    if (result->native_result != 0)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    }
+
+    populate_raw(statistics, session->config, observed_at_unix_nano, sample_monotonic_nano,
+                 result->raw);
+    populate_ext(statistics, session->config, ext_result->ext);
+    return robotweax_srt_telemetry_delta_engine_update_ext(session->delta_engine, &result->raw,
+                                                           &ext_result->ext, &result->delta,
+                                                           &ext_result->ext_delta);
 }
