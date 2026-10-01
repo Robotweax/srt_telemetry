@@ -1,5 +1,8 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
 # The libraries expose a C ABI but are implemented in C++. A static build needs
 # the C++ runtime at link time, which CMake only adds when CXX is enabled in the
 # consuming project. Enable it here so C-only hosts link without extra setup.

@@ -38,11 +38,14 @@ add_library(robotweax_srt_telemetry
     sdk/src/delta_engine.cpp
     sdk/src/metrics.cpp
     sdk/src/recorder.cpp
+    sdk/src/sampler.cpp
     sdk/src/version.cpp)
 add_library(
     RobotweaxSRTTelemetry::core ALIAS robotweax_srt_telemetry)
 
 target_compile_features(robotweax_srt_telemetry PUBLIC cxx_std_20)
+find_package(Threads REQUIRED)
+target_link_libraries(robotweax_srt_telemetry PUBLIC Threads::Threads)
 target_include_directories(robotweax_srt_telemetry
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
@@ -182,6 +185,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --field-coverage)
             add_test(NAME robotweax_srt_telemetry_public_srt_connection_events_test
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --connection-events)
+            add_test(NAME robotweax_srt_telemetry_public_srt_sampler_test
+                COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --sampler)
             find_package(Python3 COMPONENTS Interpreter QUIET)
             if(Python3_Interpreter_FOUND)
                 add_test(NAME robotweax_srt_telemetry_public_srt_trigger_recording_test
@@ -222,6 +227,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 PROPERTIES TIMEOUT 15)
             set_tests_properties(robotweax_srt_telemetry_public_srt_connection_events_test
                 PROPERTIES TIMEOUT 30)
+            set_tests_properties(robotweax_srt_telemetry_public_srt_sampler_test
+                PROPERTIES TIMEOUT 30)
         endif()
     endif()
 endif()
@@ -249,6 +256,15 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     target_compile_features(robotweax_srt_telemetry_metrics_tests PRIVATE cxx_std_20)
     add_test(NAME robotweax_srt_telemetry_metrics_tests
         COMMAND robotweax_srt_telemetry_metrics_tests)
+
+    add_executable(robotweax_srt_telemetry_sampler_tests
+        sdk/tests/test_sampler.cpp)
+    target_link_libraries(robotweax_srt_telemetry_sampler_tests
+        PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_sampler_tests PRIVATE cxx_std_20)
+    add_test(NAME robotweax_srt_telemetry_sampler_tests
+        COMMAND robotweax_srt_telemetry_sampler_tests)
+    set_tests_properties(robotweax_srt_telemetry_sampler_tests PROPERTIES TIMEOUT 30)
 
     add_executable(robotweax_srt_telemetry_c_api_test
         sdk/tests/test_c_api.c)

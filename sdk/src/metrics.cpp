@@ -475,6 +475,10 @@ void accumulate(robotweax_srt_telemetry_window_aggregator &aggregator, Window &w
     {
         window.flags |= ROBOTWEAX_SRT_TELEMETRY_WINDOW_CLOCK_STEP;
     }
+    if ((sample.quality_flags & ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR) != 0)
+    {
+        window.flags |= ROBOTWEAX_SRT_TELEMETRY_WINDOW_SOURCE_ERROR;
+    }
     if (sample.interval_nano > 2 * aggregator.config.expected_period_nano)
     {
         window.flags |= ROBOTWEAX_SRT_TELEMETRY_WINDOW_SAMPLING_GAP;
