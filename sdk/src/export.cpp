@@ -294,22 +294,19 @@ bool reserved_label(const std::string_view key)
 } // namespace
 
 /* A host key that collides with an exporter label, or with another host
- * label after renaming, gets "host_" prefixes until it is unique. */
-std::string robotweax_srt_telemetry_internal::prometheus_labels(
-    const std::uint64_t id, const robotweax_srt_telemetry_endpoint_role role,
-    const std::vector<std::pair<std::string, std::string>> &labels)
+ * label after renaming, gets "host_" prefixes until it is unique. The same
+ * names serve Prometheus labels and OTLP attributes. */
+std::vector<std::pair<std::string, std::string>>
+robotweax_srt_telemetry_internal::exporter_labels(const std::vector<std::pair<std::string, std::string>> &labels)
 {
-    std::string text = "source_id=\"";
-    integer(text, id);
-    text += "\",role=\"";
-    text += role_name(role);
-    text += '"';
     std::set<std::string> used;
     for (const auto &label : labels)
     {
         used.insert(label.first);
     }
     std::set<std::string> taken;
+    std::vector<std::pair<std::string, std::string>> out;
+    out.reserve(labels.size());
     for (const auto &[key, value] : labels)
     {
         std::string name = key;
@@ -321,6 +318,22 @@ std::string robotweax_srt_telemetry_internal::prometheus_labels(
             } while (reserved_label(name) || used.count(name) != 0 || taken.count(name) != 0);
         }
         taken.insert(name);
+        out.emplace_back(std::move(name), value);
+    }
+    return out;
+}
+
+std::string robotweax_srt_telemetry_internal::prometheus_labels(
+    const std::uint64_t id, const robotweax_srt_telemetry_endpoint_role role,
+    const std::vector<std::pair<std::string, std::string>> &labels)
+{
+    std::string text = "source_id=\"";
+    integer(text, id);
+    text += "\",role=\"";
+    text += role_name(role);
+    text += '"';
+    for (const auto &[name, value] : exporter_labels(labels))
+    {
         text += ',';
         text += name;
         text += "=\"";
@@ -938,4 +951,404 @@ extern "C" void robotweax_srt_telemetry_render_options_default(const robotweax_s
     options->struct_size = sizeof(*options);
     options->abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
     options->format = format;
+}
+
+/* ------------------------------------------------------------------- OTLP */
+
+namespace
+{
+
+/* OTLP/HTTP JSON (ExportMetricsServiceRequest, protobuf JSON mapping with
+ * the OTLP rules: lowerCamelCase keys, 64-bit integers as strings, enums as
+ * integers). */
+constexpr int temporality_cumulative = 2;
+
+void otlp_string_attribute(std::string &out, const std::string_view key, const std::string_view value, bool &first)
+{
+    out += first ? "" : ",";
+    first = false;
+    out += "{\"key\":";
+    json_string(out, key);
+    out += ",\"value\":{\"stringValue\":";
+    json_string(out, value);
+    out += "}}";
+}
+
+void otlp_int_attribute(std::string &out, const std::string_view key, const std::uint64_t value, bool &first)
+{
+    out += first ? "" : ",";
+    first = false;
+    out += "{\"key\":";
+    json_string(out, key);
+    out += ",\"value\":{\"intValue\":\"";
+    integer(out, value);
+    out += "\"}}";
+}
+
+struct OtlpWriter
+{
+    std::string &out;
+    bool first_metric = true;
+    bool first_point = true;
+    bool open = false;
+
+    /* Starts a metric; points follow; close() ends it. kind: "gauge" or
+     * "sum" (monotonic, cumulative). */
+    void begin(const char *name, const char *unit, const std::string &description, const bool sum)
+    {
+        out += first_metric ? "" : ",";
+        first_metric = false;
+        out += "{\"name\":";
+        json_string(out, name);
+        out += ",\"description\":";
+        json_string(out, description);
+        out += ",\"unit\":";
+        json_string(out, unit);
+        out += sum ? ",\"sum\":{\"aggregationTemporality\":" + std::to_string(temporality_cumulative) +
+                         ",\"isMonotonic\":true,\"dataPoints\":["
+                   : std::string(",\"gauge\":{\"dataPoints\":[");
+        first_point = true;
+        open = true;
+    }
+
+    void close()
+    {
+        out += "]}}";
+        open = false;
+    }
+
+    /* A point: base attributes (already JSON), extra string attributes, then
+     * the value. Non-finite doubles are left out. */
+    void point(const std::string &attributes, const std::vector<std::pair<const char *, std::string>> &extra,
+               const std::uint64_t start, const std::uint64_t time, const double value)
+    {
+        std::string number_text;
+        if (!number(number_text, value))
+        {
+            return;
+        }
+        head(attributes, extra, start, time);
+        out += ",\"asDouble\":";
+        out += number_text;
+        out += '}';
+    }
+
+    void point_int(const std::string &attributes, const std::vector<std::pair<const char *, std::string>> &extra,
+                   const std::uint64_t start, const std::uint64_t time, const std::uint64_t value)
+    {
+        head(attributes, extra, start, time);
+        out += ",\"asInt\":\"";
+        integer(out, value);
+        out += "\"}";
+    }
+
+  private:
+    void head(const std::string &attributes, const std::vector<std::pair<const char *, std::string>> &extra,
+              const std::uint64_t start, const std::uint64_t time)
+    {
+        out += first_point ? "" : ",";
+        first_point = false;
+        out += "{\"attributes\":[";
+        out += attributes;
+        bool first = attributes.empty();
+        for (const auto &[key, value] : extra)
+        {
+            otlp_string_attribute(out, key, value, first);
+        }
+        out += ']';
+        if (start != 0)
+        {
+            out += ",\"startTimeUnixNano\":\"";
+            integer(out, start);
+            out += '"';
+        }
+        out += ",\"timeUnixNano\":\"";
+        integer(out, time);
+        out += '"';
+    }
+};
+
+const char *counter_unit(const char *otel_name)
+{
+    const std::string_view name = otel_name;
+    return name.ends_with(".bytes") ? "By" : "{packet}";
+}
+
+} // namespace
+
+std::string robotweax_srt_telemetry_internal::render_otlp_json(const ExportView &view)
+{
+    std::string out = "{\"resourceMetrics\":[{\"resource\":{\"attributes\":[";
+    bool first = true;
+    for (const auto &[key, value] : view.resource)
+    {
+        otlp_string_attribute(out, key, value, first);
+    }
+    /* Defaults, each unless the host set it (keys are unique). */
+    static const std::pair<const char *, const char *> defaults[] = {
+        {"service.name", "srt-telemetry"},
+        {"telemetry.sdk.name", "robotweax-srt-telemetry"},
+        {"telemetry.sdk.language", "cpp"},
+        {"telemetry.sdk.version", ROBOTWEAX_SRT_TELEMETRY_VERSION}};
+    for (const auto &[key, value] : defaults)
+    {
+        bool set = false;
+        for (const auto &attribute : view.resource)
+        {
+            set = set || attribute.first == key;
+        }
+        if (!set)
+        {
+            otlp_string_attribute(out, key, value, first);
+        }
+    }
+    out += "]},\"scopeMetrics\":[{\"scope\":{\"name\":\"robotweax.srt_telemetry\",\"version\":";
+    json_string(out, ROBOTWEAX_SRT_TELEMETRY_VERSION);
+    out += ",\"attributes\":[";
+    first = true;
+    otlp_int_attribute(out, "srt.metric_schema", ROBOTWEAX_SRT_TELEMETRY_METRIC_SCHEMA_VERSION, first);
+    out += "]},\"metrics\":[";
+
+    /* Attributes per source: source_id, role and the host labels, renamed
+     * like the Prometheus labels so both outputs carry the same keys. */
+    std::vector<std::string> attributes;
+    attributes.reserve(view.sources.size());
+    for (const auto &s : view.sources)
+    {
+        std::string a;
+        bool f = true;
+        otlp_int_attribute(a, "source_id", s.id, f);
+        otlp_string_attribute(a, "role", role_name(s.role), f);
+        for (const auto &[key, value] : exporter_labels(s.labels))
+        {
+            otlp_string_attribute(a, key, value, f);
+        }
+        attributes.push_back(std::move(a));
+    }
+    const auto now = view.generated_unix_nano;
+    OtlpWriter w{out};
+    const auto metric = [&](const char *name, const char *unit, const std::string &description, const bool sum,
+                            auto &&points)
+    {
+        /* A metric with no points is left out. */
+        const auto mark = out.size();
+        const bool was_first = w.first_metric;
+        w.begin(name, unit, description, sum);
+        points();
+        if (w.first_point)
+        {
+            out.resize(mark);
+            w.first_metric = was_first;
+            w.open = false;
+            return;
+        }
+        w.close();
+    };
+
+    metric("srt.source.up", "{up}", "1 while the source's statistics read succeeds, 0 while it fails.", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   w.point_int(attributes[i], {}, 0, now, view.sources[i].failed ? 0 : 1);
+               }
+           });
+    metric("srt.window.length", "s", "Length of the exported statistics window.", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   const auto &s = view.sources[i];
+                   if (window_usable(s))
+                   {
+                       w.point(attributes[i], {}, s.window.start_unix_nano, s.window.end_unix_nano,
+                               static_cast<double>(s.window.window_nano) / 1e9);
+                   }
+               }
+           });
+    metric("srt.window.samples", "{sample}", "Samples in the exported window.", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   const auto &s = view.sources[i];
+                   if (window_usable(s))
+                   {
+                       w.point_int(attributes[i], {}, s.window.start_unix_nano, s.window.end_unix_nano,
+                                   s.window.sample_count);
+                   }
+               }
+           });
+    metric("srt.window.quality", "{flag}", "1 when the exported window carries the data-quality flag.", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   const auto &s = view.sources[i];
+                   if (!window_usable(s))
+                   {
+                       continue;
+                   }
+                   for (const auto &f : window_flags)
+                   {
+                       w.point_int(attributes[i], {{"flag", f.name}}, s.window.start_unix_nano,
+                                   s.window.end_unix_nano, (s.window.quality_flags & f.bit) != 0 ? 1 : 0);
+                   }
+               }
+           });
+
+    for (std::size_t m = 0; m < names.size(); ++m)
+    {
+        const auto id = static_cast<robotweax_srt_telemetry_metric>(m);
+        const auto *info = robotweax_srt_telemetry_metric_info(id);
+        const bool rate = info->kind == ROBOTWEAX_SRT_TELEMETRY_METRIC_KIND_RATE;
+        std::string help = names[m].help;
+        help += rate ? " Window statistic in attribute stat: rate (exact over the window), max and p95 of 100 ms "
+                       "samples."
+                     : " Window statistic in attribute stat: min, max, mean, last, p95.";
+        metric(names[m].otel, info->unit, help, false,
+               [&]
+               {
+                   for (std::size_t i = 0; i < view.sources.size(); ++i)
+                   {
+                       const auto &s = view.sources[i];
+                       if (!window_usable(s) || !in_scope(s, names[m].scope) ||
+                           (s.window.available_metrics & ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(id)) == 0)
+                       {
+                           continue;
+                       }
+                       const auto &x = s.window.metrics[m];
+                       const auto start = s.window.start_unix_nano;
+                       const auto end = s.window.end_unix_nano;
+                       if (rate)
+                       {
+                           w.point(attributes[i], {{"stat", "rate"}}, start, end, x.rate);
+                           w.point(attributes[i], {{"stat", "max"}}, start, end, x.max);
+                       }
+                       else
+                       {
+                           w.point(attributes[i], {{"stat", "min"}}, start, end, x.min);
+                           w.point(attributes[i], {{"stat", "max"}}, start, end, x.max);
+                           w.point(attributes[i], {{"stat", "mean"}}, start, end, x.mean);
+                           w.point(attributes[i], {{"stat", "last"}}, start, end, x.last);
+                       }
+                       if ((x.flags & ROBOTWEAX_SRT_TELEMETRY_METRIC_SUMMARY_PERCENTILE_AVAILABLE) != 0)
+                       {
+                           w.point(attributes[i], {{"stat", "p95"}}, start, end, x.p95);
+                       }
+                   }
+               });
+    }
+
+    if ((view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_COUNTERS) == 0)
+    {
+        for (const auto &c : counters)
+        {
+            metric(c.otel, counter_unit(c.otel), c.help, true,
+                   [&]
+                   {
+                       for (std::size_t i = 0; i < view.sources.size(); ++i)
+                       {
+                           const auto &s = view.sources[i];
+                           if (in_scope(s, c.scope) && counter_available(s, c))
+                           {
+                               /* Cumulative since the counters started: the
+                                * first sample, or the last counter reset. */
+                               const auto start =
+                                   s.counters_start_unix_nano != 0 ? s.counters_start_unix_nano : now;
+                               w.point_int(attributes[i], {}, std::min(start, now), now, c.value(s));
+                           }
+                       }
+                   });
+        }
+    }
+
+    metric("srt.health.verdict", "{verdict}", "Health verdict: 0 unknown, 1 ok, 2 watch, 3 at risk, 4 failing.", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   const auto &s = view.sources[i];
+                   if (s.has_health)
+                   {
+                       w.point_int(attributes[i], {}, 0, now, static_cast<std::uint64_t>(s.health.verdict));
+                   }
+               }
+           });
+    metric("srt.health.info", "{info}", "Current verdict, reason and suggested knob (value 1).", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   const auto &s = view.sources[i];
+                   if (s.has_health)
+                   {
+                       w.point_int(attributes[i],
+                                   {{"verdict", robotweax_srt_telemetry_health_verdict_name(s.health.verdict)},
+                                    {"reason", robotweax_srt_telemetry_health_reason_name(s.health.reason)},
+                                    {"knob", robotweax_srt_telemetry_health_knob_name(s.health.knob)},
+                                    {"direction", direction_name(s.health.knob_direction)}},
+                                   0, now, 1);
+                   }
+               }
+           });
+    metric("srt.health.suggested_value", "{value}",
+           "Suggested value for the knob in srt.health.info, in the knob's unit (s, bit/s, bytes/s, percent).", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   const auto &s = view.sources[i];
+                   if (s.has_health && s.health.suggested_value != 0)
+                   {
+                       w.point(attributes[i], {{"knob", robotweax_srt_telemetry_health_knob_name(s.health.knob)}}, 0,
+                               now, s.health.suggested_value);
+                   }
+               }
+           });
+    if ((view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_INDICATORS) == 0)
+    {
+        for (const bool value : {false, true})
+        {
+            /* Units in braces are annotations: a state is not a ratio. */
+            metric(value ? "srt.health.indicator.value" : "srt.health.indicator.state", value ? "1" : "{state}",
+                   value ? "Indicator value (see docs/architecture/health-engine.md)."
+                         : "Indicator state after hysteresis: 0 unknown, 1 ok, 2 watch, 3 at risk, 4 failing.",
+                   false,
+                   [&]
+                   {
+                       for (std::size_t i = 0; i < view.sources.size(); ++i)
+                       {
+                           const auto &s = view.sources[i];
+                           if (!s.has_health)
+                           {
+                               continue;
+                           }
+                           for (std::size_t k = 0; k < ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT; ++k)
+                           {
+                               const auto &ind = s.health.indicators[k];
+                               const auto needed = value ? ROBOTWEAX_SRT_TELEMETRY_INDICATOR_AVAILABLE
+                                                         : ROBOTWEAX_SRT_TELEMETRY_INDICATOR_APPLICABLE;
+                               if ((ind.flags & needed) == 0)
+                               {
+                                   continue;
+                               }
+                               const std::vector<std::pair<const char *, std::string>> extra = {
+                                   {"indicator", robotweax_srt_telemetry_health_indicator_name(
+                                                     static_cast<robotweax_srt_telemetry_health_indicator>(k))}};
+                               if (value)
+                               {
+                                   w.point(attributes[i], extra, 0, now, ind.value);
+                               }
+                               else
+                               {
+                                   w.point_int(attributes[i], extra, 0, now, static_cast<std::uint64_t>(ind.state));
+                               }
+                           }
+                       }
+                   });
+        }
+    }
+    out += "]}]}]}";
+    return out;
 }

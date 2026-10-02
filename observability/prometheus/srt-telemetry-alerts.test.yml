@@ -1,0 +1,192 @@
+# promtool test rules srt-telemetry-alerts.test.yml
+rule_files:
+  - srt-telemetry-alerts.yml
+
+evaluation_interval: 10s
+
+tests:
+  - interval: 10s
+    input_series:
+      # Sender 7: OK, then failing on a congested path from 30 s.
+      - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="7",role="sender",site="cologne"}'
+        values: '1 1 1 4x20'
+      - series: 'srt_health_info{job="srt",instance="enc:9810",source_id="7",role="sender",site="cologne",verdict="failing",reason="path_congested",knob="bitrate",direction="decrease"}'
+        values: '_ _ _ 1x20'
+      - series: 'srt_health_suggested_value{job="srt",instance="enc:9810",source_id="7",role="sender",site="cologne",knob="bitrate"}'
+        values: '_ _ _ 2300000x20'
+      - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="7",role="sender",site="cologne"}'
+        values: '1x23'
+      # Receiver 8: at risk from 0 s, latency advice.
+      - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="8",role="receiver",site="munich"}'
+        values: '3x23'
+      - series: 'srt_health_info{job="srt",instance="enc:9810",source_id="8",role="receiver",site="munich",verdict="at_risk",reason="latency_low_for_rtt",knob="latency",direction="increase"}'
+        values: '1x23'
+      - series: 'srt_health_suggested_value{job="srt",instance="enc:9810",source_id="8",role="receiver",site="munich",knob="latency"}'
+        values: '0.58x23'
+      - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="8",role="receiver",site="munich"}'
+        values: '1x23'
+      # Receiver 9: unknown (no data) while statistics read fine.
+      - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="9",role="receiver",site="berlin"}'
+        values: '0x23'
+      - series: 'srt_health_info{job="srt",instance="enc:9810",source_id="9",role="receiver",site="berlin",verdict="unknown",reason="no_data",knob="none",direction="none"}'
+        values: '1x23'
+      - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="9",role="receiver",site="berlin"}'
+        values: '1x23'
+      # Sender 10: statistics reads fail; its verdict is unknown too, but
+      # that is the statistics alert, not "ungraded".
+      - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="10",role="sender",site="leipzig"}'
+        values: '0x23'
+      - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="10",role="sender",site="leipzig"}'
+        values: '0x23'
+      # Receiver 11: healthy throughout.
+      - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="11",role="receiver",site="hamburg"}'
+        values: '1x23'
+      # A second exporter that goes down at 60 s.
+      - series: 'up{job="srt",instance="enc:9810"}'
+        values: '1x23'
+      - series: 'up{job="srt",instance="enc2:9810"}'
+        values: '1 1 1 1 1 1 0x17'
+      - series: 'srt_telemetry_schema_info{job="srt",instance="enc2:9810",version="1"}'
+        values: '1 1 1 1 1 1 _x17'
+      # A target that never exported SRT Telemetry: not ours to alert on.
+      - series: 'up{job="node",instance="db:9100"}'
+        values: '0x23'
+
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: SRTStreamFailing
+        exp_alerts: []
+      - eval_time: 50s
+        alertname: SRTStreamFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: srt
+              instance: "enc:9810"
+              source_id: "7"
+              role: sender
+              site: cologne
+            exp_annotations:
+              summary: "SRT sender 7 on enc:9810 is failing"
+              description: "The viewer is losing data, or the connection is lost. Reason: path_congested. Advice: decrease bitrate to 2.3Mbit/s."
+              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
+      - eval_time: 20s
+        alertname: SRTStreamAtRisk
+        exp_alerts: []
+      - eval_time: 40s
+        alertname: SRTStreamAtRisk
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: srt
+              instance: "enc:9810"
+              source_id: "8"
+              role: receiver
+              site: munich
+            exp_annotations:
+              summary: "SRT receiver 8 on enc:9810 is at risk"
+              description: "The stream works, but a margin is close to gone. Reason: latency_low_for_rtt. Advice: increase latency to 580ms."
+              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
+      - eval_time: 110s
+        alertname: SRTStreamUngraded
+        exp_alerts: []
+      - eval_time: 130s
+        alertname: SRTStreamUngraded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: srt
+              instance: "enc:9810"
+              source_id: "9"
+              role: receiver
+              site: berlin
+            exp_annotations:
+              summary: "SRT receiver 9 on enc:9810 cannot be graded"
+              description: "The health engine has no grade for this endpoint (no_data): no packets, a metric or setting the verdict needs is missing, or the connection is being set up."
+              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#verdicts"
+      - eval_time: 70s
+        alertname: SRTSourceStatisticsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: srt
+              instance: "enc:9810"
+              source_id: "10"
+              role: sender
+              site: leipzig
+            exp_annotations:
+              summary: "SRT statistics of sender 10 on enc:9810 cannot be read"
+              description: "Reading the SRT statistics of this socket fails; its counters and values are the last good ones."
+      - eval_time: 90s
+        alertname: SRTTelemetryTargetDown
+        exp_alerts: []
+      - eval_time: 130s
+        alertname: SRTTelemetryTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: srt
+              instance: "enc2:9810"
+            exp_annotations:
+              summary: "SRT Telemetry on enc2:9810 (srt) is not answering"
+              description: "Prometheus cannot scrape this SRT Telemetry endpoint; its streams are not observed."
+
+  # Two services behind one OpenTelemetry Collector share job, instance and
+  # source_id; service_instance_id tells them apart. Each alert describes
+  # its own source, and B's readable statistics do not grade A.
+  - interval: 10s
+    input_series:
+      - series: 'srt_health_verdict{job="otel",instance="col:8889",source_id="1",role="sender",service_instance_id="a"}'
+        values: '4x12'
+      - series: 'srt_health_info{job="otel",instance="col:8889",source_id="1",role="sender",service_instance_id="a",verdict="failing",reason="latency_low_for_rtt",knob="latency",direction="increase"}'
+        values: '1x12'
+      - series: 'srt_health_suggested_value{job="otel",instance="col:8889",source_id="1",role="sender",service_instance_id="a",knob="latency"}'
+        values: '0.8x12'
+      - series: 'srt_health_verdict{job="otel",instance="col:8889",source_id="1",role="sender",service_instance_id="b"}'
+        values: '1x12'
+      - series: 'srt_health_info{job="otel",instance="col:8889",source_id="1",role="sender",service_instance_id="b",verdict="ok",reason="none",knob="none",direction="none"}'
+        values: '1x12'
+      - series: 'srt_health_verdict{job="otel",instance="col:8889",source_id="2",role="receiver",service_instance_id="a"}'
+        values: '0x200'
+      - series: 'srt_source_up{job="otel",instance="col:8889",source_id="2",role="receiver",service_instance_id="a"}'
+        values: '0x200'
+      - series: 'srt_source_up{job="otel",instance="col:8889",source_id="2",role="receiver",service_instance_id="b"}'
+        values: '1x200'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: SRTStreamFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: otel
+              instance: "col:8889"
+              source_id: "1"
+              role: sender
+              service_instance_id: a
+            exp_annotations:
+              summary: "SRT sender 1 on col:8889 is failing"
+              description: "The viewer is losing data, or the connection is lost. Reason: latency_low_for_rtt. Advice: increase latency to 800ms."
+              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
+      - eval_time: 3m
+        alertname: SRTStreamUngraded
+        exp_alerts: []
+
+  # A target that stays down keeps its alert for hours, not just the hour
+  # after its last scrape.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="srt",instance="enc3:9810"}'
+        values: '1 1 0x300'
+      - series: 'srt_telemetry_schema_info{job="srt",instance="enc3:9810",version="1"}'
+        values: '1 1 _x300'
+    alert_rule_test:
+      - eval_time: 4h
+        alertname: SRTTelemetryTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: srt
+              instance: "enc3:9810"
+            exp_annotations:
+              summary: "SRT Telemetry on enc3:9810 (srt) is not answering"
+              description: "Prometheus cannot scrape this SRT Telemetry endpoint; its streams are not observed."

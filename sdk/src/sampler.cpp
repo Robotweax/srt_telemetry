@@ -72,6 +72,9 @@ struct Source
     robotweax_srt_telemetry_metric_sample_v1 latest_metrics{};
     bool has_latest_raw = false;
     robotweax_srt_telemetry_raw_sample_v1 latest_raw{};
+    /* When the lifetime counters started (OTLP cumulative start time): the
+     * first sample, or the latest counter reset. */
+    std::uint64_t counters_start_unix_nano = 0;
     bool has_latest_ext = false;
     robotweax_srt_telemetry_ext_sample_v1 latest_ext{};
     /* Health engine (null when health is off), its context and last status. */
@@ -702,6 +705,22 @@ void sample_source(robotweax_srt_telemetry_sampler &sampler, Source &source,
     update_health(sampler, source, metrics, monotonic_nano);
     source.latest_metrics = metrics;
     source.has_latest_metrics = true;
+    if (!source.has_latest_raw || (metrics.quality_flags & ROBOTWEAX_SRT_TELEMETRY_QUALITY_COUNTER_RESET) != 0)
+    {
+        /* The SRT counters count since the socket connected, not since this
+         * source was added: start them at the connection when the provider
+         * reports its age, so OTLP consumers do not book the whole history
+         * into the first interval. */
+        source.counters_start_unix_nano = unix_nano;
+        if (output.has_ext != 0 &&
+            (output.ext.available_fields & ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_CONNECTION_AGE_SECONDS) != 0 &&
+            std::isfinite(output.ext.connection_age_seconds) && output.ext.connection_age_seconds > 0.0)
+        {
+            const double age_nano = output.ext.connection_age_seconds * 1e9;
+            source.counters_start_unix_nano =
+                age_nano >= static_cast<double>(unix_nano) ? 1 : unix_nano - static_cast<std::uint64_t>(age_nano);
+        }
+    }
     source.latest_raw = output.raw;
     source.has_latest_raw = true;
     source.has_latest_ext = output.has_ext != 0;
@@ -1575,9 +1594,13 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_latest_
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
-extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_to(
-    robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options,
-    const robotweax_srt_telemetry_render_writer writer, void *user_data)
+namespace
+{
+
+robotweax_srt_telemetry_error render_impl(robotweax_srt_telemetry_sampler *sampler,
+                                          const robotweax_srt_telemetry_render_options_v1 *options,
+                                          std::vector<std::pair<std::string, std::string>> resource,
+                                          const robotweax_srt_telemetry_render_writer writer, void *user_data)
 {
     if (sampler == nullptr || options == nullptr || writer == nullptr)
     {
@@ -1590,7 +1613,8 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_
     const auto format = static_cast<std::int64_t>(options->format);
     constexpr std::uint32_t known_flags =
         ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_INDICATORS | ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_COUNTERS;
-    if ((format != ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS && format != ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON) ||
+    if ((format != ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS && format != ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON &&
+         format != ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON) ||
         (options->flags & ~known_flags) != 0)
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
@@ -1604,6 +1628,7 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_
     {
         robotweax_srt_telemetry_internal::ExportView view;
         view.flags = options->flags;
+        view.resource = std::move(resource);
         {
             std::lock_guard lock(sampler->mutex);
             std::size_t index = 0;
@@ -1646,12 +1671,13 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_
                 out.health = source.health_status;
                 out.connection = source.has_health_context ? source.health_context.connection
                                                            : ROBOTWEAX_SRT_TELEMETRY_CONNECTION_UNREPORTED;
+                out.counters_start_unix_nano = source.counters_start_unix_nano;
                 view.sources.push_back(std::move(out));
             }
         }
-        text = format == ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS
-                   ? robotweax_srt_telemetry_internal::render_prometheus(view)
-                   : robotweax_srt_telemetry_internal::render_json(view);
+        text = format == ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS ? robotweax_srt_telemetry_internal::render_prometheus(view)
+               : format == ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON  ? robotweax_srt_telemetry_internal::render_json(view)
+                                                               : robotweax_srt_telemetry_internal::render_otlp_json(view);
     }
     catch (const std::bad_alloc &)
     {
@@ -1691,6 +1717,113 @@ int buffer_write(void *user, const char *data, const std::size_t size)
 }
 
 } // namespace
+
+} // namespace
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_to(
+    robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options,
+    const robotweax_srt_telemetry_render_writer writer, void *user_data)
+{
+    return render_impl(sampler, options, {}, writer, user_data);
+}
+
+namespace
+{
+/* Well-formed UTF-8 without control characters: OTLP/JSON strings must be
+ * valid UTF-8, and a resource attribute has no use for control characters. */
+bool utf8_text(const char *text)
+{
+    const auto *p = reinterpret_cast<const unsigned char *>(text);
+    while (*p != 0)
+    {
+        const unsigned c = *p;
+        if (c < 0x20 || c == 0x7f)
+        {
+            return false;
+        }
+        int extra = 0;
+        std::uint32_t code = 0;
+        if (c < 0x80)
+        {
+            ++p;
+            continue;
+        }
+        if (c >= 0xc2 && c <= 0xdf)
+        {
+            extra = 1;
+            code = c & 0x1f;
+        }
+        else if (c >= 0xe0 && c <= 0xef)
+        {
+            extra = 2;
+            code = c & 0x0f;
+        }
+        else if (c >= 0xf0 && c <= 0xf4)
+        {
+            extra = 3;
+            code = c & 0x07;
+        }
+        else
+        {
+            return false;
+        }
+        ++p;
+        for (int k = 0; k < extra; ++k, ++p)
+        {
+            if ((*p & 0xc0) != 0x80)
+            {
+                return false;
+            }
+            code = (code << 6) | (*p & 0x3f);
+        }
+        /* Overlong forms, surrogates, beyond U+10FFFF, and C1 controls. */
+        if ((extra == 2 && code < 0x800) || (extra == 3 && (code < 0x10000 || code > 0x10ffff)) ||
+            (code >= 0xd800 && code <= 0xdfff) || (code >= 0x80 && code <= 0x9f))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_otlp_to(
+    robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options,
+    const robotweax_srt_telemetry_label_v1 *resource_attributes, const std::size_t resource_attribute_count,
+    const robotweax_srt_telemetry_render_writer writer, void *user_data)
+{
+    if (options == nullptr || options->format != ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON ||
+        resource_attribute_count > 32 || (resource_attribute_count > 0 && resource_attributes == nullptr))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    std::vector<std::pair<std::string, std::string>> resource;
+    try
+    {
+        for (std::size_t i = 0; i < resource_attribute_count; ++i)
+        {
+            const auto &a = resource_attributes[i];
+            if (a.key == nullptr || a.value == nullptr || a.key[0] == '\0' || strnlen(a.key, 256) > 255 ||
+                strnlen(a.value, 256) > 255 || !utf8_text(a.key) || !utf8_text(a.value))
+            {
+                return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+            }
+            for (const auto &[key, value] : resource)
+            {
+                if (key == a.key)
+                {
+                    return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT; /* duplicate key */
+                }
+            }
+            resource.emplace_back(a.key, a.value);
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    return render_impl(sampler, options, std::move(resource), writer, user_data);
+}
 
 extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render(
     robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options, char *buffer,

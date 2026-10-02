@@ -11,9 +11,11 @@
  *
  * Usage: dashboard_demo [--port N] [--bind ADDRESS] [--token T]
  *                       [--duration SECONDS] [--streams N]
- *                       [--frame-ancestors "https://console.example.com"] */
+ *                       [--frame-ancestors "https://console.example.com"]
+ *                       [--otlp http://127.0.0.1:4318/v1/metrics] [--otlp-interval MS] */
 
 #include <robotweax/srt_telemetry_http.h>
+#include <robotweax/srt_telemetry_otlp.h>
 #include <robotweax/srt_telemetry_public_srt.h>
 #include <robotweax/srt_telemetry_sampler.h>
 
@@ -313,6 +315,8 @@ int main(const int argc, char **argv)
     const char *bind = "127.0.0.1";
     const char *token = "";
     const char *frame_ancestors = "";
+    const char *otlp_endpoint = "";
+    int otlp_interval_ms = 10'000;
     double duration = 0;
     std::size_t stream_count = 5;
     for (int i = 1; i + 1 < argc; i += 2)
@@ -329,6 +333,14 @@ int main(const int argc, char **argv)
         else if (option == "--token")
         {
             token = argv[i + 1];
+        }
+        else if (option == "--otlp")
+        {
+            otlp_endpoint = argv[i + 1];
+        }
+        else if (option == "--otlp-interval")
+        {
+            otlp_interval_ms = std::atoi(argv[i + 1]);
         }
         else if (option == "--frame-ancestors")
         {
@@ -412,6 +424,29 @@ int main(const int argc, char **argv)
             std::fflush(stdout);
         }
     }
+    robotweax_srt_telemetry_otlp_exporter *exporter = nullptr;
+    if (ok && otlp_endpoint[0] != '\0')
+    {
+        robotweax_srt_telemetry_otlp_exporter_config_v1 otlp{};
+        robotweax_srt_telemetry_otlp_exporter_config_default(sampler, &otlp);
+        std::snprintf(otlp.endpoint, sizeof(otlp.endpoint), "%s", otlp_endpoint);
+        otlp.interval_ms = static_cast<std::uint32_t>(otlp_interval_ms);
+        const robotweax_srt_telemetry_label_v1 resource[] = {{"service.name", "srt-dashboard-demo"},
+                                                             {"service.instance.id", "demo-1"}};
+        otlp.resource_attributes = resource;
+        otlp.resource_attribute_count = 2;
+        const auto error = robotweax_srt_telemetry_otlp_exporter_start(&otlp, &exporter);
+        if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            std::fprintf(stderr, "OTLP exporter failed: %s\n", robotweax_srt_telemetry_error_string(error));
+            ok = false;
+        }
+        else
+        {
+            std::printf("otlp: %s every %d ms\n", otlp_endpoint, otlp_interval_ms);
+            std::fflush(stdout);
+        }
+    }
     const auto start = Clock::now();
     while (ok && !stop_requested &&
            (duration <= 0 || std::chrono::duration<double>(Clock::now() - start).count() < duration))
@@ -424,6 +459,7 @@ int main(const int argc, char **argv)
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+    robotweax_srt_telemetry_otlp_exporter_stop(exporter);
     robotweax_srt_telemetry_http_server_stop(server);
     for (auto &stream : streams)
     {

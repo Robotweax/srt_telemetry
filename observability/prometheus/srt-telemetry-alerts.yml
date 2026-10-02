@@ -1,0 +1,108 @@
+# Prometheus alerting rules for SRT Telemetry (metric schema 1).
+#
+# They build on the health engine's verdict, which already applies
+# hysteresis (worse after 2 s, better after 10 s), so the "for" durations
+# only ride out scrape jitter. Each alert says what the engine advises: the
+# reason, the knob and the suggested value, read from srt_health_info and
+# srt_health_suggested_value at alert time, for the series with all of the
+# alert's labels.
+#
+# Load with:  rule_files: [ "srt-telemetry-alerts.yml" ]
+# Test with:  promtool test rules srt-telemetry-alerts.test.yml
+# See docs/architecture/alerting.md.
+
+groups:
+  - name: srt-telemetry
+    rules:
+      # Targets that export SRT Telemetry. A target keeps this marker while
+      # it is down, so SRTTelemetryTargetDown holds however long the outage
+      # lasts; the marker ends when the target answers without SRT Telemetry
+      # or leaves the scrape configuration.
+      - record: srt_telemetry:target
+        expr: >-
+          max by (job, instance) (srt_telemetry_schema_info)
+          or (max by (job, instance) (srt_telemetry:target) and on(job, instance) up == 0)
+
+      - alert: SRTStreamFailing
+        expr: srt_health_verdict == 4
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "SRT {{ $labels.role }} {{ $labels.source_id }} on {{ $labels.instance }} is failing"
+          description: >-
+            {{- $selector := "" }}{{ range $name, $value := $labels }}{{ if and (ne $name "severity") (ne $name "alertname") (ne $name "__name__") }}{{ $selector = printf "%s%s=%q," $selector $name $value }}{{ end }}{{ end }}{{ $selector = printf "{%s}" $selector -}}
+            The viewer is losing data, or the connection is lost.
+            {{- with printf "srt_health_info%s" $selector | query }}{{ with first . }}
+            Reason: {{ .Labels.reason }}.
+            {{- if ne .Labels.knob "none" }} Advice: {{ .Labels.direction }} {{ .Labels.knob }}{{ end }}{{ end }}{{ end }}
+            {{- with printf "srt_health_suggested_value%s" $selector | query }}{{ with first . }} to
+            {{- if eq .Labels.knob "latency" }} {{ .Value | humanizeDuration }}
+            {{- else if eq .Labels.knob "bitrate" }} {{ .Value | humanize }}bit/s
+            {{- else if eq .Labels.knob "max_bandwidth" }} {{ .Value | humanize }}B/s
+            {{- else if eq .Labels.knob "overhead_bandwidth" }} {{ .Value }} %
+            {{- else }} {{ .Value }}{{ end }}{{ end }}{{ end }}.
+          runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
+
+      - alert: SRTStreamAtRisk
+        expr: srt_health_verdict == 3
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "SRT {{ $labels.role }} {{ $labels.source_id }} on {{ $labels.instance }} is at risk"
+          description: >-
+            {{- $selector := "" }}{{ range $name, $value := $labels }}{{ if and (ne $name "severity") (ne $name "alertname") (ne $name "__name__") }}{{ $selector = printf "%s%s=%q," $selector $name $value }}{{ end }}{{ end }}{{ $selector = printf "{%s}" $selector -}}
+            The stream works, but a margin is close to gone.
+            {{- with printf "srt_health_info%s" $selector | query }}{{ with first . }}
+            Reason: {{ .Labels.reason }}.
+            {{- if ne .Labels.knob "none" }} Advice: {{ .Labels.direction }} {{ .Labels.knob }}{{ end }}{{ end }}{{ end }}
+            {{- with printf "srt_health_suggested_value%s" $selector | query }}{{ with first . }} to
+            {{- if eq .Labels.knob "latency" }} {{ .Value | humanizeDuration }}
+            {{- else if eq .Labels.knob "bitrate" }} {{ .Value | humanize }}bit/s
+            {{- else if eq .Labels.knob "max_bandwidth" }} {{ .Value | humanize }}B/s
+            {{- else if eq .Labels.knob "overhead_bandwidth" }} {{ .Value }} %
+            {{- else }} {{ .Value }}{{ end }}{{ end }}{{ end }}.
+          runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
+
+      # Unknown while statistics are readable: no packets, a missing metric
+      # or setting, connecting. Never treat silence as fine. Matching on all
+      # labels keeps sources apart that share job, instance and source_id
+      # (several services behind one OpenTelemetry Collector).
+      - alert: SRTStreamUngraded
+        expr: srt_health_verdict == 0 and srt_source_up == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SRT {{ $labels.role }} {{ $labels.source_id }} on {{ $labels.instance }} cannot be graded"
+          description: >-
+            {{- $selector := "" }}{{ range $name, $value := $labels }}{{ if and (ne $name "severity") (ne $name "alertname") (ne $name "__name__") }}{{ $selector = printf "%s%s=%q," $selector $name $value }}{{ end }}{{ end }}{{ $selector = printf "{%s}" $selector -}}
+            The health engine has no grade for this endpoint
+            {{- with printf "srt_health_info%s" $selector | query }}{{ with first . }} ({{ .Labels.reason }}){{ end }}{{ end }}:
+            no packets, a metric or setting the verdict needs is missing, or the connection is being set up.
+          runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#verdicts"
+
+      - alert: SRTSourceStatisticsFailing
+        expr: srt_source_up == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SRT statistics of {{ $labels.role }} {{ $labels.source_id }} on {{ $labels.instance }} cannot be read"
+          description: >-
+            Reading the SRT statistics of this socket fails; its counters and
+            values are the last good ones.
+
+      # A target that exported SRT Telemetry no longer answers scrapes:
+      # every stream it monitored is unobserved.
+      - alert: SRTTelemetryTargetDown
+        expr: up == 0 and on(job, instance) srt_telemetry:target
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SRT Telemetry on {{ $labels.instance }} ({{ $labels.job }}) is not answering"
+          description: >-
+            Prometheus cannot scrape this SRT Telemetry endpoint; its
+            streams are not observed.

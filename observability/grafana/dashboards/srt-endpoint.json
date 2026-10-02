@@ -1,0 +1,1328 @@
+{
+  "uid": "srt-endpoint",
+  "title": "SRT endpoint",
+  "description": "One SRT sender or receiver: verdict and advice, indicators, and its history.",
+  "tags": [
+    "srt",
+    "srt-telemetry"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "version": 1,
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "datasource",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "job",
+        "label": "Job",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(srt_telemetry_schema_info, job)",
+          "refId": "job"
+        },
+        "definition": "label_values(srt_telemetry_schema_info, job)",
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "sort": 1
+      },
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(srt_telemetry_schema_info{job=~\"$job\"}, instance)",
+          "refId": "instance"
+        },
+        "definition": "label_values(srt_telemetry_schema_info{job=~\"$job\"}, instance)",
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "sort": 1
+      },
+      {
+        "type": "custom",
+        "name": "name_label",
+        "label": "Name label",
+        "description": "The host label that names an endpoint (e.g. stream, channel).",
+        "query": "stream,channel,name,stream_id",
+        "current": {
+          "text": "stream",
+          "value": "stream"
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "type": "query",
+        "name": "source",
+        "label": "Source",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(srt_source_up{job=~\"$job\",instance=~\"$instance\"}, source_id)",
+          "refId": "source"
+        },
+        "definition": "label_values(srt_source_up{job=~\"$job\",instance=~\"$instance\"}, source_id)",
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "sort": 3,
+        "current": {}
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "SRT fleet",
+      "type": "link",
+      "url": "/d/srt-fleet/srt-fleet?${__url_time_range}",
+      "icon": "dashboard"
+    }
+  ],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Verdict",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_verdict{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unknown",
+                  "color": "#8a8984",
+                  "index": 0
+                },
+                "1": {
+                  "text": "OK",
+                  "color": "#0ca30c",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Watch",
+                  "color": "#fab219",
+                  "index": 2
+                },
+                "3": {
+                  "text": "At risk",
+                  "color": "#ec835a",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Failing",
+                  "color": "#d03b3b",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#8a8984",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              },
+              {
+                "color": "#fab219",
+                "value": 2
+              },
+              {
+                "color": "#ec835a",
+                "value": 3
+              },
+              {
+                "color": "#d03b3b",
+                "value": 4
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Reason",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_info{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "{{reason}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "description": "Reason codes: docs/architecture/health-engine.md#reasons-and-advice.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "textMode": "name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Suggested change",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_info{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",knob!=\"none\"}",
+          "legendFormat": "{{direction}} {{knob}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "textMode": "name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Suggested value",
+      "description": "In the knob's unit: latency in s, bitrate in bit/s, MAXBW in bytes/s, OHEADBW in %.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_suggested_value{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "{{knob}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 3,
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "latency"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "bitrate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bps"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max_bandwidth"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Bps"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "overhead_bandwidth"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "textMode": "value",
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Statistics",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_source_up{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "reading",
+                  "color": "#0ca30c"
+                },
+                "0": {
+                  "text": "read failing",
+                  "color": "#d03b3b"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Labels",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_source_up{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Health indicators",
+      "collapsed": false,
+      "panels": [],
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Indicators",
+      "description": "Each indicator's state after hysteresis and its value (see docs/architecture/health-engine.md).",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_indicator_state{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "",
+          "refId": "state",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_indicator_value{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "",
+          "refId": "value",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "indicator",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "indicator": true,
+              "Value #state": true,
+              "Value #value": true
+            },
+            "indexByName": {
+              "indicator": 0,
+              "Value #state": 1,
+              "Value #value": 2
+            },
+            "renameByName": {
+              "indicator": "Indicator",
+              "Value #state": "State",
+              "Value #value": "Value"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "State"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Unknown",
+                        "color": "#8a8984",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "OK",
+                        "color": "#0ca30c",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "Watch",
+                        "color": "#fab219",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "At risk",
+                        "color": "#ec835a",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "Failing",
+                        "color": "#d03b3b",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#8a8984",
+                      "value": null
+                    },
+                    {
+                      "color": "#0ca30c",
+                      "value": 1
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 2
+                    },
+                    {
+                      "color": "#ec835a",
+                      "value": 3
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 10,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Verdict over time",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_verdict{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "verdict",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_indicator_state{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "{{indicator}}",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unknown",
+                  "color": "#8a8984",
+                  "index": 0
+                },
+                "1": {
+                  "text": "OK",
+                  "color": "#0ca30c",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Watch",
+                  "color": "#fab219",
+                  "index": 2
+                },
+                "3": {
+                  "text": "At risk",
+                  "color": "#ec835a",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Failing",
+                  "color": "#d03b3b",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#8a8984",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              },
+              {
+                "color": "#fab219",
+                "value": 2
+              },
+              {
+                "color": "#ec835a",
+                "value": 3
+              },
+              {
+                "color": "#d03b3b",
+                "value": 4
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 85,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 10,
+        "y": 10,
+        "w": 14,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "row",
+      "title": "History",
+      "collapsed": false,
+      "panels": [],
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Throughput",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_unique_sent_bits_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "sent (original)",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_retransmitted_bits_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "retransmitted",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_unique_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "delivered (distinct)",
+          "refId": "C",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "on the wire",
+          "refId": "D",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Loss and recovery",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_loss_reported_packets_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "reported lost",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "dropped (too late)",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_retransmitted_packets_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "retransmitted",
+          "refId": "C",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "lost (before repair)",
+          "refId": "D",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "unrecovered",
+          "refId": "E",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_retransmitted_packets_per_second{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"rate\"}",
+          "legendFormat": "repairs received",
+          "refId": "F",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Timing",
+      "description": "Buffers against the latency: a receive buffer far below the latency leaves little time to repair.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_connection_rtt_seconds{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"mean\"}",
+          "legendFormat": "RTT",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_buffer_seconds{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"max\"}",
+          "legendFormat": "send buffer",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_buffer_seconds{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"min\"}",
+          "legendFormat": "receive buffer",
+          "refId": "C",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_latency_seconds{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"last\"} or srt_sender_peer_latency_seconds{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"last\"}",
+          "legendFormat": "latency",
+          "refId": "D",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Margins",
+      "description": "Receiver: buffer ÷ latency (about 100 % when nothing is missing). Sender: how close the send buffer is to dropping, and how full the peer is.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_recovery_headroom_ratio{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"min\"}",
+          "legendFormat": "recovery headroom",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_buffer_drop_threshold_utilization_ratio{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"max\"}",
+          "legendFormat": "drop limit used",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_flow_window_utilization_ratio{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\",stat=\"max\"}",
+          "legendFormat": "flow window used",
+          "refId": "C",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            },
+            "axisSoftMax": 1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14,
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Packets over the range",
+      "description": "From the lifetime counters, over the dashboard's time range.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(srt_receiver_lost_packets_total{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}[$__range])",
+          "legendFormat": "lost",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(srt_receiver_dropped_packets_total{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}[$__range])",
+          "legendFormat": "unrecovered",
+          "refId": "B",
+          "range": false,
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(srt_sender_retransmitted_packets_total{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}[$__range])",
+          "legendFormat": "retransmitted",
+          "refId": "C",
+          "range": false,
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(srt_sender_dropped_packets_total{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}[$__range])",
+          "legendFormat": "dropped (too late)",
+          "refId": "D",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    }
+  ]
+}

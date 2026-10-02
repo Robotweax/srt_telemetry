@@ -1,0 +1,13 @@
+# Example Prometheus configuration for SRT Telemetry.
+global:
+  scrape_interval: 10s      # the default window is 10 s
+  evaluation_interval: 10s
+
+rule_files:
+  - srt-telemetry-alerts.yml
+
+scrape_configs:
+  # Each process that runs the embedded HTTP server (port of your choice).
+  - job_name: srt
+    static_configs:
+      - targets: ["127.0.0.1:9810"]

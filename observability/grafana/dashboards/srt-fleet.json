@@ -1,0 +1,1358 @@
+{
+  "uid": "srt-fleet",
+  "title": "SRT fleet",
+  "description": "Every SRT endpoint the selected exporters monitor: is it fine, or which knob?",
+  "tags": [
+    "srt",
+    "srt-telemetry"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "version": 1,
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "datasource",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "job",
+        "label": "Job",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(srt_telemetry_schema_info, job)",
+          "refId": "job"
+        },
+        "definition": "label_values(srt_telemetry_schema_info, job)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(srt_telemetry_schema_info{job=~\"$job\"}, instance)",
+          "refId": "instance"
+        },
+        "definition": "label_values(srt_telemetry_schema_info{job=~\"$job\"}, instance)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "type": "custom",
+        "name": "name_label",
+        "label": "Name label",
+        "description": "The host label that names an endpoint (e.g. stream, channel).",
+        "query": "stream,channel,name,stream_id",
+        "current": {
+          "text": "stream",
+          "value": "stream"
+        },
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "SRT endpoint",
+      "type": "dashboards",
+      "tags": [
+        "srt-telemetry"
+      ],
+      "asDropdown": false,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Failing",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 4) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#5c5b57",
+                "value": null
+              },
+              {
+                "color": "#d03b3b",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "justifyMode": "center"
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "At risk",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 3) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#5c5b57",
+                "value": null
+              },
+              {
+                "color": "#ec835a",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "justifyMode": "center"
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Watch",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 2) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#5c5b57",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "justifyMode": "center"
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "OK",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 1) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#5c5b57",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "justifyMode": "center"
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Unknown",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 0) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#5c5b57",
+                "value": null
+              },
+              {
+                "color": "#8a8984",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "justifyMode": "center"
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Endpoints, worst first",
+      "collapsed": false,
+      "panels": [],
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Endpoints",
+      "description": "Verdict and advice of the health engine, and the latest window's values. Click a row to open the endpoint.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) (label_replace(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\"))",
+          "legendFormat": "",
+          "refId": "verdict",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) (label_join(srt_health_info{job=~\"$job\",instance=~\"$instance\"}, \"advice\", \" \", \"direction\", \"knob\"))",
+          "legendFormat": "",
+          "refId": "info",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) (srt_health_suggested_value{job=~\"$job\",instance=~\"$instance\"})",
+          "legendFormat": "",
+          "refId": "suggested",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) (srt_sender_unique_sent_bits_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} or srt_receiver_unique_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"})",
+          "legendFormat": "",
+          "refId": "bitrate",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) (srt_connection_rtt_seconds{job=~\"$job\",instance=~\"$instance\",stat=\"mean\"})",
+          "legendFormat": "",
+          "refId": "rtt",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) ((srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} / (srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} + srt_receiver_unique_received_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"})) or (srt_sender_loss_reported_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} / srt_sender_unique_sent_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}))",
+          "legendFormat": "",
+          "refId": "loss",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) (srt_receiver_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} or srt_sender_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"})",
+          "legendFormat": "",
+          "refId": "dropped",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "Value #verdict": true,
+              "endpoint": true,
+              "role": true,
+              "source_id": true,
+              "instance": true,
+              "reason": true,
+              "advice": true,
+              "Value #suggested": true,
+              "Value #bitrate": true,
+              "Value #rtt": true,
+              "Value #loss": true,
+              "Value #dropped": true
+            },
+            "indexByName": {
+              "Value #verdict": 0,
+              "endpoint": 1,
+              "role": 2,
+              "reason": 3,
+              "advice": 4,
+              "Value #suggested": 5,
+              "Value #bitrate": 6,
+              "Value #rtt": 7,
+              "Value #loss": 8,
+              "Value #dropped": 9,
+              "instance": 10,
+              "source_id": 11
+            },
+            "renameByName": {
+              "Value #verdict": "Verdict",
+              "endpoint": "Endpoint",
+              "role": "Role",
+              "reason": "Reason",
+              "advice": "Advice",
+              "Value #suggested": "Suggested value",
+              "Value #bitrate": "Bitrate",
+              "Value #rtt": "RTT",
+              "Value #loss": "Loss",
+              "Value #dropped": "Dropped",
+              "instance": "Instance",
+              "source_id": "Source"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Verdict",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "links": [
+            {
+              "title": "Open endpoint",
+              "url": "/d/srt-endpoint/srt-endpoint?var-datasource=${datasource}&var-job=${job}&var-instance=${__data.fields.Instance}&var-source=${__data.fields.Source}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Verdict"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Unknown",
+                        "color": "#8a8984",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "OK",
+                        "color": "#0ca30c",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "Watch",
+                        "color": "#fab219",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "At risk",
+                        "color": "#ec835a",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "Failing",
+                        "color": "#d03b3b",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#8a8984",
+                      "value": null
+                    },
+                    {
+                      "color": "#0ca30c",
+                      "value": 1
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 2
+                    },
+                    {
+                      "color": "#ec835a",
+                      "value": 3
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bitrate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RTT"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Loss"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Dropped"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "pps"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Suggested value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "description",
+                "value": "In the knob's unit: s, bit/s, bytes/s or %."
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Reason"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "none": {
+                        "text": "all clear",
+                        "index": 0
+                      },
+                      "no_data": {
+                        "text": "no data",
+                        "index": 1
+                      },
+                      "missing_metric": {
+                        "text": "metric missing",
+                        "index": 2
+                      },
+                      "missing_setting": {
+                        "text": "setting missing",
+                        "index": 3
+                      },
+                      "source_error": {
+                        "text": "statistics read failed",
+                        "index": 4
+                      },
+                      "connecting": {
+                        "text": "connecting",
+                        "index": 5
+                      },
+                      "connection_lost": {
+                        "text": "connection lost",
+                        "index": 6
+                      },
+                      "role_unknown": {
+                        "text": "role unknown",
+                        "index": 7
+                      },
+                      "recovery_headroom_low": {
+                        "text": "little recovery headroom",
+                        "index": 8
+                      },
+                      "latency_low_for_rtt": {
+                        "text": "latency short for the RTT",
+                        "index": 9
+                      },
+                      "unrecovered_loss": {
+                        "text": "unrecovered loss",
+                        "index": 10
+                      },
+                      "undecryptable": {
+                        "text": "undecryptable packets",
+                        "index": 11
+                      },
+                      "late_repairs": {
+                        "text": "repairs arrive late",
+                        "index": 12
+                      },
+                      "recovery_inefficient": {
+                        "text": "repairs failing",
+                        "index": 13
+                      },
+                      "overhead_budget_high": {
+                        "text": "recovery bandwidth used up",
+                        "index": 14
+                      },
+                      "path_capacity_exceeded": {
+                        "text": "above path capacity",
+                        "index": 15
+                      },
+                      "sender_backlog": {
+                        "text": "send buffer backlog",
+                        "index": 16
+                      },
+                      "sender_drops": {
+                        "text": "sender drops",
+                        "index": 17
+                      },
+                      "peer_read_stall": {
+                        "text": "receiver not reading",
+                        "index": 18
+                      },
+                      "application_read_stall": {
+                        "text": "application not reading",
+                        "index": 19
+                      },
+                      "acknowledgements_stalled": {
+                        "text": "no acknowledgements",
+                        "index": 20
+                      },
+                      "path_congested": {
+                        "text": "path congested",
+                        "index": 21
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Advice"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "none none": {
+                        "text": "—",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Verdict"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Source"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "row",
+      "title": "History",
+      "collapsed": false,
+      "panels": [],
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Verdict over time",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} {{role}} #{{source_id}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unknown",
+                  "color": "#8a8984",
+                  "index": 0
+                },
+                "1": {
+                  "text": "OK",
+                  "color": "#0ca30c",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Watch",
+                  "color": "#fab219",
+                  "index": 2
+                },
+                "3": {
+                  "text": "At risk",
+                  "color": "#ec835a",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Failing",
+                  "color": "#d03b3b",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#8a8984",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              },
+              {
+                "color": "#fab219",
+                "value": 2
+              },
+              {
+                "color": "#ec835a",
+                "value": 3
+              },
+              {
+                "color": "#d03b3b",
+                "value": 4
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 85,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.85,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Bitrate",
+      "description": "Original packets sent, distinct packets received.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_sender_unique_sent_bits_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} sender #{{source_id}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_receiver_unique_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} receiver #{{source_id}}",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Round-trip time",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_connection_rtt_seconds{job=~\"$job\",instance=~\"$instance\",stat=\"mean\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} {{role}} #{{source_id}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Unrecovered packets",
+      "description": "Receiver: never delivered to the application. Sender: dropped as too late to send.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_receiver_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} receiver #{{source_id}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_sender_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} sender #{{source_id}}",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Loss before repair",
+      "description": "Share of packets detected missing at the receiver, before retransmission.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} / (srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} + srt_receiver_unique_received_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}), \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} receiver #{{source_id}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 12,
+        "y": 37,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    }
+  ]
+}

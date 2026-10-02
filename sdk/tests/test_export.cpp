@@ -38,6 +38,8 @@ struct Fake
     bool receiver = false;
     std::uint64_t packets = 0;
     std::uint64_t loss = 0;
+    /* Connection age at the first sample, in s; 0: not reported. */
+    double age = 0;
     robotweax_srt_telemetry_delta_engine *engine = nullptr;
 };
 
@@ -52,6 +54,14 @@ robotweax_srt_telemetry_error fake_sample(void *data, const std::uint64_t unix_n
     raw.observed_at_unix_nano = unix_nano;
     raw.sample_monotonic_nano = monotonic_nano;
     raw.rtt_seconds = 0.02;
+    if (f.age > 0)
+    {
+        output->has_ext = 1;
+        output->ext.struct_size = sizeof(output->ext);
+        output->ext.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        output->ext.available_fields = ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_CONNECTION_AGE_SECONDS;
+        output->ext.connection_age_seconds = f.age + static_cast<double>(f.packets / 30 - 1) / 10;
+    }
     if (f.receiver)
     {
         raw.available_fields = ROBOTWEAX_SRT_TELEMETRY_FIELD_UNIQUE_RECEIVED_PACKET_TOTAL |
@@ -620,12 +630,208 @@ void test_render()
     robotweax_srt_telemetry_sampler_destroy(empty);
 }
 
+std::string render_otlp(robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_label_v1 *resource,
+                        const std::size_t count, robotweax_srt_telemetry_error *error = nullptr)
+{
+    robotweax_srt_telemetry_render_options_v1 options;
+    robotweax_srt_telemetry_render_options_default(ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON, &options);
+    std::string out;
+    const auto e = robotweax_srt_telemetry_sampler_render_otlp_to(
+        sampler, &options, resource, count,
+        [](void *user, const char *data, const std::size_t size)
+        {
+            static_cast<std::string *>(user)->append(data, size);
+            return 0;
+        },
+        &out);
+    if (error != nullptr)
+    {
+        *error = e;
+    }
+    return out;
+}
+
+/* Builds a sampler with a sender and a receiver after 12.5 s of samples. */
+robotweax_srt_telemetry_sampler *otlp_sampler(Fake &sender, Fake &receiver)
+{
+    robotweax_srt_telemetry_sampler_config_v1 config{};
+    robotweax_srt_telemetry_sampler_config_default(&config);
+    robotweax_srt_telemetry_sampler *sampler = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_sampler_create(&config, &sampler));
+    static_cast<void>(robotweax_srt_telemetry_sampler_enable_health(sampler, 1));
+    receiver.receiver = true;
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&sender.engine));
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&receiver.engine));
+    static const robotweax_srt_telemetry_label_v1 sender_labels[] = {
+        {"site", "studio \"2\" \\ west"}, {"role", "uplink"}, {"host_role", "backup"}};
+    static const robotweax_srt_telemetry_label_v1 receiver_labels[] = {{"site", "studio-2"}};
+    robotweax_srt_telemetry_source_config_v1 cfg{};
+    cfg.struct_size = sizeof(cfg);
+    cfg.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    cfg.sample = &fake_sample;
+    cfg.source_data = &sender;
+    cfg.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    cfg.labels = sender_labels;
+    cfg.label_count = 3;
+    std::uint64_t id = 0;
+    static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &cfg, &id));
+    cfg.source_data = &receiver;
+    cfg.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER;
+    cfg.labels = receiver_labels;
+    cfg.label_count = 1;
+    static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &cfg, &id));
+    for (std::uint64_t i = 0; i < 125; ++i)
+    {
+        static_cast<void>(
+            robotweax_srt_telemetry_sampler_tick(sampler, base_unix + i * second / 10, second + i * second / 10));
+    }
+    return sampler;
+}
+
+void test_otlp()
+{
+    Fake sender;
+    Fake receiver;
+    sender.age = 3600;
+    auto *sampler = otlp_sampler(sender, receiver);
+    const auto plain = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON);
+    check(valid_json(plain), "OTLP: valid JSON");
+    check(plain.rfind("{\"resourceMetrics\":[{\"resource\":{\"attributes\":[", 0) == 0,
+          "OTLP: an ExportMetricsServiceRequest");
+    check(plain.find("{\"key\":\"service.name\",\"value\":{\"stringValue\":\"srt-telemetry\"}}") != std::string::npos,
+          "OTLP: default service.name");
+    check(plain.find("\"scope\":{\"name\":\"robotweax.srt_telemetry\"") != std::string::npos &&
+              plain.find("{\"key\":\"srt.metric_schema\",\"value\":{\"intValue\":\"1\"}}") != std::string::npos,
+          "OTLP: scope and schema version");
+    check(plain.find("\"name\":\"srt.receiver.unique_received.packets\",") != std::string::npos &&
+              plain.find("\"sum\":{\"aggregationTemporality\":2,\"isMonotonic\":true,\"dataPoints\":[") !=
+                  std::string::npos,
+          "OTLP: counters are cumulative monotonic sums");
+    /* The receiver's counter: 30 packets per tick, 125 ticks; start at the
+     * first sample. */
+    check(plain.find("\"startTimeUnixNano\":\"" + std::to_string(base_unix) + "\",\"timeUnixNano\":\"" +
+                     std::to_string(base_unix + 124 * second / 10) + "\",\"asInt\":\"3750\"") != std::string::npos,
+          "OTLP: counter value, start and time as strings");
+    /* The sender reported a connection age of 1 h at its first sample: its
+     * counters start at the connection, not when the source was added. */
+    check(plain.find("\"startTimeUnixNano\":\"" + std::to_string(base_unix - 3600 * second) + "\",\"timeUnixNano\":\"" +
+                     std::to_string(base_unix + 124 * second / 10) + "\",\"asInt\":\"3750\"") != std::string::npos,
+          "OTLP: counters start at the connection when its age is known");
+    check(plain.find("\"name\":\"srt.receiver.recovery_headroom\",") != std::string::npos &&
+              plain.find("{\"key\":\"stat\",\"value\":{\"stringValue\":\"min\"}}") != std::string::npos &&
+              plain.find("\"unit\":\"bit/s\"") != std::string::npos,
+          "OTLP: window gauges with the stat attribute and UCUM units");
+    /* "role" collides with the exporter's; "host_role" is the host's own,
+     * so "role" becomes "host_host_role" (as in Prometheus). */
+    check(plain.find("{\"key\":\"host_host_role\",\"value\":{\"stringValue\":\"uplink\"}}") != std::string::npos &&
+              plain.find("{\"key\":\"host_role\",\"value\":{\"stringValue\":\"backup\"}}") !=
+                  std::string::npos &&
+              plain.find("{\"key\":\"site\",\"value\":{\"stringValue\":\"studio \\\"2\\\" \\\\ west\"}}") !=
+                  std::string::npos,
+          "OTLP: host labels renamed like Prometheus labels, escaped");
+    check(plain.find("{\"key\":\"source_id\",\"value\":{\"intValue\":\"1\"}}") != std::string::npos &&
+              plain.find("\"name\":\"srt.health.verdict\"") != std::string::npos &&
+              plain.find("\"name\":\"srt.health.info\"") != std::string::npos &&
+              plain.find("\"name\":\"srt.health.indicator.state\"") != std::string::npos,
+          "OTLP: source attributes and health");
+    check(plain.find("\"name\":\"srt.sender.unique_sent.packets\"") != std::string::npos &&
+              plain.find("\"name\":\"srt.sender.recovery_headroom\"") == std::string::npos,
+          "OTLP: role scoping");
+
+    const robotweax_srt_telemetry_label_v1 resource[] = {{"service.name", "encoder-7"},
+                                                         {"deployment.environment", "studio"}};
+    robotweax_srt_telemetry_error error = ROBOTWEAX_SRT_TELEMETRY_OK;
+    const auto custom = render_otlp(sampler, resource, 2, &error);
+    check(error == ROBOTWEAX_SRT_TELEMETRY_OK && valid_json(custom) &&
+              custom.find("\"stringValue\":\"encoder-7\"") != std::string::npos &&
+              custom.find("\"stringValue\":\"srt-telemetry\"") == std::string::npos &&
+              custom.find("\"stringValue\":\"studio\"") != std::string::npos,
+          "OTLP: host resource attributes replace the default service.name");
+    const robotweax_srt_telemetry_label_v1 empty_key[] = {{"", "x"}};
+    static_cast<void>(render_otlp(sampler, empty_key, 1, &error));
+    check(error == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "OTLP: empty resource key rejected");
+    static_cast<void>(render_otlp(sampler, nullptr, 1, &error));
+    check(error == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "OTLP: missing resource attributes rejected");
+    static_cast<void>(render_otlp(sampler, resource, 33, &error));
+    check(error == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "OTLP: too many resource attributes rejected");
+    const robotweax_srt_telemetry_label_v1 duplicate[] = {{"k", "a"}, {"k", "b"}};
+    static_cast<void>(render_otlp(sampler, duplicate, 2, &error));
+    check(error == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "OTLP: duplicate resource key rejected");
+    for (const char *bad : {"\xff\xfe", "a\nb", "\xc0\xaf", "\xed\xa0\x80", "\xe2\x82", "\xc2\x85"})
+    {
+        const robotweax_srt_telemetry_label_v1 invalid[] = {{"site", bad}};
+        static_cast<void>(render_otlp(sampler, invalid, 1, &error));
+        check(error == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "OTLP: malformed UTF-8 or control character rejected");
+    }
+    const robotweax_srt_telemetry_label_v1 sdk[] = {{"site", "K\xc3\xb6ln \xe2\x82\xac \xf0\x9f\x93\xa1"},
+                                                    {"telemetry.sdk.language", "c"}};
+    const auto overridden = render_otlp(sampler, sdk, 2, &error);
+    auto occurrences = [&](const std::string &needle) {
+        std::size_t n = 0;
+        for (auto at = overridden.find(needle); at != std::string::npos; at = overridden.find(needle, at + 1))
+        {
+            ++n;
+        }
+        return n;
+    };
+    check(error == ROBOTWEAX_SRT_TELEMETRY_OK && valid_json(overridden) &&
+              occurrences("\"key\":\"telemetry.sdk.language\"") == 1 &&
+              occurrences("\"key\":\"telemetry.sdk.name\"") == 1 &&
+              overridden.find("K\xc3\xb6ln") != std::string::npos,
+          "OTLP: UTF-8 accepted; each default resource attribute unless set");
+    {
+        robotweax_srt_telemetry_render_options_v1 options;
+        robotweax_srt_telemetry_render_options_default(ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON, &options);
+        std::string sink;
+        check(robotweax_srt_telemetry_sampler_render_otlp_to(
+                  sampler, &options, resource, 2,
+                  [](void *, const char *, std::size_t) { return 0; }, &sink) ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "OTLP: render_otlp_to needs the OTLP format");
+    }
+    const auto trimmed = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON,
+                                ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_COUNTERS | ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_INDICATORS);
+    check(valid_json(trimmed) && trimmed.find("\"sum\":") == std::string::npos &&
+              trimmed.find("srt.health.indicator") == std::string::npos,
+          "OTLP: flags trim counters and indicators");
+    robotweax_srt_telemetry_sampler_destroy(sampler);
+    robotweax_srt_telemetry_delta_engine_destroy(sender.engine);
+    robotweax_srt_telemetry_delta_engine_destroy(receiver.engine);
+
+    robotweax_srt_telemetry_sampler_config_v1 config{};
+    robotweax_srt_telemetry_sampler_config_default(&config);
+    robotweax_srt_telemetry_sampler *empty = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_sampler_create(&config, &empty));
+    const auto none = render(empty, ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON);
+    check(valid_json(none) && none.find("\"metrics\":[]") != std::string::npos, "OTLP: no sources, no metrics");
+    robotweax_srt_telemetry_sampler_destroy(empty);
+}
+
+/* --dump-otlp: print a rendered request (for tools/otlp_validate.py). */
+int dump_otlp()
+{
+    Fake sender;
+    Fake receiver;
+    auto *sampler = otlp_sampler(sender, receiver);
+    const robotweax_srt_telemetry_label_v1 resource[] = {{"service.name", "encoder-7"}};
+    std::cout << render_otlp(sampler, resource, 1);
+    robotweax_srt_telemetry_sampler_destroy(sampler);
+    robotweax_srt_telemetry_delta_engine_destroy(sender.engine);
+    robotweax_srt_telemetry_delta_engine_destroy(receiver.engine);
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
-int main()
+int main(const int argc, char **argv)
 {
+    if (argc > 1 && std::string_view(argv[1]) == "--dump-otlp")
+    {
+        return dump_otlp();
+    }
     test_names();
     test_render();
+    test_otlp();
     if (failures != 0)
     {
         std::cerr << failures << " export checks failed\n";
