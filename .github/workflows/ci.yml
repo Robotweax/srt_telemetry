@@ -72,6 +72,7 @@ jobs:
             -DCMAKE_PREFIX_PATH="${{ runner.temp }}/install"
           cmake --build consumer
           ./consumer/robotweax_srt_telemetry_package_consumer
+          ./consumer/robotweax_srt_telemetry_http_package_consumer
           test -f "${{ runner.temp }}/install/share/doc/robotweax_srt_telemetry/LICENSE"
       - name: Shared-library build and consumer
         run: |
@@ -86,6 +87,9 @@ jobs:
           DYLD_LIBRARY_PATH="${{ runner.temp }}/install-shared/lib" \
           LD_LIBRARY_PATH="${{ runner.temp }}/install-shared/lib" \
             ./consumer-shared/robotweax_srt_telemetry_package_consumer
+          DYLD_LIBRARY_PATH="${{ runner.temp }}/install-shared/lib" \
+          LD_LIBRARY_PATH="${{ runner.temp }}/install-shared/lib" \
+            ./consumer-shared/robotweax_srt_telemetry_http_package_consumer
 
   evidence:
     name: Retained evidence validators

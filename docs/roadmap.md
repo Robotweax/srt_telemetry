@@ -61,7 +61,8 @@ never a wrong OK.
 - streaming callback, Prometheus, OTLP and a WebSocket feed sharing one
   versioned metric naming scheme
   ([naming scheme, Prometheus and JSON renderers](architecture/metric-names.md):
-  **done**; server, feed and OTLP next);
+  **done**; [embedded HTTP server and WebSocket feed](architecture/http-server.md):
+  **done**; OTLP next);
 - embedded web UI with sender, receiver and fleet views;
 - Grafana dashboards and alert rules; and
 - reference integrations: srt-live-transmit, GStreamer, Robotweax gateway.
