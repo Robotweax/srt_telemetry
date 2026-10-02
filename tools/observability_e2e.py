@@ -119,6 +119,9 @@ def main():
     parser.add_argument("--screenshots")
     parser.add_argument("--keep", action="store_true", help="keep the work directory")
     args = parser.parse_args()
+    # The services run in the work directory: resolve the paths first.
+    for name in ("demo", "prometheus", "otelcol", "grafana_home"):
+        setattr(args, name, os.path.abspath(getattr(args, name)))
 
     work = tempfile.mkdtemp(prefix="srt-observability-e2e-")
     ports = {name: free_port() for name in ("demo", "otlp", "otel_prom", "prometheus", "grafana")}
