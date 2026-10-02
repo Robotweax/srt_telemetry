@@ -7,7 +7,9 @@
  * Gate (roadmap Phase 2): per role, the right verdict in at least 9 of 10
  * fault classes, every control OK throughout, and never a wrong OK: once a
  * fault has been active for the detection grace, a role that should see it
- * must not report OK (three consecutive reads) until 2 s after it ends.
+ * must not report OK (three consecutive reads) until 2 s after it ends;
+ * and every At risk or Failing read must name a right knob, from 4 s after
+ * the first one until the end of the settle period.
  *
  * Usage: fault_lab [--scenario NAME] [--list] [--timeline] */
 
@@ -21,6 +23,8 @@
 #include <srt/srt.h>
 #endif
 #include <robotweax/srt_telemetry_public_srt_host.h>
+
+#include "impairing_relay.hpp"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -80,230 +84,8 @@ double seconds_since(const Clock::time_point start)
     return std::chrono::duration<double>(Clock::now() - start).count();
 }
 
-/* ------------------------------------------------------------------ relay */
-
-struct Impairment
-{
-    double forward_loss = 0;           /* caller -> listener, probability */
-    int burst_every_ms = 0;            /* drop a burst every N ms ... */
-    int burst_packets = 0;             /* ... of this many forward packets */
-    int delay_ms = 10;                 /* each direction */
-    int jitter_ms = 0;                 /* extra forward delay, uniform 0..N */
-    double forward_rate_bps = 0;       /* 0: unlimited */
-    std::size_t queue_limit_bytes = 0; /* tail drop above this backlog */
-    bool blackhole = false;            /* both directions */
-};
-
-/* Forwards UDP between the SRT caller (front) and listener (back), applying
- * the current impairment. Single thread; packets wait in a release queue. */
-class Relay final
-{
-  public:
-    bool start(const sockaddr_in &listener)
-    {
-        listener_ = listener;
-        front_ = ::socket(AF_INET, SOCK_DGRAM, 0);
-        back_ = ::socket(AF_INET, SOCK_DGRAM, 0);
-        if (front_ < 0 || back_ < 0)
-        {
-            return false;
-        }
-        const int buffer = 4 << 20;
-        for (const int fd : {front_, back_})
-        {
-            static_cast<void>(::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buffer, sizeof(buffer)));
-            static_cast<void>(::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buffer, sizeof(buffer)));
-        }
-        sockaddr_in any{};
-        any.sin_family = AF_INET;
-        any.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        if (::bind(front_, reinterpret_cast<sockaddr *>(&any), sizeof(any)) != 0 ||
-            ::bind(back_, reinterpret_cast<sockaddr *>(&any), sizeof(any)) != 0)
-        {
-            return false;
-        }
-        socklen_t size = sizeof(address_);
-        if (::getsockname(front_, reinterpret_cast<sockaddr *>(&address_), &size) != 0)
-        {
-            return false;
-        }
-        running_ = true;
-        thread_ = std::thread([this] { run(); });
-        return true;
-    }
-
-    ~Relay()
-    {
-        running_ = false;
-        if (thread_.joinable())
-        {
-            thread_.join();
-        }
-        if (front_ >= 0)
-        {
-            ::close(front_);
-        }
-        if (back_ >= 0)
-        {
-            ::close(back_);
-        }
-    }
-
-    [[nodiscard]] const sockaddr_in &address() const noexcept
-    {
-        return address_;
-    }
-
-    void set(const Impairment &impairment)
-    {
-        std::lock_guard lock(mutex_);
-        impairment_ = impairment;
-    }
-
-    [[nodiscard]] Impairment get()
-    {
-        std::lock_guard lock(mutex_);
-        return impairment_;
-    }
-
-  private:
-    struct Pending
-    {
-        Clock::time_point release;
-        std::uint64_t order;
-        bool forward;
-        std::vector<char> data;
-        bool operator>(const Pending &other) const
-        {
-            return release != other.release ? release > other.release : order > other.order;
-        }
-    };
-
-    void enqueue(const bool forward, const char *data, const std::size_t size)
-    {
-        const auto now = Clock::now();
-        const auto impairment = get();
-        if (impairment.blackhole)
-        {
-            return;
-        }
-        auto release = now + std::chrono::milliseconds(impairment.delay_ms);
-        if (forward)
-        {
-            if (impairment.forward_loss > 0 && uniform_(random_) < impairment.forward_loss)
-            {
-                return;
-            }
-            if (impairment.burst_every_ms > 0)
-            {
-                if (now >= next_burst_)
-                {
-                    burst_left_ = impairment.burst_packets;
-                    next_burst_ = now + std::chrono::milliseconds(impairment.burst_every_ms);
-                }
-                if (burst_left_ > 0)
-                {
-                    --burst_left_;
-                    return;
-                }
-            }
-            if (impairment.forward_rate_bps > 0)
-            {
-                const auto start = std::max(now, link_free_);
-                const auto backlog_bytes =
-                    std::chrono::duration<double>(start - now).count() * impairment.forward_rate_bps / 8.0;
-                if (backlog_bytes + static_cast<double>(size) > static_cast<double>(impairment.queue_limit_bytes))
-                {
-                    return;
-                }
-                link_free_ = start + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(
-                                         static_cast<double>(size) * 8.0 / impairment.forward_rate_bps));
-                release = link_free_ + std::chrono::milliseconds(impairment.delay_ms);
-            }
-            if (impairment.jitter_ms > 0)
-            {
-                release += std::chrono::microseconds(
-                    static_cast<std::int64_t>(uniform_(random_) * impairment.jitter_ms * 1000.0));
-            }
-        }
-        queue_.push(Pending{release, order_++, forward, std::vector<char>(data, data + size)});
-    }
-
-    void flush()
-    {
-        const auto now = Clock::now();
-        while (!queue_.empty() && queue_.top().release <= now)
-        {
-            const auto &packet = queue_.top();
-            if (packet.forward)
-            {
-                static_cast<void>(::sendto(back_, packet.data.data(), packet.data.size(), 0,
-                                           reinterpret_cast<const sockaddr *>(&listener_), sizeof(listener_)));
-            }
-            else if (has_caller_)
-            {
-                static_cast<void>(::sendto(front_, packet.data.data(), packet.data.size(), 0,
-                                           reinterpret_cast<const sockaddr *>(&caller_), sizeof(caller_)));
-            }
-            queue_.pop();
-        }
-    }
-
-    void run()
-    {
-        std::array<char, 2048> buffer{};
-        while (running_)
-        {
-            int timeout = 1;
-            if (queue_.empty())
-            {
-                timeout = 5;
-            }
-            pollfd fds[2] = {{front_, POLLIN, 0}, {back_, POLLIN, 0}};
-            static_cast<void>(::poll(fds, 2, timeout));
-            if ((fds[0].revents & POLLIN) != 0)
-            {
-                sockaddr_in from{};
-                socklen_t size = sizeof(from);
-                const auto n = ::recvfrom(front_, buffer.data(), buffer.size(), MSG_DONTWAIT,
-                                          reinterpret_cast<sockaddr *>(&from), &size);
-                if (n > 0)
-                {
-                    caller_ = from;
-                    has_caller_ = true;
-                    enqueue(true, buffer.data(), static_cast<std::size_t>(n));
-                }
-            }
-            if ((fds[1].revents & POLLIN) != 0)
-            {
-                const auto n = ::recv(back_, buffer.data(), buffer.size(), MSG_DONTWAIT);
-                if (n > 0)
-                {
-                    enqueue(false, buffer.data(), static_cast<std::size_t>(n));
-                }
-            }
-            flush();
-        }
-    }
-
-    int front_ = -1;
-    int back_ = -1;
-    sockaddr_in address_{};
-    sockaddr_in listener_{};
-    sockaddr_in caller_{};
-    bool has_caller_ = false;
-    std::atomic<bool> running_{false};
-    std::thread thread_;
-    std::mutex mutex_;
-    Impairment impairment_;
-    std::priority_queue<Pending, std::vector<Pending>, std::greater<>> queue_;
-    std::uint64_t order_ = 0;
-    Clock::time_point link_free_{};
-    Clock::time_point next_burst_{};
-    int burst_left_ = 0;
-    std::mt19937_64 random_{20261001};
-    std::uniform_real_distribution<double> uniform_{0.0, 1.0};
-};
+using robotweax_srt_telemetry_lab::Impairment;
+using robotweax_srt_telemetry_lab::Relay;
 
 /* -------------------------------------------------------------- scenarios */
 
@@ -329,10 +111,20 @@ struct Scenario
      * OK. Empty: not observable from that role, not scored. */
     std::set<Verdict> expect_sender;
     std::set<Verdict> expect_receiver;
-    /* Knobs a right diagnosis names at the worst verdict (reported, not
-     * gated). Empty: advice not judged for that role. */
+    /* Knobs a right diagnosis names on every At risk or Failing read
+     * (gated). Empty: advice not judged for that role. */
     std::set<robotweax_srt_telemetry_health_knob> knob_sender;
     std::set<robotweax_srt_telemetry_health_knob> knob_receiver;
+    /* Knobs for reads after the fault ends (the aftermath); empty: as
+     * during the fault. */
+    std::set<robotweax_srt_telemetry_health_knob> knob_after_sender;
+    std::set<robotweax_srt_telemetry_health_knob> knob_after_receiver;
+    /* A second fault replacing the first, this long after onset (0: none),
+     * with the knobs expected from a time after onset: {from, knobs}. */
+    double second_after = 0;
+    Impairment second;
+    std::vector<std::pair<double, std::set<robotweax_srt_telemetry_health_knob>>> phases_sender;
+    std::vector<std::pair<double, std::set<robotweax_srt_telemetry_health_knob>>> phases_receiver;
     bool control = false;
 };
 
@@ -451,7 +243,10 @@ std::vector<Scenario> scenarios()
         s.fault.blackhole = true;
         s.peer_idle_timeout_ms = 10'000;
         s.fault_seconds = 6;
-        s.settle_seconds = 6;
+        /* Long enough to watch the aftermath: the sender's backlog arrives
+         * late after the outage, and its drops must not turn into latency
+         * advice once the gap has left the count window. */
+        s.settle_seconds = 20;
         /* The receiver cannot tell an outage from a paused source while it
          * lasts: Unknown, then Failing for the drops after the gap. */
         s.expect_sender = bad;
@@ -483,6 +278,46 @@ std::vector<Scenario> scenarios()
         s.expect_sender = bad;
         s.expect_receiver = bad;
         s.knob_sender = {K_MAXBW}; /* the receiver cannot see the sender's setting */
+        /* MAXBW reset at fault end: the drops still counted need nothing
+         * more ("sender drops", no knob), or keep the MAXBW advice. */
+        s.knob_after_sender = {K_MAXBW, K_NONE};
+        list.push_back(s);
+    }
+    {
+        Scenario s;
+        s.name = "outage_long_latency";
+        s.description = "path blackholed for 6 s with 2.5 s latency (drops arrive later after the outage)";
+        s.latency_ms = 2500;
+        s.fault.blackhole = true;
+        s.peer_idle_timeout_ms = 10'000;
+        s.fault_seconds = 6;
+        s.settle_seconds = 20;
+        s.expect_sender = bad;
+        s.expect_receiver = bad;
+        s.knob_sender = {K_NONE};
+        s.knob_receiver = {K_NONE};
+        list.push_back(s);
+    }
+    {
+        Scenario s;
+        s.name = "outage_then_cap";
+        s.description = "4 s blackhole, then the path capped at 3 Mbit/s for 30 s: the cap gets its own advice";
+        s.fault.blackhole = true;
+        s.peer_idle_timeout_ms = 10'000;
+        s.second_after = 4;
+        s.second.forward_rate_bps = 3e6;
+        s.second.queue_limit_bytes = 100'000;
+        s.fault_seconds = 34;
+        s.expect_sender = bad;
+        s.expect_receiver = bad;
+        /* Outage: no knob. Then the outage's aftermath and the cap's first
+         * evidence (latency first, as in bandwidth_cap), then bitrate. */
+        s.knob_sender = {K_NONE};
+        s.knob_receiver = {K_NONE};
+        s.phases_sender = {{4.0, {K_NONE, K_LATENCY, K_BITRATE}}, {11.0, {K_BITRATE}}};
+        s.phases_receiver = {{4.0, {K_NONE, K_LATENCY, K_BITRATE}}, {11.0, {K_BITRATE}}};
+        s.knob_after_sender = {K_BITRATE};
+        s.knob_after_receiver = {K_BITRATE};
         list.push_back(s);
     }
     {
@@ -652,6 +487,10 @@ struct RoleScore
     bool saw_unknown = false;
     bool advice_judged = false;
     bool advice_right = false;
+    int advice_reads = 0;      /* At risk / Failing reads judged for advice */
+    int advice_wrong = 0;      /* ... that named another knob */
+    double advice_wrong_at = -1; /* first wrong read, seconds after onset */
+    std::string wrong_knob;
     std::string knob;
 };
 
@@ -666,9 +505,12 @@ std::string expect_text(const std::set<Verdict> &expected)
     return text;
 }
 
-RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expected,
-                const std::set<robotweax_srt_telemetry_health_knob> &knobs, const double onset,
-                const double fault_end, const double end, const bool control)
+using Knobs = std::set<robotweax_srt_telemetry_health_knob>;
+using Phases = std::vector<std::pair<double, Knobs>>;
+
+RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expected, const Knobs &knobs,
+                const Knobs &knobs_after, const Phases &phases, const double onset, const double fault_end,
+                const double end, const bool control)
 {
     RoleScore result;
     if (expected.empty())
@@ -746,8 +588,56 @@ RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expec
     }
     if (!knobs.empty())
     {
+        /* Every At risk or Failing read must name a right knob, from 4 s
+         * after the first one (advice may sharpen while evidence builds,
+         * e.g. latency first, then bitrate once congestion shows) until the
+         * end of the settle period, aftermath included. A lost connection
+         * has no knob. */
+        constexpr double advice_settle = 4.0; /* as the detection grace */
+        double first_bad = -1;
+        for (const auto &p : points)
+        {
+            if (p.t < onset || p.t > end || severity(p.verdict) < severity(AT_RISK) ||
+                p.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST ||
+                p.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR)
+            {
+                continue;
+            }
+            if (first_bad < 0)
+            {
+                first_bad = p.t;
+            }
+            if (p.t < first_bad + advice_settle)
+            {
+                continue;
+            }
+            /* The knobs for this read: the fault's, a later phase's, or the
+             * aftermath's. */
+            const Knobs *right = &knobs;
+            for (const auto &[from, set] : phases)
+            {
+                if (p.t - onset >= from)
+                {
+                    right = &set;
+                }
+            }
+            if (p.t > fault_end && !knobs_after.empty())
+            {
+                right = &knobs_after;
+            }
+            result.advice_reads += 1;
+            if (right->count(p.knob) == 0)
+            {
+                result.advice_wrong += 1;
+                if (result.advice_wrong_at < 0)
+                {
+                    result.advice_wrong_at = p.t - onset;
+                    result.wrong_knob = robotweax_srt_telemetry_health_knob_name(p.knob);
+                }
+            }
+        }
         result.advice_judged = true;
-        result.advice_right = knobs.count(top) != 0;
+        result.advice_right = result.advice_wrong == 0 && (result.advice_reads > 0 || knobs.count(top) != 0);
     }
     if (control)
     {
@@ -955,6 +845,7 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
     }
     bool fault_on = false;
     bool fault_off = false;
+    bool second_on = false;
     auto next = start;
     while (seconds_since(start) < end)
     {
@@ -969,6 +860,11 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
                 const std::int64_t value = scenario.sender_max_bandwidth;
                 static_cast<void>(srt_setsockflag(caller, SRTO_MAXBW, &value, sizeof(value)));
             }
+        }
+        if (fault_on && !fault_off && !second_on && scenario.second_after > 0 && t >= onset + scenario.second_after)
+        {
+            second_on = true;
+            relay.set(scenario.second);
         }
         if (fault_on && !fault_off && !scenario.permanent && t >= fault_end)
         {
@@ -1009,10 +905,11 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
     robotweax_srt_telemetry_sampler_destroy(sampler);
     outcome.received = received.load();
 
-    outcome.sender =
-        score(sender_points, scenario.expect_sender, scenario.knob_sender, onset, fault_end, end, scenario.control);
-    outcome.receiver = score(receiver_points, scenario.expect_receiver, scenario.knob_receiver, onset, fault_end,
-                             end, scenario.control);
+    outcome.sender = score(sender_points, scenario.expect_sender, scenario.knob_sender, scenario.knob_after_sender,
+                           scenario.phases_sender, onset, fault_end, end, scenario.control);
+    outcome.receiver = score(receiver_points, scenario.expect_receiver, scenario.knob_receiver,
+                             scenario.knob_after_receiver, scenario.phases_receiver, onset, fault_end, end,
+                             scenario.control);
 
     if (timeline)
     {
@@ -1021,14 +918,20 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
             std::cout << "  " << role << ':';
             Verdict last = static_cast<Verdict>(-1);
             robotweax_srt_telemetry_health_reason last_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NONE;
+            robotweax_srt_telemetry_health_knob last_knob = ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE;
             for (const auto &p : points)
             {
-                if (p.verdict != last || p.reason != last_reason)
+                if (p.verdict != last || p.reason != last_reason || p.knob != last_knob)
                 {
                     std::cout << ' ' << std::fixed << std::setprecision(1) << p.t << "s=" << name(p.verdict) << '/'
                               << robotweax_srt_telemetry_health_reason_name(p.reason);
+                    if (p.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE)
+                    {
+                        std::cout << '/' << robotweax_srt_telemetry_health_knob_name(p.knob);
+                    }
                     last = p.verdict;
                     last_reason = p.reason;
+                    last_knob = p.knob;
                 }
             }
             std::cout << '\n';
@@ -1052,7 +955,17 @@ void print_role(const char *role, const RoleScore &s, const std::set<Verdict> &e
               << "\",\"reason\":\"" << s.worst_reason << "\",\"advice\":\"" << s.advice
               << "\",\"detectedAfter\":" << std::fixed << std::setprecision(1) << s.first_detection
               << ",\"knob\":\"" << s.knob << "\",\"adviceRight\":"
-              << (s.advice_judged ? (s.advice_right ? "true" : "false") : "null")
+              << (s.advice_judged ? (s.advice_right ? "true" : "false") : "null");
+    if (s.advice_judged)
+    {
+        std::cout << ",\"adviceReads\":" << s.advice_reads << ",\"adviceWrong\":" << s.advice_wrong;
+        if (s.advice_wrong > 0)
+        {
+            std::cout << ",\"firstWrong\":{\"after\":" << std::setprecision(1) << s.advice_wrong_at
+                      << ",\"knob\":\"" << s.wrong_knob << "\"}";
+        }
+    }
+    std::cout
               << ",\"wrongOk\":" << (s.wrong_ok ? "true" : "false") << ",\"pass\":" << (s.pass ? "true" : "false")
               << '}';
 }
@@ -1155,9 +1068,10 @@ int main(const int argc, char **argv)
     }
     const auto gate = [](const Tally &t)
     {
-        /* At least 9 of 10: 90 % of the fault classes, rounded up. */
+        /* At least 9 of 10: 90 % of the fault classes, rounded up; and
+         * every judged fault class names a right knob on every read. */
         const int needed = (t.faults * 9 + 9) / 10;
-        return t.right >= needed && t.wrong_ok == 0 && t.control_ok;
+        return t.right >= needed && t.wrong_ok == 0 && t.control_ok && t.advice_right == t.advice_judged;
     };
     const bool full = only.empty();
     const bool passed = setup_ok && (!full || (gate(sender) && gate(receiver)));

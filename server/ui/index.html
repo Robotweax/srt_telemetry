@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>SRT Telemetry</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/"><img src="/favicon.svg" alt=""><span>SRT Telemetry</span></a>
+  <span class="spacer"></span>
+  <span class="link-state" id="link-state" data-state="connecting" role="status"><span class="dot"></span><span id="link-text">Connecting</span></span>
+  <button class="icon-button" id="theme" type="button" title="Switch light or dark theme" aria-label="Switch light or dark theme">
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 1.5v11a5.5 5.5 0 0 1 0-11Z"/></svg>
+  </button>
+</header>
+<p class="banner hidden" id="banner" role="alert"></p>
+<main id="app">
+  <noscript><p class="empty">The SRT Telemetry dashboard needs JavaScript. The data is also available at <a href="/metrics">/metrics</a> and <a href="/api/v1/snapshot">/api/v1/snapshot</a>.</p></noscript>
+</main>
+<div class="tooltip hidden" id="tooltip" role="tooltip"></div>
+</body>
+</html>

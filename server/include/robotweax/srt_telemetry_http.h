@@ -5,6 +5,9 @@
  * the built-in UI and to any HTTP or WebSocket client. One thread, no
  * dependencies beyond POSIX sockets, read-only (GET only).
  *
+ *   GET /                                built-in web UI (fleet, sender and
+ *                                        receiver views), embedded in the
+ *                                        library
  *   GET /metrics                         Prometheus text exposition
  *   GET /api/v1/snapshot[?window=S]      JSON snapshot (srt-telemetry.snapshot.v1)
  *   GET /api/v1/sources/{id}/history[?since_ms=T]
@@ -53,6 +56,8 @@ extern "C"
 /* http_server_config_v1.flags */
 /* Do not serve the WebSocket feed. */
 #define ROBOTWEAX_SRT_TELEMETRY_HTTP_NO_LIVE_FEED UINT32_C(1)
+/* Do not serve the built-in web UI (/, /app.js, /app.css, /favicon.svg). */
+#define ROBOTWEAX_SRT_TELEMETRY_HTTP_NO_UI UINT32_C(2)
 
     typedef struct robotweax_srt_telemetry_http_server_config_v1
     {
@@ -86,6 +91,14 @@ extern "C"
          * IP literals, that requests may address (Host header), e.g.
          * "encoder-7.studio.lan". Empty: localhost and IP literals only. */
         char allowed_hosts[ROBOTWEAX_SRT_TELEMETRY_HTTP_HOSTS_CAPACITY];
+        /* Pages that may show the built-in UI in a frame, as space-separated
+         * Content-Security-Policy sources: origins such as
+         * "https://console.example.com", a wildcard host such as "*.example.com",
+         * or 'self'.
+         * Empty (default): the UI cannot be framed. "*", bare schemes
+         * ("https:") and single-label wildcards ("*.com") are refused. Only
+         * list consoles you trust: a framing page can overlay the UI. */
+        char frame_ancestors[ROBOTWEAX_SRT_TELEMETRY_HTTP_HOSTS_CAPACITY];
     } robotweax_srt_telemetry_http_server_config_v1;
 
     ROBOTWEAX_SRT_TELEMETRY_HTTP_API void

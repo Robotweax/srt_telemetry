@@ -76,7 +76,26 @@ endif()
 option(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER
     "Build the optional embedded HTTP/WebSocket server (POSIX)" ${ROBOTWEAX_SRT_TELEMETRY_HTTP_DEFAULT})
 if(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER)
-    add_library(robotweax_srt_telemetry_http server/src/http_server.cpp)
+    # The built-in web UI, embedded in the library (no file serving).
+    set(ROBOTWEAX_SRT_TELEMETRY_UI_FILES index.html app.css app.js favicon.svg)
+    set(ui_sources "")
+    foreach(ui_file IN LISTS ROBOTWEAX_SRT_TELEMETRY_UI_FILES)
+        list(APPEND ui_sources "${CMAKE_CURRENT_SOURCE_DIR}/server/ui/${ui_file}")
+    endforeach()
+    list(JOIN ROBOTWEAX_SRT_TELEMETRY_UI_FILES "," ui_file_list)
+    set(ui_generated "${CMAKE_CURRENT_BINARY_DIR}/generated/ui_assets.cpp")
+    add_custom_command(
+        OUTPUT "${ui_generated}"
+        COMMAND ${CMAKE_COMMAND}
+            "-DOUTPUT=${ui_generated}"
+            "-DUI_DIR=${CMAKE_CURRENT_SOURCE_DIR}/server/ui"
+            "-DFILES=${ui_file_list}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedUiAssets.cmake"
+        DEPENDS ${ui_sources} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedUiAssets.cmake"
+        COMMENT "Embedding the web UI"
+        VERBATIM)
+    add_library(robotweax_srt_telemetry_http server/src/http_server.cpp "${ui_generated}")
+    target_include_directories(robotweax_srt_telemetry_http PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/server/src")
     add_library(RobotweaxSRTTelemetry::http ALIAS robotweax_srt_telemetry_http)
     target_compile_features(robotweax_srt_telemetry_http PUBLIC cxx_std_20)
     target_include_directories(robotweax_srt_telemetry_http
@@ -236,6 +255,41 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                NOT EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt/srt.h")
                 target_compile_definitions(robotweax_srt_telemetry_public_srt_fault_lab
                     PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
+            endif()
+            if(TARGET robotweax_srt_telemetry_http)
+                add_executable(robotweax_srt_telemetry_public_srt_dashboard_demo
+                    adapters/public_srt/tests/dashboard_demo.cpp)
+                target_include_directories(robotweax_srt_telemetry_public_srt_dashboard_demo
+                    PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
+                target_link_libraries(robotweax_srt_telemetry_public_srt_dashboard_demo
+                    PRIVATE RobotweaxSRTTelemetry::public_srt_adapter
+                            RobotweaxSRTTelemetry::http
+                            ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY}
+                            Threads::Threads)
+                target_compile_features(robotweax_srt_telemetry_public_srt_dashboard_demo PRIVATE cxx_std_20)
+                if(ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER STREQUAL "robotweax-srt")
+                    target_compile_definitions(robotweax_srt_telemetry_public_srt_dashboard_demo
+                        PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_PROVIDER_ROBOTWEAX)
+                endif()
+                if(EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt.h" AND
+                   NOT EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt/srt.h")
+                    target_compile_definitions(robotweax_srt_telemetry_public_srt_dashboard_demo
+                        PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
+                endif()
+                # Browser smoke test of the built-in UI against the demo.
+                find_package(Python3 COMPONENTS Interpreter)
+                find_program(ROBOTWEAX_SRT_TELEMETRY_BROWSER
+                    NAMES google-chrome google-chrome-stable chromium chromium-browser chrome)
+                if(Python3_Interpreter_FOUND AND ROBOTWEAX_SRT_TELEMETRY_BROWSER)
+                    add_test(NAME robotweax_srt_telemetry_ui_smoke_test
+                        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/ui_smoke_test.py
+                            --demo $<TARGET_FILE:robotweax_srt_telemetry_public_srt_dashboard_demo>
+                            --browser ${ROBOTWEAX_SRT_TELEMETRY_BROWSER})
+                    set_tests_properties(robotweax_srt_telemetry_ui_smoke_test
+                        PROPERTIES TIMEOUT 300 LABELS ui)
+                else()
+                    message(STATUS "UI smoke test skipped: needs Python 3 and Chrome or Chromium")
+                endif()
             endif()
             add_test(NAME robotweax_srt_telemetry_public_srt_fault_lab
                 COMMAND robotweax_srt_telemetry_public_srt_fault_lab)

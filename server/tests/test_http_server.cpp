@@ -772,6 +772,110 @@ void test_history_pages()
 
 } // namespace
 
+std::string header_value(const std::string &head, const std::string &name)
+{
+    const auto at = head.find("\r\n" + name + ": ");
+    if (at == std::string::npos)
+    {
+        return {};
+    }
+    const auto start = at + name.size() + 4;
+    return head.substr(start, head.find("\r\n", start) - start);
+}
+
+void test_ui()
+{
+    Setup s;
+    robotweax_srt_telemetry_http_server_config_v1 config;
+    robotweax_srt_telemetry_http_server_config_default(s.sampler, &config);
+    robotweax_srt_telemetry_http_server *server = nullptr;
+    robotweax_srt_telemetry_http_server_start(&config, &server);
+    auto port = robotweax_srt_telemetry_http_server_port(server);
+
+    auto r = get(port, "/");
+    check(r.status == 200 && header_value(r.head, "Content-Type") == "text/html; charset=utf-8" &&
+              r.body.find("<script src=\"/app.js\" defer></script>") != std::string::npos,
+          "UI page");
+    const auto csp = header_value(r.head, "Content-Security-Policy");
+    check(csp.find("default-src 'none'") != std::string::npos && csp.find("script-src 'self'") != std::string::npos &&
+              csp.find("unsafe-inline") == std::string::npos && csp.find("frame-ancestors 'none'") != std::string::npos,
+          "UI page: strict content security policy");
+    check(header_value(r.head, "Referrer-Policy") == "no-referrer" &&
+              header_value(r.head, "X-Frame-Options") == "DENY" &&
+              header_value(r.head, "X-Content-Type-Options") == "nosniff" &&
+              header_value(r.head, "Cache-Control") == "no-cache",
+          "UI page: security and cache headers");
+    check(r.body.find("<script>") == std::string::npos && r.body.find(" style=") == std::string::npos,
+          "UI page: no inline script or style");
+    const auto etag = header_value(r.head, "ETag");
+    check(etag.size() == 22 && etag.front() == '"' && etag.back() == '"', "UI page: ETag");
+    auto cached = get(port, "/", "If-None-Match: " + etag + "\r\n");
+    check(cached.status == 304 && cached.body.empty() && header_value(cached.head, "ETag") == etag,
+          "UI page: 304 for a matching ETag");
+    check(get(port, "/", "If-None-Match: \"stale\"\r\n").status == 200, "UI page: 200 for another ETag");
+
+    r = get(port, "/app.js");
+    check(r.status == 200 && header_value(r.head, "Content-Type") == "text/javascript; charset=utf-8" &&
+              r.body.find("'use strict'") != std::string::npos,
+          "UI script");
+    check(r.body.find("innerHTML") == std::string::npos && r.body.find("eval(") == std::string::npos,
+          "UI script builds the DOM from text only");
+    r = get(port, "/app.css");
+    check(r.status == 200 && header_value(r.head, "Content-Type") == "text/css; charset=utf-8", "UI styles");
+    r = get(port, "/favicon.svg");
+    check(r.status == 200 && header_value(r.head, "Content-Type") == "image/svg+xml", "UI icon");
+    r = request(port, "HEAD /app.js HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+    check(r.status == 200 && r.body.empty() && std::atoi(header_value(r.head, "Content-Length").c_str()) > 1000,
+          "UI HEAD");
+    check(get(port, "/index.html").status == 404 && get(port, "/../app.js").status == 404 &&
+              get(port, "/app.js/").status == 404 && get(port, "/APP.JS").status == 404,
+          "UI: only the embedded paths");
+    check(request(port, "GET / HTTP/1.1\r\nHost: attacker.example\r\n\r\n").status == 421,
+          "UI: host check applies");
+    robotweax_srt_telemetry_http_server_stop(server);
+
+    /* With a token the UI loads without it (it holds no data) and asks for
+     * it; the data endpoints still need it. */
+    std::strcpy(config.bearer_token, "ui-token");
+    robotweax_srt_telemetry_http_server_start(&config, &server);
+    port = robotweax_srt_telemetry_http_server_port(server);
+    check(get(port, "/").status == 200 && get(port, "/app.js").status == 200, "token: UI served without it");
+    check(get(port, "/api/v1/snapshot").status == 401, "token: data still protected");
+    robotweax_srt_telemetry_http_server_stop(server);
+
+    config.bearer_token[0] = '\0';
+    config.flags = ROBOTWEAX_SRT_TELEMETRY_HTTP_NO_UI;
+    robotweax_srt_telemetry_http_server_start(&config, &server);
+    port = robotweax_srt_telemetry_http_server_port(server);
+    check(get(port, "/").status == 404 && get(port, "/app.js").status == 404, "NO_UI: not served");
+    check(get(port, "/metrics").status == 200, "NO_UI: data still served");
+    robotweax_srt_telemetry_http_server_stop(server);
+    config.flags = 4;
+    check(robotweax_srt_telemetry_http_server_start(&config, &server) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "unknown flags rejected");
+    config.flags = 0;
+
+    /* Framing: refused by default; allowed for the listed consoles only. */
+    std::strcpy(config.frame_ancestors, "https://console.example.com  'self' *.studio.lan");
+    check(robotweax_srt_telemetry_http_server_start(&config, &server) == ROBOTWEAX_SRT_TELEMETRY_OK, "frame_ancestors");
+    port = robotweax_srt_telemetry_http_server_port(server);
+    r = get(port, "/");
+    const auto framed_csp = header_value(r.head, "Content-Security-Policy");
+    check(framed_csp.find("frame-ancestors https://console.example.com 'self' *.studio.lan") != std::string::npos &&
+              framed_csp.find("frame-ancestors 'none'") == std::string::npos && header_value(r.head, "X-Frame-Options").empty(),
+          "frame_ancestors: listed in the policy, no X-Frame-Options");
+    robotweax_srt_telemetry_http_server_stop(server);
+    for (const char *bad : {"https://a.example; script-src *", "https://a.example,https://b.example",
+                            "'unsafe-inline'", "\"https://a.example\"", "https://a.example\r\nX: y", "'none' x", "*", "https:",
+                            "https://*", "http://*:8080", "https://ok.example *", "*.com",
+                            "https://*.com", "https://*.*"})
+    {
+        std::strcpy(config.frame_ancestors, bad);
+        check(robotweax_srt_telemetry_http_server_start(&config, &server) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              std::string("frame_ancestors rejected: ") + bad);
+    }
+}
+
 int main()
 {
     test_config();
@@ -780,6 +884,7 @@ int main()
     test_token_and_limits();
     test_abuse();
     test_history_pages();
+    test_ui();
     if (failures != 0)
     {
         std::cerr << failures << " HTTP server checks failed\n";

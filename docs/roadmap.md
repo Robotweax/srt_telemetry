@@ -51,7 +51,8 @@ Haivision SRT v1.5.5 and Robotweax SRT `main`.
 - [eight health indicators](architecture/health-engine.md) producing per-role
   verdicts (OK, Watch, At risk, Failing, Unknown) with hysteresis, reason codes
   and knob advice: **done**. The [fault-lab gate](qualification/fault-lab.md)
-  passes on both providers: 10 of 10 fault classes per role, no wrong OK.
+  passes on both providers: 12 of 12 fault classes per role, no wrong OK, and
+  the right knob on every At risk or Failing read (added 2 October 2026).
 
 **Gate:** the right verdict in at least 9 of 10 lab fault classes per role, and
 never a wrong OK.
@@ -63,7 +64,8 @@ never a wrong OK.
   ([naming scheme, Prometheus and JSON renderers](architecture/metric-names.md):
   **done**; [embedded HTTP server and WebSocket feed](architecture/http-server.md):
   **done**; OTLP next);
-- embedded web UI with sender, receiver and fleet views;
+- embedded web UI with sender, receiver and fleet views
+  ([built-in web UI](architecture/web-ui.md): **done**);
 - Grafana dashboards and alert rules; and
 - reference integrations: srt-live-transmit, GStreamer, Robotweax gateway.
 
