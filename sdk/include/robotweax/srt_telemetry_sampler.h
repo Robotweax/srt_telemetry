@@ -279,6 +279,17 @@ extern "C"
         robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options,
         robotweax_srt_telemetry_render_writer writer, void *user_data);
 
+    /* As render_to with format RENDER_OTLP_JSON, with resource attributes
+     * (e.g. service.name, service.instance.id, deployment.environment). At
+     * most 32; keys unique and non-empty; keys and values up to 255 bytes of
+     * UTF-8 without control characters. Defaults for the keys not set:
+     * service.name "srt-telemetry" and telemetry.sdk.name, .language and
+     * .version. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render_otlp_to(
+        robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options,
+        const robotweax_srt_telemetry_label_v1 *resource_attributes, size_t resource_attribute_count,
+        robotweax_srt_telemetry_render_writer writer, void *user_data);
+
     /* As render_to, into a buffer, NUL-terminated. length receives the
      * output length without the terminator; BUFFER_TOO_SMALL when it does
      * not fit (render again with at least length + 1 bytes; the size can

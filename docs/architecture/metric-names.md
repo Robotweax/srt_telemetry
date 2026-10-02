@@ -115,14 +115,14 @@ any range.
 
 ## Health
 
-| Prometheus family | JSON (`health`) | Meaning |
-| --- | --- | --- |
-| `srt_health_verdict` | `verdict` | 0 unknown, 1 ok, 2 watch, 3 at risk, 4 failing |
-| `srt_health_info{verdict,reason,knob,direction}` | `verdict`, `reason`, `knob`, `direction` | Current verdict with its reason and suggested knob (value 1) |
-| `srt_health_suggested_value{knob}` | `suggested_value` (null without one) | Value for the knob in its unit: s, bit/s, bytes/s or percent |
-| `srt_health_indicator_state{indicator}` | `indicators[].state` | Each indicator after hysteresis |
-| `srt_health_indicator_value{indicator}` | `indicators[].value` | Each indicator's value (null when unavailable) |
-| — | `primary_indicator`, `missing_metrics`, `verdict_age_seconds` | Indicator behind the verdict; metrics a verdict needed but did not get; how long the verdict had held at the latest sample |
+| Prometheus family | OTLP (unit) | JSON (`health`) | Meaning |
+| --- | --- | --- | --- |
+| `srt_health_verdict` | `srt.health.verdict` ({verdict}) | `verdict` | 0 unknown, 1 ok, 2 watch, 3 at risk, 4 failing |
+| `srt_health_info{verdict,reason,knob,direction}` | `srt.health.info` ({info}) | `verdict`, `reason`, `knob`, `direction` | Current verdict with its reason and suggested knob (value 1) |
+| `srt_health_suggested_value{knob}` | `srt.health.suggested_value` ({value}) | `suggested_value` (null without one) | Value for the knob in its unit: s, bit/s, bytes/s or percent |
+| `srt_health_indicator_state{indicator}` | `srt.health.indicator.state` ({state}) | `indicators[].state` | Each indicator after hysteresis |
+| `srt_health_indicator_value{indicator}` | `srt.health.indicator.value` (1) | `indicators[].value` | Each indicator's value (null when unavailable) |
+| — | — | `primary_indicator`, `missing_metrics`, `verdict_age_seconds` | Indicator behind the verdict; metrics a verdict needed but did not get; how long the verdict had held at the latest sample |
 
 Reason, knob and indicator names are those of
 `robotweax_srt_telemetry_health_*_name()`
@@ -130,13 +130,13 @@ Reason, knob and indicator names are those of
 
 ## Source and window
 
-| Prometheus family | JSON | Meaning |
-| --- | --- | --- |
-| `srt_source_up` | `up` | 1 while statistics reads succeed |
-| — | `connection` | `connected`, `connecting`, `lost` or `unreported` (from the health context) |
-| `srt_window_seconds` | `window_seconds` (top level) | Length of the exported window |
-| `srt_window_samples` | `window.samples` | Samples in it |
-| `srt_window_quality{flag}` | `window.quality` | `partial`, `sampling_gap`, `clock_step`, `counter_reset`, `baseline`, `source_error` |
+| Prometheus family | OTLP (unit) | JSON | Meaning |
+| --- | --- | --- | --- |
+| `srt_source_up` | `srt.source.up` ({up}) | `up` | 1 while statistics reads succeed |
+| — | — | `connection` | `connected`, `connecting`, `lost` or `unreported` (from the health context) |
+| `srt_window_seconds` | `srt.window.length` (s) | `window_seconds` (top level) | Length of the exported window |
+| `srt_window_samples` | `srt.window.samples` ({sample}) | `window.samples` | Samples in it |
+| `srt_window_quality{flag}` | `srt.window.quality` ({flag}) | `window.quality` | `partial`, `sampling_gap`, `clock_step`, `counter_reset`, `baseline`, `source_error` |
 
 While a source's statistics read fails (`srt_source_up` 0), its counters and
 `latest` metrics keep the last good values. Its windows carry the
@@ -145,6 +145,25 @@ While a source's statistics read fails (`srt_source_up` 0), its counters and
 If no newer window has arrived for two more window lengths (the sampler
 stopped ticking), the window is left out as stale. This is judged on the
 steady clock, so it does not depend on host timestamps or clock steps.
+
+## OTLP
+
+The OTLP renderer (`ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON`, sent by the
+[OTLP exporter](otlp.md)) uses the OpenTelemetry names above with the same
+attributes as the Prometheus labels: window metrics are gauges with a `stat`
+attribute, counters are cumulative monotonic sums, and the health, source and
+window families are gauges.
+
+A Collector that re-exports to Prometheus derives names from the OpenTelemetry
+name and unit. Window metrics and counters get other names than the native
+families (`srt.receiver.unique_received.bitrate` becomes
+`srt_receiver_unique_received_bitrate_bit_per_second`), as does
+`srt.window.length`; the health and source families keep theirs, because
+their units are annotations. Resource attributes become labels
+(`service_name`, `service_instance_id`, …), and `job` and `instance` name the
+Collector, not the process. The [dashboards](alerting.md) use the native
+names: scrape the embedded server for them, and use OTLP for OpenTelemetry
+backends. The stream alerts work on both paths.
 
 ## Labels
 

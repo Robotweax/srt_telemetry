@@ -25,6 +25,10 @@ env:
   # Haivision SRT v1.5.5, the pinned comparison provider used by the retained evidence.
   HAIVISION_SRT_COMMIT: b6b4ae990daa8193625a4ddeaeaed03023b23125
   HAIVISION_SRT_VERSION: "1.5.5"
+  # Observability end to end.
+  PROMETHEUS_VERSION: "3.6.0"
+  OTELCOL_VERSION: "0.135.0"
+  GRAFANA_VERSION: "12.1.1"
 
 jobs:
   core:
@@ -55,11 +59,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install the OTLP protobuf definitions (OTLP JSON validation test)
+        run: python3 -m pip install opentelemetry-proto==1.45.0
       - name: Configure
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON
+          -DROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST=ON
           -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/install"
       - name: Build
         run: cmake --build build --parallel
@@ -100,6 +107,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Dashboards and alert rules use known metrics (static)
+        run: python3 tools/check_dashboards.py
       - name: Robotweax SRT 0.2.6 qualification archive
         run: python3 qualification/results/2026-09-27-srt-026/validate.py
       - name: Frozen operator-evaluation rehearsal packet
@@ -218,3 +227,40 @@ jobs:
           cmake --build consumer
           ./consumer/robotweax_srt_telemetry_package_consumer
           ./consumer/robotweax_srt_telemetry_adapter_package_consumer
+
+      # Observability end to end: the demo exports to Prometheus and, via
+      # OTLP, to an OpenTelemetry Collector; the alert rules fire for the
+      # impaired streams and Grafana serves the dashboards with data.
+      - name: Restore observability tools
+        if: matrix.provider == 'haivision-srt'
+        id: obs-cache
+        uses: actions/cache@v4
+        with:
+          path: obs-tools
+          key: obs-tools-prometheus-${{ env.PROMETHEUS_VERSION }}-otelcol-${{ env.OTELCOL_VERSION }}-grafana-${{ env.GRAFANA_VERSION }}-v1
+      - name: Download Prometheus, the OpenTelemetry Collector and Grafana
+        if: matrix.provider == 'haivision-srt' && steps.obs-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p obs-tools && cd obs-tools
+          curl -fsSL https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz | tar xz
+          mv prometheus-${PROMETHEUS_VERSION}.linux-amd64 prometheus
+          mkdir otelcol
+          curl -fsSL https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz | tar xz -C otelcol
+          curl -fsSL https://dl.grafana.com/oss/release/grafana-${GRAFANA_VERSION}.linux-amd64.tar.gz | tar xz
+          mv grafana-${GRAFANA_VERSION} grafana
+      - name: Alert rule unit tests
+        if: matrix.provider == 'haivision-srt'
+        working-directory: observability/prometheus
+        run: |
+          ../../obs-tools/prometheus/promtool check rules srt-telemetry-alerts.yml
+          ../../obs-tools/prometheus/promtool test rules srt-telemetry-alerts.test.yml
+      - name: Observability end to end (Prometheus, OTLP Collector, alerts, Grafana)
+        if: matrix.provider == 'haivision-srt'
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/provider-install/lib
+        run: >
+          python3 tools/observability_e2e.py
+          --demo build/robotweax_srt_telemetry_public_srt_dashboard_demo
+          --prometheus obs-tools/prometheus/prometheus
+          --otelcol obs-tools/otelcol/otelcol-contrib
+          --grafana-home obs-tools/grafana

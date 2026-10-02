@@ -63,10 +63,11 @@ never a wrong OK.
   versioned metric naming scheme
   ([naming scheme, Prometheus and JSON renderers](architecture/metric-names.md):
   **done**; [embedded HTTP server and WebSocket feed](architecture/http-server.md):
-  **done**; OTLP next);
+  **done**; [OTLP renderer and push exporter](architecture/otlp.md): **done**);
 - embedded web UI with sender, receiver and fleet views
   ([built-in web UI](architecture/web-ui.md): **done**);
-- Grafana dashboards and alert rules; and
+- Grafana dashboards and alert rules
+  ([alert rules and dashboards](architecture/alerting.md): **done**); and
 - reference integrations: srt-live-transmit, GStreamer, Robotweax gateway.
 
 **Gate:** each integration takes 30 host lines or fewer; an operator answers

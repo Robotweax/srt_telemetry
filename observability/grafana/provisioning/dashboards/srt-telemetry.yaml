@@ -1,0 +1,11 @@
+# Grafana dashboard provisioning: loads the SRT Telemetry dashboards.
+# Copy to /etc/grafana/provisioning/dashboards/ and point "path" at the
+# directory holding srt-fleet.json and srt-endpoint.json.
+apiVersion: 1
+providers:
+  - name: srt-telemetry
+    folder: SRT
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/srt-telemetry

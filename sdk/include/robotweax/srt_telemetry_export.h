@@ -42,7 +42,11 @@ extern "C"
         /* Prometheus text exposition format 0.0.4. */
         ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS = 1,
         /* JSON snapshot, schema "srt-telemetry.snapshot.v1". */
-        ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON = 2
+        ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON = 2,
+        /* OTLP/HTTP JSON: an ExportMetricsServiceRequest for POST /v1/metrics
+         * (OpenTelemetry names, window statistics in attribute "stat",
+         * lifetime counters as cumulative sums). See docs/architecture/otlp.md. */
+        ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON = 3
     } robotweax_srt_telemetry_render_format;
 
 /* render_options_v1.flags */

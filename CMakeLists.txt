@@ -11,6 +11,8 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 option(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS "Build telemetry tests" ON)
+option(ROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST
+    "Fail configuration when the OTLP protobuf test cannot run (CI)" OFF)
 option(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER
     "Build the injected public SRT API adapter" OFF)
 set(ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR "" CACHE PATH
@@ -94,7 +96,7 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER)
         DEPENDS ${ui_sources} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedUiAssets.cmake"
         COMMENT "Embedding the web UI"
         VERBATIM)
-    add_library(robotweax_srt_telemetry_http server/src/http_server.cpp "${ui_generated}")
+    add_library(robotweax_srt_telemetry_http server/src/http_server.cpp server/src/otlp_exporter.cpp "${ui_generated}")
     target_include_directories(robotweax_srt_telemetry_http PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/server/src")
     add_library(RobotweaxSRTTelemetry::http ALIAS robotweax_srt_telemetry_http)
     target_compile_features(robotweax_srt_telemetry_http PUBLIC cxx_std_20)
@@ -123,6 +125,11 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER)
         target_compile_features(robotweax_srt_telemetry_http_tests PRIVATE cxx_std_20)
         add_test(NAME robotweax_srt_telemetry_http_tests COMMAND robotweax_srt_telemetry_http_tests)
         set_tests_properties(robotweax_srt_telemetry_http_tests PROPERTIES TIMEOUT 60)
+        add_executable(robotweax_srt_telemetry_otlp_exporter_tests server/tests/test_otlp_exporter.cpp)
+        target_link_libraries(robotweax_srt_telemetry_otlp_exporter_tests PRIVATE RobotweaxSRTTelemetry::http)
+        target_compile_features(robotweax_srt_telemetry_otlp_exporter_tests PRIVATE cxx_std_20)
+        add_test(NAME robotweax_srt_telemetry_otlp_exporter_tests COMMAND robotweax_srt_telemetry_otlp_exporter_tests)
+        set_tests_properties(robotweax_srt_telemetry_otlp_exporter_tests PROPERTIES TIMEOUT 60)
     endif()
 endif()
 
@@ -407,6 +414,25 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
         ROBOTWEAX_SRT_TELEMETRY_NAMES_DOC="${CMAKE_CURRENT_SOURCE_DIR}/docs/architecture/metric-names.md")
     add_test(NAME robotweax_srt_telemetry_export_tests
         COMMAND robotweax_srt_telemetry_export_tests)
+    # OTLP output against the OpenTelemetry protobuf schema, when available
+    # (pip install opentelemetry-proto).
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} -c "import opentelemetry.proto.collector.metrics.v1.metrics_service_pb2"
+            RESULT_VARIABLE otlp_proto_missing OUTPUT_QUIET ERROR_QUIET)
+        if(otlp_proto_missing EQUAL 0)
+            add_test(NAME robotweax_srt_telemetry_otlp_proto_test
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/otlp_validate.py
+                    --command $<TARGET_FILE:robotweax_srt_telemetry_export_tests> --dump-otlp)
+        elseif(ROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST)
+            message(FATAL_ERROR "OTLP schema test required: pip install opentelemetry-proto")
+        else()
+            message(STATUS "OTLP schema test skipped: pip install opentelemetry-proto")
+        endif()
+    elseif(ROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST)
+        message(FATAL_ERROR "OTLP schema test required: no Python 3 interpreter")
+    endif()
 
     add_executable(robotweax_srt_telemetry_c_api_test
         sdk/tests/test_c_api.c)
@@ -719,3 +745,8 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/RobotweaxSRTTelemetry)
 install(FILES LICENSE
     DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/robotweax_srt_telemetry)
+# Alert rules, Grafana dashboards and Collector example (docs/architecture/alerting.md).
+install(DIRECTORY observability/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/robotweax_srt_telemetry/observability
+    PATTERN "build_dashboards.py" EXCLUDE
+    PATTERN "__pycache__" EXCLUDE)

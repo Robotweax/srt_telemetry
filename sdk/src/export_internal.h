@@ -34,6 +34,9 @@ struct ExportSource
     bool has_health = false;
     robotweax_srt_telemetry_health_status_v1 health{};
     robotweax_srt_telemetry_connection_condition connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_UNREPORTED;
+    /* When the lifetime counters started: the first sample, or the latest
+     * counter reset (OTLP cumulative start time). */
+    std::uint64_t counters_start_unix_nano = 0;
 };
 
 struct ExportView
@@ -42,12 +45,17 @@ struct ExportView
     std::uint64_t window_nano = 0;
     std::uint32_t flags = 0;
     std::vector<ExportSource> sources;
+    /* OTLP resource attributes from the host. */
+    std::vector<std::pair<std::string, std::string>> resource;
 };
 
 std::string prometheus_labels(std::uint64_t id, robotweax_srt_telemetry_endpoint_role role,
                               const std::vector<std::pair<std::string, std::string>> &labels);
 std::string render_prometheus(const ExportView &view);
 std::string render_json(const ExportView &view);
+std::string render_otlp_json(const ExportView &view);
+std::vector<std::pair<std::string, std::string>>
+exporter_labels(const std::vector<std::pair<std::string, std::string>> &labels);
 
 } // namespace robotweax_srt_telemetry_internal
 

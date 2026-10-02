@@ -1,0 +1,28 @@
+# Example OpenTelemetry Collector configuration: receives OTLP/HTTP from the
+# SRT Telemetry exporter on this host and exposes it as a Prometheus endpoint
+# (and logs a summary). Replace or add exporters for your backend; put TLS
+# and authentication on the collector's outgoing side, since the exporter
+# speaks plain HTTP to it.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+
+processors:
+  batch: {}
+
+exporters:
+  prometheus:
+    endpoint: 127.0.0.1:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]
