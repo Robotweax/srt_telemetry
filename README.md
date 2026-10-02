@@ -53,8 +53,12 @@ value remains to be measured.
 contract, provider model, versioned C ABI, non-destructive delta engine,
 bounded recorder with versioned JSONL export, the injected public SRT adapter
 covering every statistics observation, and the connection monitor, all
-verified against Haivision SRT v1.5.5 and Robotweax SRT. The sampler, health
-engine, exporters and dashboards (Phases 2 and 3) are not built yet.
+verified against Haivision SRT v1.5.5 and Robotweax SRT. Phase 2 is done
+too: the sampler, history, event journal and health engine, which passes the
+fault-lab gate on both providers. Phase 3 is in progress: the metric naming
+scheme with Prometheus and JSON renderers, the embedded HTTP/WebSocket server
+and the built-in web UI are done; OTLP, Grafana dashboards and reference
+integrations follow.
 
 ## Scope
 
@@ -163,6 +167,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Fault lab](docs/qualification/fault-lab.md)
 - [Metric names and export](docs/architecture/metric-names.md)
 - [Embedded HTTP server](docs/architecture/http-server.md)
+- [Built-in web UI](docs/architecture/web-ui.md)
 - [Loss-shape observability decision](docs/architecture/loss-shape-observability.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
 - [Local incident analysis](docs/architecture/incident-analysis.md)

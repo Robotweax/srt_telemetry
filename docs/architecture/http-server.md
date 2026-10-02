@@ -2,7 +2,7 @@
 
 An optional library, `RobotweaxSRTTelemetry::http` (header
 `robotweax/srt_telemetry_http.h`), serves a sampler's state to Prometheus, to
-the built-in UI (next) and to any HTTP or WebSocket client. Its properties:
+the [built-in UI](web-ui.md) and to any HTTP or WebSocket client. Its properties:
 - one thread;
 - no dependencies beyond POSIX sockets;
 - read-only (GET only).
@@ -25,6 +25,7 @@ robotweax_srt_telemetry_http_server_stop(server);   /* before destroying the sam
 
 | Request | Response |
 | --- | --- |
+| `GET /` | The [built-in web UI](web-ui.md) (also `/app.js`, `/app.css`, `/favicon.svg`), embedded in the library; served without the token, with a strict CSP and an ETag. Flag `HTTP_NO_UI` turns it off |
 | `GET /metrics` | Prometheus text 0.0.4, default window ([names](metric-names.md)) |
 | `GET /api/v1/snapshot[?window=S]` | JSON snapshot, `srt-telemetry.snapshot.v1`; `S` must be a configured window length in seconds |
 | `GET /api/v1/sources/{id}/history[?since_ms=T]` | Compact per-window history of one source from `T` (Unix ms; default the last hour), at most 3,600 records per response. When `more` is true, fetch the next page with `since_ms=next_since_ms`. Pages follow the order windows closed, which is time order unless the wall clock stepped back. `next_since_ms` always moves forward, so following it cannot loop. It needs `sampler_enable_history` |
@@ -124,8 +125,8 @@ away).
     `accept` backs off instead of spinning.
   - `::` binds IPv6 only on every platform; bind `0.0.0.0` for IPv4. Link-local
     addresses with a scope ID are not supported.
-- **No file serving yet.** The UI assets arrive with the next part, embedded
-  in the library, so no path from a request ever reaches the file system.
+- **No file serving.** The UI files are compiled into the library and matched
+  by exact path, so no request path ever reaches the file system.
 
 Each response closes its connection (`Connection: close`) after a graceful
 shutdown, so a client still sending gets its response rather than a reset.

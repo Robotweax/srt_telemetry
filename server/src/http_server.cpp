@@ -1,5 +1,7 @@
 #include <robotweax/srt_telemetry_http.h>
 
+#include "ui_assets.h"
+
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -32,6 +34,8 @@
 
 namespace
 {
+
+namespace ui = robotweax_srt_telemetry_http_ui;
 
 constexpr std::size_t max_request_bytes = 16 * 1024;
 constexpr std::size_t max_client_frame = 64 * 1024;
@@ -537,6 +541,8 @@ const char *status_text(const int status)
     {
     case 200:
         return "OK";
+    case 304:
+        return "Not Modified";
     case 400:
         return "Bad Request";
     case 401:
@@ -563,7 +569,8 @@ const char *status_text(const int status)
 }
 
 void respond(Connection &c, const int status, const std::string_view type, const std::string_view body,
-             const std::string_view extra_headers = {}, const bool head_only = false)
+             const std::string_view extra_headers = {}, const bool head_only = false,
+             const std::string_view cache = "no-store")
 {
     std::string head = "HTTP/1.1 ";
     head += std::to_string(status);
@@ -573,7 +580,9 @@ void respond(Connection &c, const int status, const std::string_view type, const
     head += type;
     head += "\r\nContent-Length: ";
     head += std::to_string(body.size());
-    head += "\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n";
+    head += "\r\nCache-Control: ";
+    head += cache;
+    head += "\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n";
     head += extra_headers;
     head += "\r\n";
     c.out.reserve(c.out.size() + head.size() + (head_only ? 0 : body.size()));
@@ -896,6 +905,17 @@ std::size_t websocket_clients(const Server &server)
     return n;
 }
 
+/* Headers of the UI's pages and assets. The page builds its DOM from text
+ * only; the policy forbids inline script and style and every other origin,
+ * and keeps tokens in URLs out of Referer headers. */
+constexpr std::string_view ui_headers =
+    "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\r\n"
+    "Referrer-Policy: no-referrer\r\n"
+    "X-Frame-Options: DENY\r\n"
+    "Cross-Origin-Opener-Policy: same-origin\r\n"
+    "Cross-Origin-Resource-Policy: same-origin\r\n";
+
 void handle_request(Server &server, Connection &c, const Request &request)
 {
     const bool head = request.method == "HEAD";
@@ -926,6 +946,38 @@ void handle_request(Server &server, Connection &c, const Request &request)
     {
         reply(421, text, "this server answers localhost, IP addresses and its allowed host names\n");
         return;
+    }
+    /* The UI is static code without data, so it is served without the
+     * token; the page asks for the token and sends it with each request. */
+    if ((server.config.flags & ROBOTWEAX_SRT_TELEMETRY_HTTP_NO_UI) == 0)
+    {
+        for (std::size_t i = 0; i < ui::asset_count; ++i)
+        {
+            const auto &asset = ui::assets[i];
+            if (request.path != asset.path)
+            {
+                continue;
+            }
+            std::string extra(ui_headers);
+            extra += "ETag: ";
+            extra += asset.etag;
+            extra += "\r\n";
+            const auto *match = request.header("if-none-match");
+            if (match != nullptr && header_has_token(match, asset.etag))
+            {
+                std::string head304 = "HTTP/1.1 304 Not Modified\r\nCache-Control: no-cache\r\n"
+                                      "X-Content-Type-Options: nosniff\r\nConnection: close\r\n";
+                head304 += extra;
+                head304 += "\r\n";
+                c.out += head304;
+                c.close_after_write = true;
+                return;
+            }
+            respond(c, 200, asset.type,
+                    std::string_view(reinterpret_cast<const char *>(asset.data), asset.size), extra, head,
+                    "no-cache");
+            return;
+        }
     }
     const bool live = request.path == "/api/v1/live";
     if (!authorized(server, request, live))
@@ -1708,7 +1760,7 @@ robotweax_srt_telemetry_http_server_start(const robotweax_srt_telemetry_http_ser
         return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
     }
     if (config->sampler == nullptr || config->reserved != 0 || config->reserved2 != 0 ||
-        (config->flags & ~ROBOTWEAX_SRT_TELEMETRY_HTTP_NO_LIVE_FEED) != 0 ||
+        (config->flags & ~(ROBOTWEAX_SRT_TELEMETRY_HTTP_NO_LIVE_FEED | ROBOTWEAX_SRT_TELEMETRY_HTTP_NO_UI)) != 0 ||
         config->max_connections <= reserved_http_slots || config->max_connections > 1024 ||
         config->live_interval_ms < 100 || config->live_interval_ms > 60'000 || config->request_timeout_ms < 100 ||
         config->request_timeout_ms > 600'000 || !printable(config->bind_address, sizeof(config->bind_address)) ||

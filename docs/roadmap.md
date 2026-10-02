@@ -63,7 +63,8 @@ never a wrong OK.
   ([naming scheme, Prometheus and JSON renderers](architecture/metric-names.md):
   **done**; [embedded HTTP server and WebSocket feed](architecture/http-server.md):
   **done**; OTLP next);
-- embedded web UI with sender, receiver and fleet views;
+- embedded web UI with sender, receiver and fleet views
+  ([built-in web UI](architecture/web-ui.md): **done**);
 - Grafana dashboards and alert rules; and
 - reference integrations: srt-live-transmit, GStreamer, Robotweax gateway.
 
