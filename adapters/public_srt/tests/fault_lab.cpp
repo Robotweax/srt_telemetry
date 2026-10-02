@@ -7,7 +7,9 @@
  * Gate (roadmap Phase 2): per role, the right verdict in at least 9 of 10
  * fault classes, every control OK throughout, and never a wrong OK: once a
  * fault has been active for the detection grace, a role that should see it
- * must not report OK (three consecutive reads) until 2 s after it ends.
+ * must not report OK (three consecutive reads) until 2 s after it ends;
+ * and every At risk or Failing read must name a right knob, from 4 s after
+ * the first one until the end of the settle period.
  *
  * Usage: fault_lab [--scenario NAME] [--list] [--timeline] */
 
@@ -109,8 +111,8 @@ struct Scenario
      * OK. Empty: not observable from that role, not scored. */
     std::set<Verdict> expect_sender;
     std::set<Verdict> expect_receiver;
-    /* Knobs a right diagnosis names at the worst verdict (reported, not
-     * gated). Empty: advice not judged for that role. */
+    /* Knobs a right diagnosis names on every At risk or Failing read
+     * (gated). Empty: advice not judged for that role. */
     std::set<robotweax_srt_telemetry_health_knob> knob_sender;
     std::set<robotweax_srt_telemetry_health_knob> knob_receiver;
     bool control = false;
@@ -231,7 +233,10 @@ std::vector<Scenario> scenarios()
         s.fault.blackhole = true;
         s.peer_idle_timeout_ms = 10'000;
         s.fault_seconds = 6;
-        s.settle_seconds = 6;
+        /* Long enough to watch the aftermath: the sender's backlog arrives
+         * late after the outage, and its drops must not turn into latency
+         * advice once the gap has left the count window. */
+        s.settle_seconds = 20;
         /* The receiver cannot tell an outage from a paused source while it
          * lasts: Unknown, then Failing for the drops after the gap. */
         s.expect_sender = bad;
@@ -432,6 +437,10 @@ struct RoleScore
     bool saw_unknown = false;
     bool advice_judged = false;
     bool advice_right = false;
+    int advice_reads = 0;      /* At risk / Failing reads judged for advice */
+    int advice_wrong = 0;      /* ... that named another knob */
+    double advice_wrong_at = -1; /* first wrong read, seconds after onset */
+    std::string wrong_knob;
     std::string knob;
 };
 
@@ -526,8 +535,42 @@ RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expec
     }
     if (!knobs.empty())
     {
+        /* Every At risk or Failing read must name a right knob, from 4 s
+         * after the first one (advice may sharpen while evidence builds,
+         * e.g. latency first, then bitrate once congestion shows) until the
+         * end of the settle period, aftermath included. A lost connection
+         * has no knob. */
+        constexpr double advice_settle = 4.0; /* as the detection grace */
+        double first_bad = -1;
+        for (const auto &p : points)
+        {
+            if (p.t < onset || p.t > end || severity(p.verdict) < severity(AT_RISK) ||
+                p.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST ||
+                p.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR)
+            {
+                continue;
+            }
+            if (first_bad < 0)
+            {
+                first_bad = p.t;
+            }
+            if (p.t < first_bad + advice_settle)
+            {
+                continue;
+            }
+            result.advice_reads += 1;
+            if (knobs.count(p.knob) == 0)
+            {
+                result.advice_wrong += 1;
+                if (result.advice_wrong_at < 0)
+                {
+                    result.advice_wrong_at = p.t - onset;
+                    result.wrong_knob = robotweax_srt_telemetry_health_knob_name(p.knob);
+                }
+            }
+        }
         result.advice_judged = true;
-        result.advice_right = knobs.count(top) != 0;
+        result.advice_right = result.advice_wrong == 0 && (result.advice_reads > 0 || knobs.count(top) != 0);
     }
     if (control)
     {
@@ -801,14 +844,20 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
             std::cout << "  " << role << ':';
             Verdict last = static_cast<Verdict>(-1);
             robotweax_srt_telemetry_health_reason last_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NONE;
+            robotweax_srt_telemetry_health_knob last_knob = ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE;
             for (const auto &p : points)
             {
-                if (p.verdict != last || p.reason != last_reason)
+                if (p.verdict != last || p.reason != last_reason || p.knob != last_knob)
                 {
                     std::cout << ' ' << std::fixed << std::setprecision(1) << p.t << "s=" << name(p.verdict) << '/'
                               << robotweax_srt_telemetry_health_reason_name(p.reason);
+                    if (p.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE)
+                    {
+                        std::cout << '/' << robotweax_srt_telemetry_health_knob_name(p.knob);
+                    }
                     last = p.verdict;
                     last_reason = p.reason;
+                    last_knob = p.knob;
                 }
             }
             std::cout << '\n';
@@ -832,7 +881,17 @@ void print_role(const char *role, const RoleScore &s, const std::set<Verdict> &e
               << "\",\"reason\":\"" << s.worst_reason << "\",\"advice\":\"" << s.advice
               << "\",\"detectedAfter\":" << std::fixed << std::setprecision(1) << s.first_detection
               << ",\"knob\":\"" << s.knob << "\",\"adviceRight\":"
-              << (s.advice_judged ? (s.advice_right ? "true" : "false") : "null")
+              << (s.advice_judged ? (s.advice_right ? "true" : "false") : "null");
+    if (s.advice_judged)
+    {
+        std::cout << ",\"adviceReads\":" << s.advice_reads << ",\"adviceWrong\":" << s.advice_wrong;
+        if (s.advice_wrong > 0)
+        {
+            std::cout << ",\"firstWrong\":{\"after\":" << std::setprecision(1) << s.advice_wrong_at
+                      << ",\"knob\":\"" << s.wrong_knob << "\"}";
+        }
+    }
+    std::cout
               << ",\"wrongOk\":" << (s.wrong_ok ? "true" : "false") << ",\"pass\":" << (s.pass ? "true" : "false")
               << '}';
 }
@@ -935,9 +994,10 @@ int main(const int argc, char **argv)
     }
     const auto gate = [](const Tally &t)
     {
-        /* At least 9 of 10: 90 % of the fault classes, rounded up. */
+        /* At least 9 of 10: 90 % of the fault classes, rounded up; and
+         * every judged fault class names a right knob on every read. */
         const int needed = (t.faults * 9 + 9) / 10;
-        return t.right >= needed && t.wrong_ok == 0 && t.control_ok;
+        return t.right >= needed && t.wrong_ok == 0 && t.control_ok && t.advice_right == t.advice_judged;
     };
     const bool full = only.empty();
     const bool passed = setup_ok && (!full || (gate(sender) && gate(receiver)));

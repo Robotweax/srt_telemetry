@@ -62,7 +62,7 @@ developer machine.
 | `heavy_loss_tight_latency` | 15 % loss, 60 ms latency on 20 ms RTT | Watch or worse | bad | latency / latency |
 | `rtt_step` | RTT 20 → 140 ms, 200 ms latency | bad | bad | latency / latency |
 | `bandwidth_cap` | 3 Mbit/s cap, 100 kB queue, 40 s | bad | bad | bitrate / bitrate |
-| `outage_6s` | blackhole for 6 s (peer idle timeout 10 s, settle 6 s) | bad | bad | none / none |
+| `outage_6s` | blackhole for 6 s (peer idle timeout 10 s, settle 20 s) | bad | bad | none / none |
 | `receiver_stall` | receiving application stops reading (3 MB receive buffer) | bad | bad | receiving application / receiving application |
 | `maxbw_too_low` | sender SRTO_MAXBW 2.8 Mbit/s | bad | bad | MAXBW / not judged |
 | `connection_lost` | blackhole for good | Failing | Failing | — |
@@ -92,18 +92,25 @@ For each role:
   onset (1 s gauge window + 2 s hysteresis + 1 s margin) until 2 s after the
   fault ends. Those last 2 s cover the aftermath, such as drops that arrive
   with the first packets after an outage.
-- **Advice** (reported, not gated): the knob named most often at the worst
-  verdict, before any lost connection, must be one of the right knobs.
+- **Advice:** every At risk or Failing read must name one of the right knobs.
+  This applies from 4 s after the first such read (the same grace as for
+  detection) until the end of the settle period, so the aftermath is scored
+  too. The 4 s let advice sharpen while evidence builds: a bandwidth cap first
+  looks like a latency problem, then like congestion (3.4 s on Haivision
+  SRT). Reads after a lost connection have no knob and are not
+  judged.
 
 **Gate:** for each role:
 - at least 90 % of the fault classes right (9 of 10);
 - no wrong OK;
-- every control OK.
+- every control OK;
+- right advice in every fault class that has a knob expectation.
 
-## Results (1 October 2026, loopback, this cloud workspace)
+## Results (2 October 2026, loopback, this cloud workspace)
 
-Three consecutive full runs per provider with the final code, both providers
-running at the same time. Every run passed with the same scores:
+Two consecutive full runs per provider with advice scored on every read, both
+providers running at the same time. Every run passed with the same scores (the
+1 October runs, with advice judged at the worst verdict only, matched them):
 
 | Provider | Sender right | Receiver right | Wrong OK | Controls | Advice right, sender / receiver |
 | --- | --- | --- | --- | --- | --- |
@@ -118,9 +125,9 @@ Typical verdicts (both providers alike unless noted):
 | `heavy_loss_tight_latency` | Watch, latency low for RTT → latency 90–100 ms | At risk, late repairs → latency 130–150 ms | at once |
 | `rtt_step` | Failing, latency low for RTT → latency 570 ms | same | 2.2–2.5 s |
 | `bandwidth_cap` | Failing: latency low for RTT, then path congested → bitrate (Haivision later: path capacity exceeded) | Failing: path congested → bitrate, held for the whole 40 s | 2.2–2.3 s |
-| `outage_6s` | Failing, acknowledgements stalled (no knob) | OK for ~3 s, then Unknown (no data), then Failing, unrecovered loss (no knob) | 2.4 s / 8.1–8.3 s |
+| `outage_6s` | Failing, acknowledgements stalled (no knob), held through the aftermath | OK for ~3 s, then Unknown (no data), then Failing, unrecovered loss (no knob) until the drops leave the count window | 2.4 s / 8.1–8.3 s |
 | `receiver_stall` | Failing, peer read stall → receiving application | Failing, application read stall | 3.3–3.4 s / 2.1–2.2 s |
-| `maxbw_too_low` | Failing, sender drops → MAXBW 680–690 kB/s | Failing; advice latency or bitrate (it cannot see the sender's setting) | 2.8–3.0 s / 2.3 s |
+| `maxbw_too_low` | Failing, sender drops → MAXBW 1.27–1.29 MB/s (overshoots: both libraries count about 500 sender drops/s while 270 of the 500 packets/s still go out, so the offered rate reads high; a cap above the need is harmless, but the value is not yet calibrated) | Failing; advice latency or bitrate (it cannot see the sender's setting) | 2.8–3.0 s / 2.3 s |
 | `connection_lost` | Failing, acknowledgements stalled → connection lost | Unknown (no data) → Failing, connection lost | 2.4 s / 5.2 s |
 
 During a blackout, a receiver cannot tell a dead path from a paused source. It
@@ -181,6 +188,24 @@ scenario:
 - **Congestion missed on a shallow queue.** RTT 21.8 → 59.5 ms with 60 % loss
   fell under the old 2 × base + 20 ms threshold. The absolute term is now
   10 ms, and path headroom counts congestion as evidence.
+
+**Advice over time (2 October 2026).** The built-in UI showed a Haivision
+receiver advising "raise the latency to 450 ms" about 10 s after a 6 s outage.
+The lab had passed, because it judged advice only at the worst verdict, and
+the outage's settle period ended before the advice changed. Scoring every
+read, with the outage settle extended to 20 s, found three cases of the same
+defect: drops stay in the 10 s count window after their cause is gone, and
+judged again with the evidence of a healthy moment they got a wrong reason.
+It showed in four places:
+
+| Case | Wrong advice, after the cause ended | Fix |
+| --- | --- | --- |
+| `outage_6s`, receiver (both providers) | latency, once the gap left the count window | arrival gaps are remembered beyond the window; drops in the 2 s after a gap longer than the latency are the outage's (no knob) |
+| `bandwidth_cap`, receiver (both) | latency, after the cap was lifted | drops keep the diagnosis they had when they happened, while they are counted |
+| `maxbw_too_low`, sender (both) | acknowledgements stalled, after MAXBW was reset and the backlog was dropped | a "no evidence" diagnosis of new drops keeps the last concrete one |
+| `outage_6s`, sender (both) | lower the bitrate, for 1 s when the path returned | drops within 2 s of an acknowledgement stall are the outage's |
+
+Each fix has a unit test that fails without it.
 
 ## Provider differences seen
 

@@ -358,6 +358,16 @@ void test_receiver_classes()
         /* 0.8 x what the path delivers (280 packets/s, mixed with 5 s at 300). */
         check(run.status.suggested_value > 0.7 * 280 * packet_bits && run.status.suggested_value < 0.8 * 300 * packet_bits,
               "congestion advice: 80 % of the delivered rate");
+        /* The path recovers: the drops stay counted for a while, and keep
+         * the diagnosis they had (not "raise the latency"). */
+        bool changed = false;
+        for (int i = 0; i < 150; ++i)
+        {
+            const auto verdict = run.feed(base, 0.1);
+            changed = changed || (verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+                                  run.status.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE);
+        }
+        check(!changed, "after congestion: the drops keep their diagnosis, got " + describe(run.status));
     }
     {
         /* RTT step: latency only 2 x RTT, no loss yet: AT_RISK, raise latency. */
@@ -463,6 +473,51 @@ void test_sender_classes()
                   run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH &&
                   run.status.suggested_value > 395'000,
               "drops at the MAXBW cap: raise MAXBW, got " + describe(run.status));
+        /* MAXBW lifted: the backlog the cap left is dropped, with no other
+         * evidence. Those drops are the cap's, not "acknowledgements
+         * stalled". */
+        context.max_bandwidth_bytes_per_second = -1;
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context));
+        Condition flush = clean;
+        flush.send_buffer_ratio = 0.5;
+        flush.sender_drops_per_second = 100;
+        bool wrong = false;
+        const auto watch = [&](const Condition &cond, const int steps)
+        {
+            for (int i = 0; i < steps; ++i)
+            {
+                const auto verdict = run.feed(cond, 0.1);
+                wrong = wrong || (verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+                                  run.status.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH);
+            }
+        };
+        watch(flush, 20);
+        watch(clean, 100);
+        check(!wrong, "after MAXBW is lifted: the drops keep their diagnosis, got " + describe(run.status));
+    }
+    {
+        /* An outage seen from the sender: data waits without
+         * acknowledgements, then the path returns with a burst of loss
+         * reports, retransmissions and drops of the stale backlog. Not a
+         * bitrate problem. */
+        Run run(SENDER);
+        run.feed(clean, 3);
+        Condition stall = clean;
+        stall.send_buffer_ratio = 1.0;
+        stall.packets_per_second = 0;
+        run.feed(stall, 3);
+        Condition burst = clean;
+        burst.send_buffer_ratio = 0.8;
+        burst.sender_drops_per_second = 300;
+        burst.retransmitted_per_second = 150;
+        bool wrong = false;
+        for (int i = 0; i < 160; ++i)
+        {
+            const auto verdict = run.feed(i < 10 ? burst : clean, 0.1);
+            wrong = wrong || (verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+                              run.status.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE);
+        }
+        check(!wrong, "drops after an acknowledgement stall: no knob, got " + describe(run.status));
     }
     {
         /* The capacity estimate follows the sending rate on a healthy path:
@@ -624,6 +679,33 @@ void test_review_cases()
         check(run.feed(clean, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
                   run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
               "drops after a gap longer than the latency: no knob, got " + describe(run.status));
+        /* The gap leaves the count window before its drops do: the drops
+         * are still the outage's, never latency advice. */
+        bool wrong_knob = false;
+        for (int i = 0; i < 120; ++i)
+        {
+            const auto verdict = run.feed(clean, 0.1);
+            wrong_knob = wrong_knob ||
+                         (verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH && run.status.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE);
+        }
+        check(!wrong_knob, "outage aftermath: no knob after the gap left the count window, got " + describe(run.status));
+    }
+    {
+        /* Drops well after an outage are not the outage's: advice returns. */
+        Run run(RECEIVER);
+        run.feed(clean, 5);
+        Condition gap = clean;
+        gap.receiving = false;
+        run.feed(gap, 2);
+        run.feed(clean, 4);
+        Condition lossy = clean;
+        lossy.drops_per_second = 30;
+        lossy.loss_per_second = 60;
+        lossy.belated_per_second = 20;
+        run.feed(lossy, 4);
+        check(run.status.verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY,
+              "late repairs 4 s after an outage: latency advice, got " + describe(run.status));
     }
     {
         /* After a gap, OK waits for evidence: the drops that arrive with the

@@ -766,6 +766,8 @@ struct robotweax_srt_telemetry_http_server
     Clock::time_point next_feed = Clock::now();
     Clock::time_point accept_paused_until{};
     std::vector<std::string> allowed_hosts;
+    /* Security headers of the UI responses (frame-ancestors from config). */
+    std::string ui_headers;
 };
 
 namespace
@@ -905,16 +907,6 @@ std::size_t websocket_clients(const Server &server)
     return n;
 }
 
-/* Headers of the UI's pages and assets. The page builds its DOM from text
- * only; the policy forbids inline script and style and every other origin,
- * and keeps tokens in URLs out of Referer headers. */
-constexpr std::string_view ui_headers =
-    "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-    "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\r\n"
-    "Referrer-Policy: no-referrer\r\n"
-    "X-Frame-Options: DENY\r\n"
-    "Cross-Origin-Opener-Policy: same-origin\r\n"
-    "Cross-Origin-Resource-Policy: same-origin\r\n";
 
 void handle_request(Server &server, Connection &c, const Request &request)
 {
@@ -958,7 +950,7 @@ void handle_request(Server &server, Connection &c, const Request &request)
             {
                 continue;
             }
-            std::string extra(ui_headers);
+            std::string extra = server.ui_headers;
             extra += "ETag: ";
             extra += asset.etag;
             extra += "\r\n";
@@ -1700,6 +1692,65 @@ void run(Server &server)
     server.connections.clear();
 }
 
+/* frame_ancestors: space-separated CSP sources, each 'self' or a scheme,
+ * host or origin made of URL characters (no quotes, ';' or ','), so the
+ * value cannot end the directive or the header. */
+bool valid_frame_ancestors(const char *text, const std::size_t capacity)
+{
+    const auto n = strnlen(text, capacity);
+    if (n == capacity)
+    {
+        return false;
+    }
+    const std::string_view value(text, n);
+    std::size_t start = 0;
+    bool any = false;
+    while (start < value.size())
+    {
+        auto end = value.find(' ', start);
+        end = end == std::string_view::npos ? value.size() : end;
+        const auto token = value.substr(start, end - start);
+        if (!token.empty())
+        {
+            any = true;
+            if (token != "'self'")
+            {
+                for (const char ch : token)
+                {
+                    const auto c = static_cast<unsigned char>(ch);
+                    if (!(std::isalnum(c) || c == ':' || c == '/' || c == '.' || c == '-' || c == '*' || c == '_' ||
+                          c == '[' || c == ']'))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+        start = end + 1;
+    }
+    return any || n == 0;
+}
+
+/* Headers of the UI's pages and assets. The page builds its DOM from text
+ * only; the policy forbids inline script and style and every other origin,
+ * and keeps tokens in URLs out of Referer headers. Framing is refused
+ * unless frame_ancestors names the consoles that may embed the UI. */
+std::string make_ui_headers(const std::string_view frame_ancestors)
+{
+    std::string headers = "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; "
+                          "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+                          "frame-ancestors ";
+    headers += frame_ancestors.empty() ? std::string_view("'none'") : frame_ancestors;
+    headers += "\r\nReferrer-Policy: no-referrer\r\n";
+    if (frame_ancestors.empty())
+    {
+        /* X-Frame-Options cannot list origins: only send it to refuse. */
+        headers += "X-Frame-Options: DENY\r\n";
+    }
+    headers += "Cross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin\r\n";
+    return headers;
+}
+
 bool printable(const char *text, const std::size_t capacity, const bool allow_comma_list = false)
 {
     const auto n = strnlen(text, capacity);
@@ -1767,7 +1818,8 @@ robotweax_srt_telemetry_http_server_start(const robotweax_srt_telemetry_http_ser
         strnlen(config->bearer_token, sizeof(config->bearer_token)) == sizeof(config->bearer_token) ||
         (config->bearer_token[0] != '\0' && !printable(config->bearer_token, sizeof(config->bearer_token))) ||
         strnlen(config->allowed_hosts, sizeof(config->allowed_hosts)) == sizeof(config->allowed_hosts) ||
-        (config->allowed_hosts[0] != '\0' && !printable(config->allowed_hosts, sizeof(config->allowed_hosts), true)))
+        (config->allowed_hosts[0] != '\0' && !printable(config->allowed_hosts, sizeof(config->allowed_hosts), true)) ||
+        !valid_frame_ancestors(config->frame_ancestors, sizeof(config->frame_ancestors)))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
@@ -1803,6 +1855,24 @@ robotweax_srt_telemetry_http_server_start(const robotweax_srt_telemetry_http_ser
     }
     created->config = *config;
     created->config.struct_size = sizeof(created->config);
+    {
+        /* Collapse runs of spaces; the value is validated above. */
+        std::string ancestors;
+        const std::string_view value = created->config.frame_ancestors;
+        std::size_t start = 0;
+        while (start < value.size())
+        {
+            auto end = value.find(' ', start);
+            end = end == std::string_view::npos ? value.size() : end;
+            if (end > start)
+            {
+                ancestors += ancestors.empty() ? "" : " ";
+                ancestors += value.substr(start, end - start);
+            }
+            start = end + 1;
+        }
+        created->ui_headers = make_ui_headers(ancestors);
+    }
     {
         const std::string_view hosts = created->config.allowed_hosts;
         std::size_t start = 0;

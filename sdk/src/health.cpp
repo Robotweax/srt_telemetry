@@ -292,6 +292,36 @@ struct robotweax_srt_telemetry_health_engine
     std::uint64_t headroom_first = 0;
     std::uint64_t headroom_last = 0;
 
+    /* Receiver arrival gaps (an outage, or a paused source), remembered for
+     * as long as their aftermath can sit in the count window: the drops
+     * that arrive with the first packets after a gap belong to the gap, even
+     * once the gap itself has left the window. */
+    struct ArrivalGap
+    {
+        std::uint64_t end;    /* monotonic time arrivals resumed */
+        std::uint64_t length; /* nanoseconds without arrivals */
+    };
+    std::deque<ArrivalGap> arrival_gaps;
+    std::uint64_t arrival_gap_run = 0;
+
+    /* Drops are diagnosed when they happen. They stay in the count window
+     * after their cause has gone (the cap lifted, MAXBW reset, the path
+     * back); judged again with the evidence of a healthy moment they would
+     * get a wrong reason and knob. The diagnosis of the latest drops is
+     * kept for as long as drops are counted without new ones. */
+    struct DropDiagnosis
+    {
+        bool valid = false;
+        Advice advice;
+    };
+    std::array<DropDiagnosis, INDICATORS> drop_diagnosis{};
+    /* Sender: last time data waited without acknowledgements (an outage).
+     * The drops when the path returns are the outage's: the backlog is
+     * too old to send, and the burst of loss reports is no evidence of a
+     * bitrate problem. */
+    bool ack_stall_seen = false;
+    std::uint64_t ack_stall_last = 0;
+
     Verdict verdict = UNKNOWN;
     std::uint64_t verdict_since = 0;
 };
@@ -301,8 +331,41 @@ namespace
 
 using Engine = robotweax_srt_telemetry_health_engine;
 
+/* Shortest arrival gap worth remembering, and how long its aftermath may
+ * show drops (packets that were due during the gap arriving too late, and
+ * the sender's backlog draining). */
+constexpr std::uint64_t min_arrival_gap = 100'000'000;
+constexpr std::uint64_t gap_aftermath = 2'000'000'000;
+
+void track_arrivals(Engine &engine, const Entry &entry)
+{
+    if ((entry.available & bit(count_metric[C_UNIQUE_RECEIVED_PACKETS])) == 0)
+    {
+        return;
+    }
+    if (entry.counts[C_UNIQUE_RECEIVED_PACKETS] > 0)
+    {
+        if (engine.arrival_gap_run >= min_arrival_gap)
+        {
+            engine.arrival_gaps.push_back(
+                {entry.monotonic > entry.interval ? entry.monotonic - entry.interval : 0, engine.arrival_gap_run});
+        }
+        engine.arrival_gap_run = 0;
+    }
+    else
+    {
+        engine.arrival_gap_run += entry.interval;
+    }
+    const auto keep = engine.config.count_window_nano + gap_aftermath;
+    while (!engine.arrival_gaps.empty() && engine.arrival_gaps.front().end + keep <= entry.monotonic)
+    {
+        engine.arrival_gaps.pop_front();
+    }
+}
+
 void add_entry(Engine &engine, const Entry &entry)
 {
+    track_arrivals(engine, entry);
     engine.entries.push_back(entry);
     engine.covered_nano += entry.interval;
     for (std::size_t c = 0; c < COUNTS; ++c)
@@ -552,19 +615,34 @@ Advice drop_advice(const Evaluation &e, const Reason fallback)
     const auto &engine = e.engine;
     const auto loss_ratio = receiver_loss_ratio(engine);
     /* Arrivals stopped for longer than the latency (an outage): no
-     * retransmission recovers that gap and no setting brings it back. */
+     * retransmission recovers that gap and no setting brings it back. The
+     * drops that come with the first packets after the gap are the
+     * outage's, even once the gap has left the count window; drops outside
+     * that aftermath call for a setting. */
     if (e.has_latency && e.receiver)
     {
-        std::uint64_t gap = 0;
-        std::uint64_t longest = 0;
+        double after_gap = 0;
+        double other = 0;
         for (const auto &entry : engine.entries)
         {
-            const bool arrived = (entry.available & bit(count_metric[C_UNIQUE_RECEIVED_PACKETS])) != 0 &&
-                                 entry.counts[C_UNIQUE_RECEIVED_PACKETS] > 0;
-            gap = arrived ? 0 : gap + entry.interval;
-            longest = std::max(longest, gap);
+            const auto drops = entry.counts[C_RECEIVER_DROP];
+            if ((entry.available & bit(count_metric[C_RECEIVER_DROP])) == 0 || drops <= 0)
+            {
+                continue;
+            }
+            bool aftermath = false;
+            for (const auto &g : engine.arrival_gaps)
+            {
+                if (static_cast<double>(g.length) / 1e9 > e.latency && entry.monotonic >= g.end &&
+                    entry.monotonic <= g.end + gap_aftermath)
+                {
+                    aftermath = true;
+                    break;
+                }
+            }
+            (aftermath ? after_gap : other) += drops;
         }
-        if (static_cast<double>(longest) / 1e9 > e.latency)
+        if (after_gap > 0 && other <= 0)
         {
             return {fallback, ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE, ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0};
         }
@@ -1306,6 +1384,62 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             if (engine->role_applies[i])
             {
                 raws[i] = compute(e, i);
+            }
+        }
+        if (!engine->entries.empty())
+        {
+            const auto &latest = engine->entries.back();
+            const auto drop_count = receiver ? C_RECEIVER_DROP : C_SENDER_DROP;
+            const bool new_drops = (latest.available & bit(count_metric[drop_count])) != 0 &&
+                                   latest.counts[drop_count] > 0;
+            const bool counted = engine->sums[drop_count] > 0;
+            const auto &backlog = raws[BACKLOG];
+            const bool stalled_now = !receiver && backlog.applicable && backlog.available && backlog.grade > OK &&
+                                     backlog.advice.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED;
+            if (stalled_now && !new_drops)
+            {
+                engine->ack_stall_seen = true;
+                engine->ack_stall_last = now;
+            }
+            for (const auto i : {UNRECOVERED, EFFICIENCY, BACKLOG})
+            {
+                auto &memo = engine->drop_diagnosis[i];
+                auto &raw = raws[i];
+                if (!counted || !raw.applicable || !raw.available)
+                {
+                    memo.valid = false;
+                    continue;
+                }
+                if (new_drops)
+                {
+                    if (raw.grade <= OK)
+                    {
+                        continue;
+                    }
+                    if (i == BACKLOG && engine->ack_stall_seen && now - engine->ack_stall_last <= gap_aftermath)
+                    {
+                        /* Drops right after an acknowledgement stall. */
+                        raw.advice = {ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED,
+                                      ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE, ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE,
+                                      0.0};
+                        engine->ack_stall_last = now; /* the aftermath lasts while the drops do */
+                    }
+                    else if (memo.valid && memo.advice.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE &&
+                             raw.advice.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE &&
+                             raw.advice.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED)
+                    {
+                        /* Nothing explains these drops now (the cause was
+                         * removed, e.g. MAXBW raised, and the backlog it
+                         * left is dropped): the last explanation still
+                         * does. */
+                        raw.advice = memo.advice;
+                    }
+                    memo = {true, raw.advice};
+                }
+                else if (memo.valid && raw.grade > OK)
+                {
+                    raw.advice = memo.advice;
+                }
             }
         }
         for (std::size_t i = 0; i < INDICATORS; ++i)

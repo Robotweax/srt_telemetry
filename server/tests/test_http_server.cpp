@@ -853,6 +853,25 @@ void test_ui()
     config.flags = 4;
     check(robotweax_srt_telemetry_http_server_start(&config, &server) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
           "unknown flags rejected");
+    config.flags = 0;
+
+    /* Framing: refused by default; allowed for the listed consoles only. */
+    std::strcpy(config.frame_ancestors, "https://console.example.com  'self' *.studio.lan");
+    check(robotweax_srt_telemetry_http_server_start(&config, &server) == ROBOTWEAX_SRT_TELEMETRY_OK, "frame_ancestors");
+    port = robotweax_srt_telemetry_http_server_port(server);
+    r = get(port, "/");
+    const auto framed_csp = header_value(r.head, "Content-Security-Policy");
+    check(framed_csp.find("frame-ancestors https://console.example.com 'self' *.studio.lan") != std::string::npos &&
+              framed_csp.find("frame-ancestors 'none'") == std::string::npos && header_value(r.head, "X-Frame-Options").empty(),
+          "frame_ancestors: listed in the policy, no X-Frame-Options");
+    robotweax_srt_telemetry_http_server_stop(server);
+    for (const char *bad : {"https://a.example; script-src *", "https://a.example,https://b.example",
+                            "'unsafe-inline'", "\"https://a.example\"", "https://a.example\r\nX: y", "'none' x"})
+    {
+        std::strcpy(config.frame_ancestors, bad);
+        check(robotweax_srt_telemetry_http_server_start(&config, &server) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              std::string("frame_ancestors rejected: ") + bad);
+    }
 }
 
 int main()

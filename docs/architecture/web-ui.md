@@ -26,6 +26,9 @@ interrupted streams:
 ./build/robotweax_srt_telemetry_public_srt_dashboard_demo --port 9810
 ```
 
+Options: `--token T`, `--bind ADDRESS`, `--streams N`, `--duration SECONDS`,
+`--frame-ancestors "https://console.example.com"`.
+
 ## Fleet view (`#/`)
 
 - **Tallies:** counts per verdict. Each tally filters the list.
@@ -98,8 +101,18 @@ renders without long tasks after the first build.
   Bidirectional and invisible formatting characters are removed from names,
   so one stream cannot pose as another.
 - Every UI response carries a strict Content Security Policy: no inline script
-  or style, no other origin, no framing (`frame-ancestors 'none'`,
-  `X-Frame-Options: DENY`), `Referrer-Policy: no-referrer`, `nosniff`.
+  or style, no other origin, `Referrer-Policy: no-referrer`, `nosniff`.
+- **Framing.** By default the UI cannot be shown in a frame
+  (`frame-ancestors 'none'`, `X-Frame-Options: DENY`), so no other page can
+  overlay it. A product that embeds the dashboard in its own console lists
+  that console in `frame_ancestors`, for example
+  `"https://console.example.com"`. The policy then names exactly those
+  sources and drops `X-Frame-Options`, which cannot list origins. Values are
+  CSP sources separated by spaces (`'self'`, origins, wildcard hosts);
+  quotes other than `'self'`, `;` and `,` are refused, so the setting cannot
+  change the rest of the policy. Inside a frame the page works as usual; if
+  the browser blocks storage in third-party frames, the token is kept in
+  memory for the page's lifetime.
 - **Token.** The UI files hold no data and are served without the token. The
   page asks for it and keeps it in session storage for the tab. It can also be
   opened as `http://host:port/#token=<token>`: the fragment is never sent to
@@ -128,7 +141,9 @@ renders without long tasks after the first build.
 - `robotweax_srt_telemetry_http_tests` (`test_ui`): page, script, styles and
   icon with their types; the security headers; ETag and 304; HEAD; only the
   embedded paths; the host check; served without the token while the data
-  stays protected; `NO_UI`; unknown flags rejected.
+  stays protected; `NO_UI`; unknown flags rejected; `frame_ancestors` in the
+  policy without `X-Frame-Options`, and values that would break out of the
+  directive refused.
 - `robotweax_srt_telemetry_ui_smoke_test` (label `ui`, needs Python 3 and
   Chrome or Chromium): runs the dashboard demo and loads the page in headless
   Chromium. Checks:

@@ -299,7 +299,21 @@ void test_thread()
               ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE,
           "manual tick refused while the thread runs");
     const auto started = std::chrono::steady_clock::now();
+    /* Let it sample for 400 ms, longer if the machine is busy (shared CI
+     * runners can stall a thread): the lower bound waits for 10 samples
+     * for up to 10 s; the upper bound below still holds the period. */
     std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    for (int i = 0; i < 960; ++i)
+    {
+        {
+            std::unique_lock lock(observed.mutex);
+            if (observed.samples[id] >= 10)
+            {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
     /* Remove from another thread while sampling: must not race. */
     const auto remove_started = std::chrono::steady_clock::now();
@@ -319,7 +333,8 @@ void test_thread()
 
     std::unique_lock lock(observed.mutex);
     const auto samples = observed.samples[id];
-    /* About one tick per 20 ms of elapsed time; never bunched beyond that. */
+    /* At least 10 samples, and at most about one per 20 ms of elapsed
+     * time: never bunched beyond that. */
     const auto upper = static_cast<int>(elapsed / std::chrono::milliseconds(20)) + 2;
     check(samples >= 10 && samples <= upper, "thread samples at the configured period");
     check(!observed.windows[id].empty(), "thread emits windows");

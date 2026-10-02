@@ -109,7 +109,16 @@ stall) and a suggested knob with a direction and a value.
 | `sender_backlog`, `sender_drops` | by evidence, first match: flow window shrank → `peer_read_stall`, receiving application; sending at an absolute MAXBW → MAXBW, increase; above the estimated capacity → bitrate, decrease; latency short for the RTT → latency, increase; retransmissions above 10 % → bitrate, decrease; otherwise `acknowledgements_stalled` | 1.25 × offered rate (sent + dropped) in bytes/s; 70 % of capacity; latency as above; 80 % of the unique rate |
 | `peer_read_stall`, `application_read_stall` | receiving application, check | none |
 | `acknowledgements_stalled` | none: data waits without loss reports, so the path or the peer is not acknowledging (an outage); no setting fixes it | none |
-| receiver drops after arrivals stopped for longer than the latency | none: no retransmission recovers that gap | none |
+| receiver drops in the 2 s after arrivals resume from a gap longer than the latency (an outage), with no other drops in the count window | none: no retransmission recovers that gap | none |
+
+**Outages.** Drops arrive with the first packets after an outage, so they
+stay in the count window after the gap itself has left it. The engine
+therefore remembers each arrival gap (100 ms or longer) for the count window
+plus 2 s. Drops in the 2 s after a gap longer than the latency are the
+outage's and get no knob, for as long as they are counted. Drops outside
+that aftermath, even while an outage is in the window, are judged as usual.
+Before this rule, a Haivision receiver switched to "raise the latency" 10 s
+after a 6 s outage, while it still counted the outage's drops.
 
 **Congestion.** The engine keeps a baseline RTT: the lowest RTT of loss-free
 samples over the last 5 minutes, in 10 s buckets. Lossy samples never raise

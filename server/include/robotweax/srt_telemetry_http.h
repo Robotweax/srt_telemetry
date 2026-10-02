@@ -91,6 +91,13 @@ extern "C"
          * IP literals, that requests may address (Host header), e.g.
          * "encoder-7.studio.lan". Empty: localhost and IP literals only. */
         char allowed_hosts[ROBOTWEAX_SRT_TELEMETRY_HTTP_HOSTS_CAPACITY];
+        /* Pages that may show the built-in UI in a frame, as space-separated
+         * Content-Security-Policy sources: origins such as
+         * "https://console.example.com", a wildcard host such as "*.example.com",
+         * or 'self'.
+         * Empty (default): the UI cannot be framed. Only list consoles you
+         * trust: a framing page can overlay the UI. */
+        char frame_ancestors[ROBOTWEAX_SRT_TELEMETRY_HTTP_HOSTS_CAPACITY];
     } robotweax_srt_telemetry_http_server_config_v1;
 
     ROBOTWEAX_SRT_TELEMETRY_HTTP_API void

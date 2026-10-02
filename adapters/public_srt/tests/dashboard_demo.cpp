@@ -10,7 +10,8 @@
  *   venue-b      cycles: clean, loss bursts, 6 s outage, clean
  *
  * Usage: dashboard_demo [--port N] [--bind ADDRESS] [--token T]
- *                       [--duration SECONDS] [--streams N] */
+ *                       [--duration SECONDS] [--streams N]
+ *                       [--frame-ancestors "https://console.example.com"] */
 
 #include <robotweax/srt_telemetry_http.h>
 #include <robotweax/srt_telemetry_public_srt.h>
@@ -311,6 +312,7 @@ int main(const int argc, char **argv)
     int port = 9810;
     const char *bind = "127.0.0.1";
     const char *token = "";
+    const char *frame_ancestors = "";
     double duration = 0;
     std::size_t stream_count = 5;
     for (int i = 1; i + 1 < argc; i += 2)
@@ -327,6 +329,10 @@ int main(const int argc, char **argv)
         else if (option == "--token")
         {
             token = argv[i + 1];
+        }
+        else if (option == "--frame-ancestors")
+        {
+            frame_ancestors = argv[i + 1];
         }
         else if (option == "--duration")
         {
@@ -388,6 +394,7 @@ int main(const int argc, char **argv)
         robotweax_srt_telemetry_http_server_config_default(sampler, &http);
         std::snprintf(http.bind_address, sizeof(http.bind_address), "%s", bind);
         std::snprintf(http.bearer_token, sizeof(http.bearer_token), "%s", token);
+        std::snprintf(http.frame_ancestors, sizeof(http.frame_ancestors), "%s", frame_ancestors);
         http.port = static_cast<std::uint16_t>(port);
         const auto error = robotweax_srt_telemetry_http_server_start(&http, &server);
         if (error != ROBOTWEAX_SRT_TELEMETRY_OK)

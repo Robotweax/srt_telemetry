@@ -25,7 +25,7 @@ robotweax_srt_telemetry_http_server_stop(server);   /* before destroying the sam
 
 | Request | Response |
 | --- | --- |
-| `GET /` | The [built-in web UI](web-ui.md) (also `/app.js`, `/app.css`, `/favicon.svg`), embedded in the library; served without the token, with a strict CSP and an ETag. Flag `HTTP_NO_UI` turns it off |
+| `GET /` | The [built-in web UI](web-ui.md) (also `/app.js`, `/app.css`, `/favicon.svg`), embedded in the library; served without the token, with a strict CSP and an ETag. Flag `HTTP_NO_UI` turns it off; `frame_ancestors` lets named consoles embed it |
 | `GET /metrics` | Prometheus text 0.0.4, default window ([names](metric-names.md)) |
 | `GET /api/v1/snapshot[?window=S]` | JSON snapshot, `srt-telemetry.snapshot.v1`; `S` must be a configured window length in seconds |
 | `GET /api/v1/sources/{id}/history[?since_ms=T]` | Compact per-window history of one source from `T` (Unix ms; default the last hour), at most 3,600 records per response. When `more` is true, fetch the next page with `since_ms=next_since_ms`. Pages follow the order windows closed, which is time order unless the wall clock stepped back. `next_since_ms` always moves forward, so following it cannot loop. It needs `sampler_enable_history` |
