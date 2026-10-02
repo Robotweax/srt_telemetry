@@ -124,10 +124,12 @@ advised "raise the latency" 10 s after a 6 s outage). So:
     packet) is remembered beyond the count window. Drops in the aftermath of
     a gap longer than the latency are the outage's: no knob. Drops outside
     it are judged as usual, even while an outage is in the window.
-  - *Sender.* An acknowledgement stall starts without drops (the send buffer
-    fills first) and continues while that diagnosis holds. Drops in its
-    aftermath, with their burst of loss reports and retransmissions, are the
-    outage's. A shrunk flow window or a MAXBW cap still gets its own advice.
+  - *Sender.* An acknowledgement stall is a filling send buffer with no other
+    cause. It starts after a gauge window without drops, so a buffer still
+    draining after drops is not a stall. It continues while that diagnosis
+    holds. Drops in its aftermath are the outage's, including their burst of
+    loss reports and retransmissions. A shrunk flow window or a MAXBW cap
+    still gets its own advice.
 - **Kept diagnosis.** The diagnosis of new drops is kept while they are
   counted.
   - *Receiver.* The drop indicators keep it until new drops come: after a
@@ -139,13 +141,15 @@ advised "raise the latency" 10 s after a 6 s outage). So:
   - *New drops with no cause.* They keep the last concrete diagnosis made
     within the count window, e.g. the backlog dropped after MAXBW was
     raised.
-- **Resolved settings.** When MAXBW or OHEADBW has since been set as advised,
-  the kept diagnosis loses its knob ("sender drops", nothing more to
-  change).
-- **Capacity needs loss evidence.** The sender's "above the estimated
-  capacity" advice needs loss reports or the congestion signature. During an
-  outage the estimate is stale and nothing is reported lost, so data waiting
-  is acknowledgements stalled.
+- **Resolved settings.** The kept diagnosis loses its knob once its setting
+  has been changed as advised: an absolute MAXBW raised enough or replaced,
+  or the latency raised enough after a reconnect. A sender then shows
+  "sender drops" with nothing more to change.
+- **Capacity needs evidence of a busy path.** The sender's "above the
+  estimated capacity" advice needs loss reports, the congestion signature,
+  or an RTT above 1.5 × its baseline + 5 ms (a queue). During an outage the
+  estimate is stale and none of these show, so data waiting is
+  acknowledgements stalled.
 
 **Congestion.** The engine keeps a baseline RTT: the lowest RTT of loss-free
 samples over the last 5 minutes, in 10 s buckets. Lossy samples never raise

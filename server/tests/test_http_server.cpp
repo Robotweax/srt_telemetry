@@ -867,7 +867,8 @@ void test_ui()
     robotweax_srt_telemetry_http_server_stop(server);
     for (const char *bad : {"https://a.example; script-src *", "https://a.example,https://b.example",
                             "'unsafe-inline'", "\"https://a.example\"", "https://a.example\r\nX: y", "'none' x", "*", "https:",
-                            "https://*", "http://*:8080", "https://ok.example *"})
+                            "https://*", "http://*:8080", "https://ok.example *", "*.com",
+                            "https://*.com", "https://*.*"})
     {
         std::strcpy(config.frame_ancestors, bad);
         check(robotweax_srt_telemetry_http_server_start(&config, &server) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,

@@ -95,9 +95,9 @@ extern "C"
          * Content-Security-Policy sources: origins such as
          * "https://console.example.com", a wildcard host such as "*.example.com",
          * or 'self'.
-         * Empty (default): the UI cannot be framed. "*" and bare schemes
-         * ("https:") are refused. Only list consoles you trust: a framing
-         * page can overlay the UI. */
+         * Empty (default): the UI cannot be framed. "*", bare schemes
+         * ("https:") and single-label wildcards ("*.com") are refused. Only
+         * list consoles you trust: a framing page can overlay the UI. */
         char frame_ancestors[ROBOTWEAX_SRT_TELEMETRY_HTTP_HOSTS_CAPACITY];
     } robotweax_srt_telemetry_http_server_config_v1;
 

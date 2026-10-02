@@ -109,9 +109,13 @@ renders without long tasks after the first build.
   `"https://console.example.com"`. The policy then names exactly those
   sources and drops `X-Frame-Options`, which cannot list origins. Values are
   CSP sources separated by spaces (`'self'`, origins, wildcard hosts such as
-  `*.example.com`). Refused: quotes other than `'self'`, `;` and `,`, so the
-  setting cannot change the rest of the policy; and `*` or bare schemes
-  (`https:`), which would let any site frame the UI. Inside a frame the page works as usual; if
+  `*.example.com`). Refused:
+  - quotes other than `'self'`, `;` and `,`, so the setting cannot change
+    the rest of the policy;
+  - `*`, bare schemes (`https:`) and a wildcard over a single label
+    (`*.com`), which would let any site frame the UI. A wildcard over a
+    public suffix with two labels (`*.co.uk`) cannot be told apart from
+    `*.example.com` without the public suffix list: name your own domain. Inside a frame the page works as usual; if
   the browser blocks storage in third-party frames, the token is kept in
   memory for the page's lifetime.
 - **Token.** The UI files hold no data and are served without the token. The

@@ -328,6 +328,7 @@ struct robotweax_srt_telemetry_health_engine
      * bitrate problem. */
     bool ack_stall_seen = false;
     std::uint64_t ack_stall_last = 0;
+    std::uint64_t last_sender_drop = 0; /* monotonic time of the latest */
 
     Verdict verdict = UNKNOWN;
     std::uint64_t verdict_since = 0;
@@ -353,23 +354,24 @@ std::uint64_t aftermath_nano(const double latency_seconds, const std::uint64_t i
     return static_cast<std::uint64_t>((2.0 + latency + std::max(latency, 1.0)) * 1e9) + 2 * interval;
 }
 
-/* A kept diagnosis whose setting has since been changed as advised (MAXBW
- * or OHEADBW raised enough): the drops are still counted, but there is
- * nothing more to change. */
-Advice resolved(const Engine &engine, Advice advice)
+/* A kept diagnosis whose setting has since been changed as advised: the
+ * absolute MAXBW raised enough or replaced (unlimited, or relative with 0),
+ * or the latency raised enough (after a reconnect). The drops are still
+ * counted, but there is nothing more to change. */
+Advice resolved(const Engine &engine, Advice advice, const bool has_latency, const double latency)
 {
     const auto &context = engine.context;
     const bool known = (context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS) != 0;
     bool done = false;
     if (known && advice.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH)
     {
-        done = context.max_bandwidth_bytes_per_second < 0 ||
+        done = context.max_bandwidth_bytes_per_second <= 0 ||
                static_cast<double>(context.max_bandwidth_bytes_per_second) >= advice.value;
     }
-    else if (known && advice.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_OVERHEAD_BANDWIDTH)
+    else if (has_latency && advice.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY &&
+             advice.direction == ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE && advice.value > 0)
     {
-        done = context.max_bandwidth_bytes_per_second < 0 ||
-               static_cast<double>(context.overhead_percent) >= advice.value;
+        done = latency + 1e-6 >= advice.value;
     }
     if (done)
     {
@@ -962,12 +964,13 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
                       round_up(1.25 * (unique_rate + dropped_rate) / 8.0, 1000.0)};
         }
         else if (capacity > 0 && rate / capacity > engine.thresholds[PATH].watch &&
-                 (e.congested || sum(engine, C_SENDER_LOSS) > 0))
+                 (e.congested || sum(engine, C_SENDER_LOSS) > 0 ||
+                  (engine.has_baseline_rtt && e.rtt > 1.5 * engine.baseline_rtt + 0.005)))
         {
             /* The estimate follows the arrival rate and goes stale when
-             * nothing is acknowledged: above it only counts when the path
-             * also reports loss. Without loss reports, data waiting is an
-             * outage (below). */
+             * nothing is acknowledged: above it only counts with evidence
+             * that the path is busy, either loss reports or an RTT that
+             * queues. Without either, data waiting is an outage (below). */
             advice = bitrate_decrease(reason, 0.7 * capacity);
         }
         else if (short_latency)
@@ -1453,20 +1456,32 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             const auto &backlog = raws[BACKLOG];
             /* The sender's own diagnosis says data waits without
              * acknowledgements (with or without drops yet): an outage. */
-            /* A stall starts drop-free (the send buffer fills for up to the
-             * drop threshold before anything is dropped) and continues
+            /* A stall is a filling send buffer (its gauge, not only drops
+             * counted in the window). It starts drop-free (the buffer fills
+             * for up to the drop threshold before anything is dropped) and
+             * continues
              * through the drops while the diagnosis holds. Drops with no
              * cause from the start are not a stall (e.g. the backlog a
              * removed MAXBW left behind). */
-            if (!receiver && backlog.applicable && backlog.available && backlog.grade > OK &&
+            const bool continuing =
+                engine->ack_stall_seen && now - engine->ack_stall_last <= 2 * latest.interval + SECOND;
+            /* A buffer still full from drops a moment ago is draining, not
+             * stalling: a stall starts after a gauge window without drops. */
+            const bool drop_free = engine->last_sender_drop == 0 ||
+                                   now - engine->last_sender_drop > engine->config.gauge_window_nano + latest.interval;
+            if (!receiver && backlog.applicable && backlog.available &&
+                grade(BACKLOG, engine->thresholds[BACKLOG], backlog.value) > OK &&
                 backlog.advice.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED &&
-                (!new_drops ||
-                 (engine->ack_stall_seen && now - engine->ack_stall_last <= 2 * latest.interval + SECOND)))
+                (continuing || (!new_drops && drop_free)))
             {
                 engine->ack_stall_seen = true;
                 engine->ack_stall_last = now;
             }
             const auto aftermath = aftermath_nano(e.has_latency ? e.latency : 0.0, latest.interval);
+            if (!receiver && new_drops)
+            {
+                engine->last_sender_drop = now;
+            }
             for (const auto i : {UNRECOVERED, EFFICIENCY, BACKLOG})
             {
                 auto &memo = engine->drop_diagnosis[i];
@@ -1510,21 +1525,24 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
                          * raised, and the backlog it left is dropped): the
                          * last concrete diagnosis, within the count window
                          * of when it was made, still explains them. */
-                        raw.advice = resolved(*engine, memo.advice);
+                        raw.advice = resolved(*engine, memo.advice, e.has_latency, e.latency);
                     }
                     else
                     {
                         memo = {true, raw.advice, now};
                     }
                 }
-                else if (memo.valid && (i != BACKLOG || raw.advice.weak))
+                else if (memo.valid && (i != BACKLOG || (raw.advice.weak && !(engine->ack_stall_seen &&
+                                                                              engine->ack_stall_last == now))))
                 {
                     /* No new drops. The receiver's drop indicators judge
                      * only counted drops: they keep the diagnosis they had.
                      * The sender's backlog diagnosis rests on live gauges
                      * (flow window, rate, RTT): a concrete one is current,
-                     * only a weak one gives way to the drops' diagnosis. */
-                    raw.advice = resolved(*engine, memo.advice);
+                     * and so is a stall that starts now (an outage after
+                     * earlier drops); only a weak one otherwise gives way
+                     * to the drops' diagnosis. */
+                    raw.advice = resolved(*engine, memo.advice, e.has_latency, e.latency);
                 }
             }
         }

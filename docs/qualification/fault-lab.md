@@ -110,16 +110,18 @@ For each role:
 
 ## Results (2 October 2026, loopback, this cloud workspace)
 
-Two consecutive full runs per provider with advice scored on every read and
-the two new outage scenarios, both providers running at the same time on this
-2-CPU workspace, then one more Haivision run on its own. Every run passed:
+With the final code: two consecutive full runs per provider with advice
+scored on every read and the two new outage scenarios, both providers running
+at the same time on this 2-CPU workspace, then one more Haivision run on its
+own. Every run passed with these scores:
 
 | Provider | Sender right | Receiver right | Wrong OK | Controls | Advice right, sender / receiver |
 | --- | --- | --- | --- | --- | --- |
-| Haivision SRT v1.5.5 | 12/12 | 12/12 (11/12 in one parallel run) | 0 | 3/3 OK | 8/8 / 7/7 |
+| Haivision SRT v1.5.5 | 12/12 | 12/12 | 0 | 3/3 OK | 8/8 / 7/7 |
 | Robotweax SRT | 12/12 | 12/12 | 0 | 3/3 OK | 8/8 / 7/7 |
 
-In one of the parallel runs, the Haivision receiver went Failing (recovery
+In one parallel run with an intermediate version of the code, the Haivision
+receiver went Failing (recovery
 headroom low) for 10 s under 2 % random loss, which is repaired loss that
 should stay OK or Watch. It did not recur in three runs of that scenario on
 its own or in the standalone full run. The two labs share two CPUs with
@@ -228,7 +230,12 @@ now:
 - let direct evidence win;
 - give a sender's capacity advice only with loss reports.
 
-Two scenarios guard them: `outage_long_latency` and `outage_then_cap`.
+Two scenarios guard them: `outage_long_latency` and `outage_then_cap`. A
+second review round confirmed the fixes and found three smaller gaps, also
+fixed:
+- a buffer still draining after drops was taken for a stall;
+- capacity advice was lost when a queue raises the RTT without loss reports;
+- `frame_ancestors` accepted wildcards over a public suffix.
 
 ## Provider differences seen
 

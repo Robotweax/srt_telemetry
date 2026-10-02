@@ -555,6 +555,22 @@ void test_sender_classes()
         after_stall(congested, "lasting heavy retransmission: bitrate", ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE, 8);
     }
     {
+        /* Review: above the estimated capacity without loss reports, but
+         * with a queue (RTT far above its baseline): still the capacity, not
+         * an outage. */
+        Run run(SENDER);
+        run.feed(clean, 3);
+        Condition c = clean;
+        c.latency = 2.0;
+        c.capacity_bps = 1.9e6;
+        c.rtt = 0.3;
+        c.send_buffer_ratio = 0.95;
+        c.sender_drops_per_second = 100;
+        run.feed(c, 5);
+        check(run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE,
+              "capacity overrun with a queue and no loss reports: bitrate, got " + describe(run.status));
+    }
+    {
         /* Review: drops from MAXBW, MAXBW lifted, then the receiver stops
          * reading (no drops yet): a live backlog gets its own diagnosis,
          * not the old MAXBW advice. */

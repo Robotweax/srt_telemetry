@@ -1724,6 +1724,16 @@ bool valid_frame_ancestors(const char *text, const std::size_t capacity)
                 {
                     return false;
                 }
+                /* A wildcard must name a domain below a suffix: "*.com"
+                 * would match every .com site. */
+                if (host.starts_with("*."))
+                {
+                    const auto name = host.substr(2, host.find_first_of(":/", 2) - 2);
+                    if (name.find('.') == std::string_view::npos || name.find('*') != std::string_view::npos)
+                    {
+                        return false;
+                    }
+                }
                 for (const char ch : token)
                 {
                     const auto c = static_cast<unsigned char>(ch);

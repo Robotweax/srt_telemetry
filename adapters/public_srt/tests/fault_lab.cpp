@@ -314,8 +314,8 @@ std::vector<Scenario> scenarios()
          * evidence (latency first, as in bandwidth_cap), then bitrate. */
         s.knob_sender = {K_NONE};
         s.knob_receiver = {K_NONE};
-        s.phases_sender = {{4.0, {K_NONE, K_LATENCY, K_BITRATE}}, {14.0, {K_BITRATE}}};
-        s.phases_receiver = {{4.0, {K_NONE, K_LATENCY, K_BITRATE}}, {14.0, {K_BITRATE}}};
+        s.phases_sender = {{4.0, {K_NONE, K_LATENCY, K_BITRATE}}, {11.0, {K_BITRATE}}};
+        s.phases_receiver = {{4.0, {K_NONE, K_LATENCY, K_BITRATE}}, {11.0, {K_BITRATE}}};
         s.knob_after_sender = {K_BITRATE};
         s.knob_after_receiver = {K_BITRATE};
         list.push_back(s);
