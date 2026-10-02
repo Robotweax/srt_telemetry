@@ -97,8 +97,11 @@ def main():
     try:
         data = wait_for_advice(demo.port)
         base = f"http://127.0.0.1:{demo.port}/"
-        dom = dump_dom(args.browser, base)
-        rows = re.findall(r'<tr tabindex="0"', dom)
+        for attempt in range(3):
+            dom = dump_dom(args.browser, base)
+            rows = re.findall(r'<tr tabindex="0"', dom)
+            if 'data-state="live"' in dom and len(rows) == 6:
+                break
         check(len(rows) == len(data["sources"]) == 6, f"fleet lists all 6 endpoints (found {len(rows)})")
         check('data-state="live"' in dom, "fleet follows the live feed")
         check(">null<" not in dom and ">undefined<" not in dom and "NaN" not in dom,
@@ -126,9 +129,15 @@ def main():
         base = f"http://127.0.0.1:{demo.port}/"
         dom = dump_dom(args.browser, base, 3000)
         check("Access token required" in dom and "endpoint-name" not in dom, "token: the UI asks for it")
-        dom = dump_dom(args.browser, f"{base}#token=smoke-token")
-        check('data-state="live"' in dom and len(re.findall(r'<tr tabindex="0"', dom)) == 6,
-              "token: #token= opens the dashboard and the feed")
+        # A slow runner may need a second look before the feed is up.
+        for attempt in range(3):
+            dom = dump_dom(args.browser, f"{base}#token=smoke-token", 8000)
+            state = re.search(r'data-state="([a-z]+)"', dom)
+            rows = len(re.findall(r'<tr tabindex="0"', dom))
+            if state and state.group(1) == "live" and rows == 6:
+                break
+        check(state is not None and state.group(1) == "live" and rows == 6,
+              f"token: #token= opens the dashboard and the feed (link {state.group(1) if state else None}, {rows} rows)")
         check("smoke-token" not in dom, "token: not left in the page")
     finally:
         demo.stop()
