@@ -207,6 +207,10 @@ struct Advice
     Knob knob = ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE;
     Direction direction = ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE;
     double value = 0;
+    /* Inferred without direct evidence of a cause (the sender's last
+     * resorts: heavy retransmission, or nothing at all). A recent concrete
+     * diagnosis of the same drops is preferred to it. */
+    bool weak = false;
 };
 
 /* One sample's evaluation of one indicator. */
@@ -298,11 +302,13 @@ struct robotweax_srt_telemetry_health_engine
      * once the gap itself has left the window. */
     struct ArrivalGap
     {
-        std::uint64_t end;    /* monotonic time arrivals resumed */
-        std::uint64_t length; /* nanoseconds without arrivals */
+        std::uint64_t end;      /* monotonic time arrivals resumed */
+        std::uint64_t length;   /* nanoseconds without arrivals */
+        std::uint64_t interval; /* sampling interval when they resumed */
     };
     std::deque<ArrivalGap> arrival_gaps;
     std::uint64_t arrival_gap_run = 0;
+    bool arrivals_seen = false; /* no gap before the stream's first packet */
 
     /* Drops are diagnosed when they happen. They stay in the count window
      * after their cause has gone (the cap lifted, MAXBW reset, the path
@@ -313,6 +319,7 @@ struct robotweax_srt_telemetry_health_engine
     {
         bool valid = false;
         Advice advice;
+        std::uint64_t at = 0; /* when the drops were diagnosed */
     };
     std::array<DropDiagnosis, INDICATORS> drop_diagnosis{};
     /* Sender: last time data waited without acknowledgements (an outage).
@@ -331,11 +338,47 @@ namespace
 
 using Engine = robotweax_srt_telemetry_health_engine;
 
-/* Shortest arrival gap worth remembering, and how long its aftermath may
- * show drops (packets that were due during the gap arriving too late, and
- * the sender's backlog draining). */
+/* Shortest arrival gap worth remembering. */
 constexpr std::uint64_t min_arrival_gap = 100'000'000;
-constexpr std::uint64_t gap_aftermath = 2'000'000'000;
+/* Most gaps remembered: a trickle stream has many short ones. */
+constexpr std::size_t max_arrival_gaps = 64;
+
+/* How long after a gap (or an acknowledgement stall) drops are still its
+ * aftermath: packets that were due during it arrive too late, and the
+ * sender's backlog, up to its drop threshold max(latency, 1 s) old, drains.
+ * 2 s + latency + drop threshold, plus two sampling intervals. */
+std::uint64_t aftermath_nano(const double latency_seconds, const std::uint64_t interval)
+{
+    const double latency = std::clamp(latency_seconds, 0.0, 3600.0);
+    return static_cast<std::uint64_t>((2.0 + latency + std::max(latency, 1.0)) * 1e9) + 2 * interval;
+}
+
+/* A kept diagnosis whose setting has since been changed as advised (MAXBW
+ * or OHEADBW raised enough): the drops are still counted, but there is
+ * nothing more to change. */
+Advice resolved(const Engine &engine, Advice advice)
+{
+    const auto &context = engine.context;
+    const bool known = (context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS) != 0;
+    bool done = false;
+    if (known && advice.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH)
+    {
+        done = context.max_bandwidth_bytes_per_second < 0 ||
+               static_cast<double>(context.max_bandwidth_bytes_per_second) >= advice.value;
+    }
+    else if (known && advice.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_OVERHEAD_BANDWIDTH)
+    {
+        done = context.max_bandwidth_bytes_per_second < 0 ||
+               static_cast<double>(context.overhead_percent) >= advice.value;
+    }
+    if (done)
+    {
+        advice.knob = ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE;
+        advice.direction = ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE;
+        advice.value = 0;
+    }
+    return advice;
+}
 
 void track_arrivals(Engine &engine, const Entry &entry)
 {
@@ -345,18 +388,26 @@ void track_arrivals(Engine &engine, const Entry &entry)
     }
     if (entry.counts[C_UNIQUE_RECEIVED_PACKETS] > 0)
     {
-        if (engine.arrival_gap_run >= min_arrival_gap)
+        if (engine.arrivals_seen && engine.arrival_gap_run >= min_arrival_gap)
         {
-            engine.arrival_gaps.push_back(
-                {entry.monotonic > entry.interval ? entry.monotonic - entry.interval : 0, engine.arrival_gap_run});
+            engine.arrival_gaps.push_back({entry.monotonic > entry.interval ? entry.monotonic - entry.interval : 0,
+                                           engine.arrival_gap_run, entry.interval});
+            if (engine.arrival_gaps.size() > max_arrival_gaps)
+            {
+                engine.arrival_gaps.pop_front();
+            }
         }
+        engine.arrivals_seen = true;
         engine.arrival_gap_run = 0;
     }
-    else
+    else if (engine.arrivals_seen)
     {
         engine.arrival_gap_run += entry.interval;
     }
-    const auto keep = engine.config.count_window_nano + gap_aftermath;
+    /* Kept while their aftermath can be in the count window; the latency
+     * is not known here, so with the largest latency the aftermath allows
+     * for a minute. */
+    const auto keep = engine.config.count_window_nano + 64'000'000'000ull;
     while (!engine.arrival_gaps.empty() && engine.arrival_gaps.front().end + keep <= entry.monotonic)
     {
         engine.arrival_gaps.pop_front();
@@ -634,7 +685,7 @@ Advice drop_advice(const Evaluation &e, const Reason fallback)
             for (const auto &g : engine.arrival_gaps)
             {
                 if (static_cast<double>(g.length) / 1e9 > e.latency && entry.monotonic >= g.end &&
-                    entry.monotonic <= g.end + gap_aftermath)
+                    entry.monotonic <= g.end + aftermath_nano(e.latency, g.interval))
                 {
                     aftermath = true;
                     break;
@@ -910,8 +961,13 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
                       ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE,
                       round_up(1.25 * (unique_rate + dropped_rate) / 8.0, 1000.0)};
         }
-        else if (capacity > 0 && rate / capacity > engine.thresholds[PATH].watch)
+        else if (capacity > 0 && rate / capacity > engine.thresholds[PATH].watch &&
+                 (e.congested || sum(engine, C_SENDER_LOSS) > 0))
         {
+            /* The estimate follows the arrival rate and goes stale when
+             * nothing is acknowledged: above it only counts when the path
+             * also reports loss. Without loss reports, data waiting is an
+             * outage (below). */
             advice = bitrate_decrease(reason, 0.7 * capacity);
         }
         else if (short_latency)
@@ -921,11 +977,12 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         else if (unique_rate > 0 && rate - unique_rate > 0.1 * unique_rate)
         {
             advice = bitrate_decrease(reason, 0.8 * unique_rate);
+            advice.weak = true;
         }
         else
         {
             advice = {ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED, ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
-                      ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0};
+                      ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0, true};
         }
         const auto value = has_ratio ? g.max[G_SEND_BUFFER_RATIO] : 0.0;
         auto raw = graded(e, indicator, value, advice);
@@ -1394,13 +1451,22 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
                                    latest.counts[drop_count] > 0;
             const bool counted = engine->sums[drop_count] > 0;
             const auto &backlog = raws[BACKLOG];
-            const bool stalled_now = !receiver && backlog.applicable && backlog.available && backlog.grade > OK &&
-                                     backlog.advice.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED;
-            if (stalled_now && !new_drops)
+            /* The sender's own diagnosis says data waits without
+             * acknowledgements (with or without drops yet): an outage. */
+            /* A stall starts drop-free (the send buffer fills for up to the
+             * drop threshold before anything is dropped) and continues
+             * through the drops while the diagnosis holds. Drops with no
+             * cause from the start are not a stall (e.g. the backlog a
+             * removed MAXBW left behind). */
+            if (!receiver && backlog.applicable && backlog.available && backlog.grade > OK &&
+                backlog.advice.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED &&
+                (!new_drops ||
+                 (engine->ack_stall_seen && now - engine->ack_stall_last <= 2 * latest.interval + SECOND)))
             {
                 engine->ack_stall_seen = true;
                 engine->ack_stall_last = now;
             }
+            const auto aftermath = aftermath_nano(e.has_latency ? e.latency : 0.0, latest.interval);
             for (const auto i : {UNRECOVERED, EFFICIENCY, BACKLOG})
             {
                 auto &memo = engine->drop_diagnosis[i];
@@ -1410,35 +1476,55 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
                     memo.valid = false;
                     continue;
                 }
+                if (raw.grade <= OK)
+                {
+                    continue;
+                }
+                const bool memo_fresh = memo.valid && !memo.advice.weak &&
+                                        now - memo.at <= engine->config.count_window_nano;
                 if (new_drops)
                 {
-                    if (raw.grade <= OK)
+                    if (i == BACKLOG && engine->ack_stall_seen && now - engine->ack_stall_last <= aftermath &&
+                             raw.advice.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION &&
+                             raw.advice.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_MAX_BANDWIDTH)
                     {
-                        continue;
-                    }
-                    if (i == BACKLOG && engine->ack_stall_seen && now - engine->ack_stall_last <= gap_aftermath)
-                    {
-                        /* Drops right after an acknowledgement stall. */
+                        /* Drops right after an acknowledgement stall: the
+                         * stale backlog and the burst of loss reports when
+                         * the path returns are the outage's (but not a
+                         * shrunk flow window or a MAXBW cap, which are
+                         * direct evidence of their own). Bounded: only a
+                         * fresh stall diagnosis renews the aftermath. */
                         raw.advice = {ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED,
                                       ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE, ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE,
-                                      0.0};
-                        engine->ack_stall_last = now; /* the aftermath lasts while the drops do */
+                                      0.0, true};
+                        memo = {true, raw.advice, now};
                     }
-                    else if (memo.valid && memo.advice.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE &&
-                             raw.advice.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE &&
-                             raw.advice.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED)
+                    else if (!raw.advice.weak)
                     {
-                        /* Nothing explains these drops now (the cause was
-                         * removed, e.g. MAXBW raised, and the backlog it
-                         * left is dropped): the last explanation still
-                         * does. */
-                        raw.advice = memo.advice;
+                        /* Direct evidence: a new diagnosis. */
+                        memo = {true, raw.advice, now};
                     }
-                    memo = {true, raw.advice};
+                    else if (memo_fresh)
+                    {
+                        /* No evidence now (the cause was removed, e.g. MAXBW
+                         * raised, and the backlog it left is dropped): the
+                         * last concrete diagnosis, within the count window
+                         * of when it was made, still explains them. */
+                        raw.advice = resolved(*engine, memo.advice);
+                    }
+                    else
+                    {
+                        memo = {true, raw.advice, now};
+                    }
                 }
-                else if (memo.valid && raw.grade > OK)
+                else if (memo.valid && (i != BACKLOG || raw.advice.weak))
                 {
-                    raw.advice = memo.advice;
+                    /* No new drops. The receiver's drop indicators judge
+                     * only counted drops: they keep the diagnosis they had.
+                     * The sender's backlog diagnosis rests on live gauges
+                     * (flow window, rate, RTT): a concrete one is current,
+                     * only a weak one gives way to the drops' diagnosis. */
+                    raw.advice = resolved(*engine, memo.advice);
                 }
             }
         }

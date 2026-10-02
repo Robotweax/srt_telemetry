@@ -343,6 +343,9 @@
     let action;
     if (v === 'unknown') action = health.reason === 'connecting' ? 'Wait for the connection' : 'No grade possible';
     else if (health.reason === 'connection_lost') action = 'Check the network path and the peer';
+    /* The engine drops the knob of earlier drops once their setting was
+     * changed as advised (MAXBW raised): they are still counted. */
+    else if (health.reason === 'sender_drops') action = 'Nothing more to change: the setting behind these drops was changed';
     else action = 'No setting fixes this: check the network path';
     return { action, why, hint: '' };
   }

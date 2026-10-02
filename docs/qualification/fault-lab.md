@@ -3,11 +3,11 @@
 The fault lab checks the [health engine](../architecture/health-engine.md) on
 real SRT streams, with each provider, against the Phase 2 gate:
 
-> the right verdict in at least 9 of 10 lab fault classes per role, and never
+> the right verdict in at least 90 % of the lab fault classes per role, and never
 > a wrong OK.
 
 Executable: `robotweax_srt_telemetry_public_srt_fault_lab` (ctest label `lab`,
-built with the public SRT adapter). A full run takes about six and a half
+built with the public SRT adapter). A full run takes about seven and a half
 minutes. CI runs it for each provider after the other tests and keeps the
 report as an artifact.
 
@@ -64,10 +64,12 @@ developer machine.
 | `bandwidth_cap` | 3 Mbit/s cap, 100 kB queue, 40 s | bad | bad | bitrate / bitrate |
 | `outage_6s` | blackhole for 6 s (peer idle timeout 10 s, settle 20 s) | bad | bad | none / none |
 | `receiver_stall` | receiving application stops reading (3 MB receive buffer) | bad | bad | receiving application / receiving application |
-| `maxbw_too_low` | sender SRTO_MAXBW 2.8 Mbit/s | bad | bad | MAXBW / not judged |
+| `maxbw_too_low` | sender SRTO_MAXBW 2.8 Mbit/s (reset at fault end) | bad | bad | MAXBW (after the reset: MAXBW or none) / not judged |
+| `outage_long_latency` | blackhole for 6 s with 2.5 s latency (settle 20 s): drops come later after the path returns | bad | bad | none / none |
+| `outage_then_cap` | blackhole for 4 s, then a 3 Mbit/s cap for 30 s | bad | bad | none, then (from 14 s) bitrate / same |
 | `connection_lost` | blackhole for good | Failing | Failing | — |
 
-Three of the ten fault classes (loss, bursts, jitter) are false-alarm checks:
+Three of the twelve fault classes (loss, bursts, jitter) are false-alarm checks:
 a role passes them by staying OK or Watch. Seven classes require detection.
 
 Where the expectations came from:
@@ -101,21 +103,28 @@ For each role:
   judged.
 
 **Gate:** for each role:
-- at least 90 % of the fault classes right (9 of 10);
+- at least 90 % of the fault classes right (11 of 12);
 - no wrong OK;
 - every control OK;
 - right advice in every fault class that has a knob expectation.
 
 ## Results (2 October 2026, loopback, this cloud workspace)
 
-Two consecutive full runs per provider with advice scored on every read, both
-providers running at the same time. Every run passed with the same scores (the
-1 October runs, with advice judged at the worst verdict only, matched them):
+Two consecutive full runs per provider with advice scored on every read and
+the two new outage scenarios, both providers running at the same time on this
+2-CPU workspace, then one more Haivision run on its own. Every run passed:
 
 | Provider | Sender right | Receiver right | Wrong OK | Controls | Advice right, sender / receiver |
 | --- | --- | --- | --- | --- | --- |
-| Haivision SRT v1.5.5 | 10/10 | 10/10 | 0 | 3/3 OK | 6/6 / 5/5 |
-| Robotweax SRT | 10/10 | 10/10 | 0 | 3/3 OK | 6/6 / 5/5 |
+| Haivision SRT v1.5.5 | 12/12 | 12/12 (11/12 in one parallel run) | 0 | 3/3 OK | 8/8 / 7/7 |
+| Robotweax SRT | 12/12 | 12/12 | 0 | 3/3 OK | 8/8 / 7/7 |
+
+In one of the parallel runs, the Haivision receiver went Failing (recovery
+headroom low) for 10 s under 2 % random loss, which is repaired loss that
+should stay OK or Watch. It did not recur in three runs of that scenario on
+its own or in the standalone full run. The two labs share two CPUs with
+eight streaming threads, so starvation of the relay or reader is the likely
+cause, not the engine. CI runs each provider on its own machine.
 
 Typical verdicts (both providers alike unless noted):
 
@@ -196,7 +205,7 @@ the outage's settle period ended before the advice changed. Scoring every
 read, with the outage settle extended to 20 s, found three cases of the same
 defect: drops stay in the 10 s count window after their cause is gone, and
 judged again with the evidence of a healthy moment they got a wrong reason.
-It showed in four places:
+It showed in four places, all fixed:
 
 | Case | Wrong advice, after the cause ended | Fix |
 | --- | --- | --- |
@@ -205,7 +214,21 @@ It showed in four places:
 | `maxbw_too_low`, sender (both) | acknowledgements stalled, after MAXBW was reset and the backlog was dropped | a "no evidence" diagnosis of new drops keeps the last concrete one |
 | `outage_6s`, sender (both) | lower the bitrate, for 1 s when the path returned | drops within 2 s of an acknowledgement stall are the outage's |
 
-Each fix has a unit test that fails without it.
+Each fix has a unit test that fails without it. An independent review of the
+first fix then found that it hid real causes:
+- a sender's outage aftermath renewed itself while drops continued, and
+  overrode congestion, MAXBW and read-stall advice;
+- old advice was reused for a new cause without drops;
+- the fixed 2 s aftermath was too short at long latencies.
+
+The rules in the [health engine](../architecture/health-engine.md#reasons-and-advice)
+now:
+- bound the aftermath by the latency and the sender's drop threshold;
+- renew it only from a fresh stall diagnosis;
+- let direct evidence win;
+- give a sender's capacity advice only with loss reports.
+
+Two scenarios guard them: `outage_long_latency` and `outage_then_cap`.
 
 ## Provider differences seen
 

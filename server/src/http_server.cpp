@@ -1715,6 +1715,15 @@ bool valid_frame_ancestors(const char *text, const std::size_t capacity)
             any = true;
             if (token != "'self'")
             {
+                /* A host is required: "*" or a bare scheme ("https:")
+                 * would let any site frame the UI. */
+                const auto scheme_end = token.find("://");
+                const auto host = scheme_end == std::string_view::npos ? token : token.substr(scheme_end + 3);
+                if (host.empty() || host == "*" || host.front() == ':' || host.back() == ':' ||
+                    host.starts_with("*:") || host.starts_with("*/"))
+                {
+                    return false;
+                }
                 for (const char ch : token)
                 {
                     const auto c = static_cast<unsigned char>(ch);

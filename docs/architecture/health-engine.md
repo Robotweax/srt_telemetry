@@ -109,16 +109,43 @@ stall) and a suggested knob with a direction and a value.
 | `sender_backlog`, `sender_drops` | by evidence, first match: flow window shrank → `peer_read_stall`, receiving application; sending at an absolute MAXBW → MAXBW, increase; above the estimated capacity → bitrate, decrease; latency short for the RTT → latency, increase; retransmissions above 10 % → bitrate, decrease; otherwise `acknowledgements_stalled` | 1.25 × offered rate (sent + dropped) in bytes/s; 70 % of capacity; latency as above; 80 % of the unique rate |
 | `peer_read_stall`, `application_read_stall` | receiving application, check | none |
 | `acknowledgements_stalled` | none: data waits without loss reports, so the path or the peer is not acknowledging (an outage); no setting fixes it | none |
-| receiver drops in the 2 s after arrivals resume from a gap longer than the latency (an outage), with no other drops in the count window | none: no retransmission recovers that gap | none |
+| receiver drops in the aftermath of a gap in arrivals longer than the latency (an outage), with no other drops in the count window | none: no retransmission recovers that gap | none |
 
-**Outages.** Drops arrive with the first packets after an outage, so they
-stay in the count window after the gap itself has left it. The engine
-therefore remembers each arrival gap (100 ms or longer) for the count window
-plus 2 s. Drops in the 2 s after a gap longer than the latency are the
-outage's and get no knob, for as long as they are counted. Drops outside
-that aftermath, even while an outage is in the window, are judged as usual.
-Before this rule, a Haivision receiver switched to "raise the latency" 10 s
-after a 6 s outage, while it still counted the outage's drops.
+**Drops are diagnosed when they happen.** Drops stay in the 10 s count
+window after their cause has gone. Judged again with the evidence of a
+healthy moment, they would get a wrong reason and knob (a Haivision receiver
+advised "raise the latency" 10 s after a 6 s outage). So:
+
+- **Outage aftermath.** The *aftermath* of an outage lasts 2 s + latency +
+  the sender's drop threshold (max(latency, 1 s)) + two sampling intervals:
+  packets due during the gap arrive late, and the sender's stale backlog
+  drains.
+  - *Receiver.* Each gap in arrivals (100 ms or longer, after the first
+    packet) is remembered beyond the count window. Drops in the aftermath of
+    a gap longer than the latency are the outage's: no knob. Drops outside
+    it are judged as usual, even while an outage is in the window.
+  - *Sender.* An acknowledgement stall starts without drops (the send buffer
+    fills first) and continues while that diagnosis holds. Drops in its
+    aftermath, with their burst of loss reports and retransmissions, are the
+    outage's. A shrunk flow window or a MAXBW cap still gets its own advice.
+- **Kept diagnosis.** The diagnosis of new drops is kept while they are
+  counted.
+  - *Receiver.* The drop indicators keep it until new drops come: after a
+    lifted bandwidth cap the advice stays "lower the bitrate".
+  - *Sender.* A backlog diagnosis rests on live gauges (flow window, rate,
+    RTT), so a concrete one is always current. Only a weak one gives way to
+    the kept diagnosis. Weak means heavy retransmission alone, or no cause
+    at all.
+  - *New drops with no cause.* They keep the last concrete diagnosis made
+    within the count window, e.g. the backlog dropped after MAXBW was
+    raised.
+- **Resolved settings.** When MAXBW or OHEADBW has since been set as advised,
+  the kept diagnosis loses its knob ("sender drops", nothing more to
+  change).
+- **Capacity needs loss evidence.** The sender's "above the estimated
+  capacity" advice needs loss reports or the congestion signature. During an
+  outage the estimate is stale and nothing is reported lost, so data waiting
+  is acknowledgements stalled.
 
 **Congestion.** The engine keeps a baseline RTT: the lowest RTT of loss-free
 samples over the last 5 minutes, in 10 s buckets. Lossy samples never raise

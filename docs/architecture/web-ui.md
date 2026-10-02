@@ -108,9 +108,10 @@ renders without long tasks after the first build.
   that console in `frame_ancestors`, for example
   `"https://console.example.com"`. The policy then names exactly those
   sources and drops `X-Frame-Options`, which cannot list origins. Values are
-  CSP sources separated by spaces (`'self'`, origins, wildcard hosts);
-  quotes other than `'self'`, `;` and `,` are refused, so the setting cannot
-  change the rest of the policy. Inside a frame the page works as usual; if
+  CSP sources separated by spaces (`'self'`, origins, wildcard hosts such as
+  `*.example.com`). Refused: quotes other than `'self'`, `;` and `,`, so the
+  setting cannot change the rest of the policy; and `*` or bare schemes
+  (`https:`), which would let any site frame the UI. Inside a frame the page works as usual; if
   the browser blocks storage in third-party frames, the token is kept in
   memory for the page's lifetime.
 - **Token.** The UI files hold no data and are served without the token. The

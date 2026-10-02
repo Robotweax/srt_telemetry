@@ -115,6 +115,16 @@ struct Scenario
      * (gated). Empty: advice not judged for that role. */
     std::set<robotweax_srt_telemetry_health_knob> knob_sender;
     std::set<robotweax_srt_telemetry_health_knob> knob_receiver;
+    /* Knobs for reads after the fault ends (the aftermath); empty: as
+     * during the fault. */
+    std::set<robotweax_srt_telemetry_health_knob> knob_after_sender;
+    std::set<robotweax_srt_telemetry_health_knob> knob_after_receiver;
+    /* A second fault replacing the first, this long after onset (0: none),
+     * with the knobs expected from a time after onset: {from, knobs}. */
+    double second_after = 0;
+    Impairment second;
+    std::vector<std::pair<double, std::set<robotweax_srt_telemetry_health_knob>>> phases_sender;
+    std::vector<std::pair<double, std::set<robotweax_srt_telemetry_health_knob>>> phases_receiver;
     bool control = false;
 };
 
@@ -268,6 +278,46 @@ std::vector<Scenario> scenarios()
         s.expect_sender = bad;
         s.expect_receiver = bad;
         s.knob_sender = {K_MAXBW}; /* the receiver cannot see the sender's setting */
+        /* MAXBW reset at fault end: the drops still counted need nothing
+         * more ("sender drops", no knob), or keep the MAXBW advice. */
+        s.knob_after_sender = {K_MAXBW, K_NONE};
+        list.push_back(s);
+    }
+    {
+        Scenario s;
+        s.name = "outage_long_latency";
+        s.description = "path blackholed for 6 s with 2.5 s latency (drops arrive later after the outage)";
+        s.latency_ms = 2500;
+        s.fault.blackhole = true;
+        s.peer_idle_timeout_ms = 10'000;
+        s.fault_seconds = 6;
+        s.settle_seconds = 20;
+        s.expect_sender = bad;
+        s.expect_receiver = bad;
+        s.knob_sender = {K_NONE};
+        s.knob_receiver = {K_NONE};
+        list.push_back(s);
+    }
+    {
+        Scenario s;
+        s.name = "outage_then_cap";
+        s.description = "4 s blackhole, then the path capped at 3 Mbit/s for 30 s: the cap gets its own advice";
+        s.fault.blackhole = true;
+        s.peer_idle_timeout_ms = 10'000;
+        s.second_after = 4;
+        s.second.forward_rate_bps = 3e6;
+        s.second.queue_limit_bytes = 100'000;
+        s.fault_seconds = 34;
+        s.expect_sender = bad;
+        s.expect_receiver = bad;
+        /* Outage: no knob. Then the outage's aftermath and the cap's first
+         * evidence (latency first, as in bandwidth_cap), then bitrate. */
+        s.knob_sender = {K_NONE};
+        s.knob_receiver = {K_NONE};
+        s.phases_sender = {{4.0, {K_NONE, K_LATENCY, K_BITRATE}}, {14.0, {K_BITRATE}}};
+        s.phases_receiver = {{4.0, {K_NONE, K_LATENCY, K_BITRATE}}, {14.0, {K_BITRATE}}};
+        s.knob_after_sender = {K_BITRATE};
+        s.knob_after_receiver = {K_BITRATE};
         list.push_back(s);
     }
     {
@@ -455,9 +505,12 @@ std::string expect_text(const std::set<Verdict> &expected)
     return text;
 }
 
-RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expected,
-                const std::set<robotweax_srt_telemetry_health_knob> &knobs, const double onset,
-                const double fault_end, const double end, const bool control)
+using Knobs = std::set<robotweax_srt_telemetry_health_knob>;
+using Phases = std::vector<std::pair<double, Knobs>>;
+
+RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expected, const Knobs &knobs,
+                const Knobs &knobs_after, const Phases &phases, const double onset, const double fault_end,
+                const double end, const bool control)
 {
     RoleScore result;
     if (expected.empty())
@@ -558,8 +611,22 @@ RoleScore score(const std::vector<Point> &points, const std::set<Verdict> &expec
             {
                 continue;
             }
+            /* The knobs for this read: the fault's, a later phase's, or the
+             * aftermath's. */
+            const Knobs *right = &knobs;
+            for (const auto &[from, set] : phases)
+            {
+                if (p.t - onset >= from)
+                {
+                    right = &set;
+                }
+            }
+            if (p.t > fault_end && !knobs_after.empty())
+            {
+                right = &knobs_after;
+            }
             result.advice_reads += 1;
-            if (knobs.count(p.knob) == 0)
+            if (right->count(p.knob) == 0)
             {
                 result.advice_wrong += 1;
                 if (result.advice_wrong_at < 0)
@@ -778,6 +845,7 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
     }
     bool fault_on = false;
     bool fault_off = false;
+    bool second_on = false;
     auto next = start;
     while (seconds_since(start) < end)
     {
@@ -792,6 +860,11 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
                 const std::int64_t value = scenario.sender_max_bandwidth;
                 static_cast<void>(srt_setsockflag(caller, SRTO_MAXBW, &value, sizeof(value)));
             }
+        }
+        if (fault_on && !fault_off && !second_on && scenario.second_after > 0 && t >= onset + scenario.second_after)
+        {
+            second_on = true;
+            relay.set(scenario.second);
         }
         if (fault_on && !fault_off && !scenario.permanent && t >= fault_end)
         {
@@ -832,10 +905,11 @@ Outcome run_scenario(const Scenario &scenario, const bool timeline, const bool t
     robotweax_srt_telemetry_sampler_destroy(sampler);
     outcome.received = received.load();
 
-    outcome.sender =
-        score(sender_points, scenario.expect_sender, scenario.knob_sender, onset, fault_end, end, scenario.control);
-    outcome.receiver = score(receiver_points, scenario.expect_receiver, scenario.knob_receiver, onset, fault_end,
-                             end, scenario.control);
+    outcome.sender = score(sender_points, scenario.expect_sender, scenario.knob_sender, scenario.knob_after_sender,
+                           scenario.phases_sender, onset, fault_end, end, scenario.control);
+    outcome.receiver = score(receiver_points, scenario.expect_receiver, scenario.knob_receiver,
+                             scenario.knob_after_receiver, scenario.phases_receiver, onset, fault_end, end,
+                             scenario.control);
 
     if (timeline)
     {
