@@ -19,3 +19,9 @@ if(TARGET RobotweaxSRTTelemetry::http)
     target_link_libraries(robotweax_srt_telemetry_http_package_consumer
         PRIVATE RobotweaxSRTTelemetry::http)
 endif()
+
+if(TARGET RobotweaxSRTTelemetry::embed)
+    add_executable(robotweax_srt_telemetry_embed_package_consumer embed_main.c)
+    target_link_libraries(robotweax_srt_telemetry_embed_package_consumer
+        PRIVATE RobotweaxSRTTelemetry::embed)
+endif()

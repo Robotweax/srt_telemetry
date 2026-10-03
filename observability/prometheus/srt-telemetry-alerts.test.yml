@@ -38,6 +38,14 @@ tests:
         values: '0x23'
       - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="10",role="sender",site="leipzig"}'
         values: '0x23'
+      # Sender 12: its connection is lost and its socket closed; that is
+      # SRTStreamFailing, not a statistics alert.
+      - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="12",role="sender",site="kiel"}'
+        values: '0x23'
+      - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="12",role="sender",site="kiel"}'
+        values: '4x23'
+      - series: 'srt_health_info{job="srt",instance="enc:9810",source_id="12",role="sender",site="kiel",verdict="failing",reason="connection_lost",knob="none",direction="none"}'
+        values: '1x23'
       # Receiver 11: healthy throughout.
       - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="11",role="receiver",site="hamburg"}'
         values: '1x23'
@@ -55,7 +63,18 @@ tests:
     alert_rule_test:
       - eval_time: 30s
         alertname: SRTStreamFailing
-        exp_alerts: []
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: srt
+              instance: "enc:9810"
+              source_id: "12"
+              role: sender
+              site: kiel
+            exp_annotations:
+              summary: "SRT sender 12 on enc:9810 is failing"
+              description: "The viewer is losing data, or the connection is lost. Reason: connection_lost."
+              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
       - eval_time: 50s
         alertname: SRTStreamFailing
         exp_alerts:
@@ -69,6 +88,17 @@ tests:
             exp_annotations:
               summary: "SRT sender 7 on enc:9810 is failing"
               description: "The viewer is losing data, or the connection is lost. Reason: path_congested. Advice: decrease bitrate to 2.3Mbit/s."
+              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
+          - exp_labels:
+              severity: critical
+              job: srt
+              instance: "enc:9810"
+              source_id: "12"
+              role: sender
+              site: kiel
+            exp_annotations:
+              summary: "SRT sender 12 on enc:9810 is failing"
+              description: "The viewer is losing data, or the connection is lost. Reason: connection_lost."
               runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
       - eval_time: 20s
         alertname: SRTStreamAtRisk

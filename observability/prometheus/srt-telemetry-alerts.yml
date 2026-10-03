@@ -35,13 +35,14 @@ groups:
             The viewer is losing data, or the connection is lost.
             {{- with printf "srt_health_info%s" $selector | query }}{{ with first . }}
             Reason: {{ .Labels.reason }}.
-            {{- if ne .Labels.knob "none" }} Advice: {{ .Labels.direction }} {{ .Labels.knob }}{{ end }}{{ end }}{{ end }}
+            {{- if ne .Labels.knob "none" }} Advice: {{ .Labels.direction }} {{ .Labels.knob }}
             {{- with printf "srt_health_suggested_value%s" $selector | query }}{{ with first . }} to
             {{- if eq .Labels.knob "latency" }} {{ .Value | humanizeDuration }}
             {{- else if eq .Labels.knob "bitrate" }} {{ .Value | humanize }}bit/s
             {{- else if eq .Labels.knob "max_bandwidth" }} {{ .Value | humanize }}B/s
             {{- else if eq .Labels.knob "overhead_bandwidth" }} {{ .Value }} %
             {{- else }} {{ .Value }}{{ end }}{{ end }}{{ end }}.
+            {{- end }}{{ end }}{{ end }}
           runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
 
       - alert: SRTStreamAtRisk
@@ -56,13 +57,14 @@ groups:
             The stream works, but a margin is close to gone.
             {{- with printf "srt_health_info%s" $selector | query }}{{ with first . }}
             Reason: {{ .Labels.reason }}.
-            {{- if ne .Labels.knob "none" }} Advice: {{ .Labels.direction }} {{ .Labels.knob }}{{ end }}{{ end }}{{ end }}
+            {{- if ne .Labels.knob "none" }} Advice: {{ .Labels.direction }} {{ .Labels.knob }}
             {{- with printf "srt_health_suggested_value%s" $selector | query }}{{ with first . }} to
             {{- if eq .Labels.knob "latency" }} {{ .Value | humanizeDuration }}
             {{- else if eq .Labels.knob "bitrate" }} {{ .Value | humanize }}bit/s
             {{- else if eq .Labels.knob "max_bandwidth" }} {{ .Value | humanize }}B/s
             {{- else if eq .Labels.knob "overhead_bandwidth" }} {{ .Value }} %
             {{- else }} {{ .Value }}{{ end }}{{ end }}{{ end }}.
+            {{- end }}{{ end }}{{ end }}
           runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
 
       # Unknown while statistics are readable: no packets, a missing metric
@@ -83,8 +85,12 @@ groups:
             no packets, a metric or setting the verdict needs is missing, or the connection is being set up.
           runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#verdicts"
 
+      # Not for a lost connection: the stream alerts cover it, and a closed
+      # socket (shown as lost until it is forgotten) has no statistics.
       - alert: SRTSourceStatisticsFailing
-        expr: srt_source_up == 0
+        expr: >-
+          srt_source_up == 0
+          unless ignoring(verdict, reason, knob, direction) srt_health_info{reason="connection_lost"}
         for: 1m
         labels:
           severity: warning

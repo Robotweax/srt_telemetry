@@ -68,7 +68,10 @@ never a wrong OK.
   ([built-in web UI](architecture/web-ui.md): **done**);
 - Grafana dashboards and alert rules
   ([alert rules and dashboards](architecture/alerting.md): **done**); and
-- reference integrations: srt-live-transmit, GStreamer, Robotweax gateway.
+- reference integrations: srt-live-transmit
+  ([patch and build](../integrations/srt-live-transmit/README.md), 28 host
+  lines on the [embedding library](architecture/embedding.md): **done**),
+  GStreamer, Robotweax gateway.
 
 **Gate:** each integration takes 30 host lines or fewer; an operator answers
 "fine, or which knob" from one screen.

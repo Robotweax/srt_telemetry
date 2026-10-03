@@ -41,7 +41,7 @@ ride out scrape jitter.
 | `SRTStreamFailing` | verdict failing: the viewer is losing data, or the connection is lost | 10 s | critical |
 | `SRTStreamAtRisk` | verdict at risk: a margin is close to gone | 30 s | warning |
 | `SRTStreamUngraded` | verdict unknown while statistics read fine (no packets, a missing metric or setting, connecting) | 2 min | warning |
-| `SRTSourceStatisticsFailing` | reading the socket's statistics fails | 1 min | warning |
+| `SRTSourceStatisticsFailing` | reading the socket's statistics fails, unless the connection is lost (a closed socket has no statistics; `SRTStreamFailing` covers it) | 1 min | warning |
 | `SRTTelemetryTargetDown` | a target that exports SRT Telemetry stops answering scrapes | 1 min | critical |
 
 Watch is not alerted on: it shows on the dashboards.

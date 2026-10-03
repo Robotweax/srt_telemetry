@@ -183,6 +183,34 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
             -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
     endif()
 
+    # Embedding layer: sampler, HTTP server, OTLP and socket monitoring in a
+    # few host calls (docs/architecture/embedding.md).
+    if(TARGET robotweax_srt_telemetry_http)
+        add_library(robotweax_srt_telemetry_embed adapters/public_srt/src/embed.cpp)
+        add_library(RobotweaxSRTTelemetry::embed ALIAS robotweax_srt_telemetry_embed)
+        target_compile_features(robotweax_srt_telemetry_embed PUBLIC cxx_std_20)
+        target_link_libraries(robotweax_srt_telemetry_embed
+            PUBLIC RobotweaxSRTTelemetry::public_srt_adapter RobotweaxSRTTelemetry::http)
+        find_package(Threads REQUIRED)
+        target_link_libraries(robotweax_srt_telemetry_embed PRIVATE Threads::Threads)
+        target_compile_definitions(robotweax_srt_telemetry_embed
+            PRIVATE ROBOTWEAX_SRT_TELEMETRY_EMBED_BUILDING)
+        set_target_properties(robotweax_srt_telemetry_embed PROPERTIES
+            CXX_VISIBILITY_PRESET hidden
+            EXPORT_NAME embed
+            VISIBILITY_INLINES_HIDDEN YES
+            VERSION ${PROJECT_VERSION}
+            SOVERSION 0)
+        if(BUILD_SHARED_LIBS)
+            target_compile_definitions(robotweax_srt_telemetry_embed
+                PUBLIC ROBOTWEAX_SRT_TELEMETRY_EMBED_SHARED)
+        endif()
+        if(NOT MSVC)
+            target_compile_options(robotweax_srt_telemetry_embed PRIVATE
+                -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+        endif()
+    endif()
+
     if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
         add_executable(robotweax_srt_telemetry_public_srt_adapter_tests
             adapters/public_srt/tests/test_public_srt_adapter.cpp)
@@ -283,6 +311,19 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                     target_compile_definitions(robotweax_srt_telemetry_public_srt_dashboard_demo
                         PRIVATE ROBOTWEAX_SRT_TELEMETRY_RUNTIME_USE_FLAT_SRT_HEADER)
                 endif()
+                add_executable(robotweax_srt_telemetry_embed_tests adapters/public_srt/tests/test_embed.cpp)
+                target_include_directories(robotweax_srt_telemetry_embed_tests
+                    PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
+                target_link_libraries(robotweax_srt_telemetry_embed_tests
+                    PRIVATE RobotweaxSRTTelemetry::embed ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY} Threads::Threads)
+                target_compile_features(robotweax_srt_telemetry_embed_tests PRIVATE cxx_std_20)
+                if(EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt.h" AND
+                   NOT EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt/srt.h")
+                    target_compile_definitions(robotweax_srt_telemetry_embed_tests
+                        PRIVATE ROBOTWEAX_SRT_TELEMETRY_USE_FLAT_SRT_HEADER)
+                endif()
+                add_test(NAME robotweax_srt_telemetry_embed_tests COMMAND robotweax_srt_telemetry_embed_tests)
+                set_tests_properties(robotweax_srt_telemetry_embed_tests PROPERTIES TIMEOUT 120)
                 # Browser smoke test of the built-in UI against the demo.
                 find_package(Python3 COMPONENTS Interpreter)
                 find_program(ROBOTWEAX_SRT_TELEMETRY_BROWSER
@@ -710,6 +751,14 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY adapters/public_srt/include/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+
+if(TARGET robotweax_srt_telemetry_embed)
+    install(TARGETS robotweax_srt_telemetry_embed
+        EXPORT RobotweaxSRTTelemetryTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 if(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER)

@@ -58,7 +58,9 @@ too: the sampler, history, event journal and health engine, which passes the
 fault-lab gate on both providers. Phase 3 is in progress: the metric naming
 scheme with Prometheus and JSON renderers, the embedded HTTP/WebSocket server,
 the built-in web UI, OTLP export, and the Grafana dashboards with Prometheus
-alert rules are done; reference integrations follow.
+alert rules are done, as is the embedding library with srt-live-transmit as
+its first reference integration (28 host lines); GStreamer and the gateway
+follow.
 
 ## Scope
 
@@ -170,6 +172,8 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 - [Built-in web UI](docs/architecture/web-ui.md)
 - [OTLP export](docs/architecture/otlp.md)
 - [Alert rules and Grafana dashboards](docs/architecture/alerting.md)
+- [Embedding in an SRT application](docs/architecture/embedding.md)
+- [srt-live-transmit with SRT Telemetry](integrations/srt-live-transmit/README.md)
 - [Loss-shape observability decision](docs/architecture/loss-shape-observability.md)
 - [Bounded recorder](docs/architecture/bounded-recorder.md)
 - [Local incident analysis](docs/architecture/incident-analysis.md)
