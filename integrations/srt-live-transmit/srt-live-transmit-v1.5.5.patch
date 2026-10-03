@@ -1,0 +1,123 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d69a8d9..f4c1fb8 100755
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1453,6 +1453,9 @@ if (ENABLE_APPS)
+ 	# Applications
+ 
+ 	srt_add_application(srt-live-transmit ${VIRTUAL_srtsupport})
++	find_package(RobotweaxSRTTelemetry REQUIRED) # SRT Telemetry
++	target_link_libraries(srt-live-transmit RobotweaxSRTTelemetry::embed)
++	target_compile_definitions(srt-live-transmit PRIVATE ROBOTWEAX_SRT_TELEMETRY_USE_FLAT_SRT_HEADER)
+ 	if (DEFINED EXTRA_stransmit)
+ 		set_target_properties(srt-live-transmit PROPERTIES COMPILE_FLAGS "${EXTRA_stransmit}")
+ 	endif()
+diff --git a/apps/srt-live-transmit.cpp b/apps/srt-live-transmit.cpp
+index 3468c78..707ce21 100644
+--- a/apps/srt-live-transmit.cpp
++++ b/apps/srt-live-transmit.cpp
+@@ -72,6 +72,7 @@
+ #include "logsupport.hpp"
+ #include "transmitmedia.hpp"
+ #include "verbose.hpp"
++#include <robotweax/srt_telemetry_public_srt_host.h> // SRT Telemetry
+ 
+ // NOTE: This is without "haisrt/" because it uses an internal path
+ // to the library. Application using the "installed" library should
+@@ -143,6 +144,7 @@ struct LiveTransmitConfig
+     SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
+     bool auto_reconnect = true;
+     bool full_stats = false;
++    string telemetry; // SRT Telemetry spec, e.g. "0.0.0.0:9810"
+ 
+     string source;
+     string target;
+@@ -185,7 +187,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
+         o_quiet         = { "q", "quiet" },
+         o_verbose       = { "v", "verbose" },
+         o_help          = { "h", "help" },
+-        o_version       = { "version" };
++        o_version       = { "version" },
++        o_telemetry     = { "telemetry" };
+ 
+     const vector<OptionScheme> optargs = {
+         { o_timeout,      OptionScheme::ARG_ONE },
+@@ -206,7 +209,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
+         { o_quiet,        OptionScheme::ARG_NONE },
+         { o_verbose,      OptionScheme::ARG_NONE },
+         { o_help,         OptionScheme::ARG_VAR },
+-        { o_version,      OptionScheme::ARG_NONE }
++        { o_version,      OptionScheme::ARG_NONE },
++        { o_telemetry,    OptionScheme::ARG_ONE }
+     };
+ 
+     options_t params = ProcessOptions(argv, argc, optargs);
+@@ -290,6 +294,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
+         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
+         PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
+         PrintOptionHelp(o_verbose,   "", "verbose mode (default off)");
++        PrintOptionHelp(o_telemetry, "<[addr]:port[,opt]>", "SRT Telemetry dashboard, /metrics, API");
+         cerr << "\n";
+         cerr << "\t-h,-help - show this help (use '-h logging' for logging system)\n";
+         cerr << "\t-version - print SRT library version\n";
+@@ -349,6 +354,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
+         Verbose::on = !cfg.quiet;
+ 
+     cfg.auto_reconnect = Option<OutBool>(params, true, o_autorecon);
++    cfg.telemetry = Option<OutString>(params, o_telemetry);
+ 
+     cfg.source = params[""].at(0);
+     cfg.target = params[""].at(1);
+@@ -488,6 +494,20 @@ int main(int argc, char** argv)
+     unique_ptr<Target> tar;
+     bool tarConnected = false;
+ 
++    // SRT Telemetry, declared after src and tar: it stops before they close.
++    robotweax_srt_telemetry_embed *embed = nullptr;
++    if (!cfg.telemetry.empty() && robotweax_srt_telemetry_host_embed_start(cfg.telemetry.c_str(),
++            "srt-live-transmit", &embed) != ROBOTWEAX_SRT_TELEMETRY_OK)
++    {
++        cerr << "ERROR: cannot start SRT Telemetry with '" << cfg.telemetry << "'\n";
++        return EXIT_FAILURE;
++    }
++    unique_ptr<robotweax_srt_telemetry_embed, void (*)(robotweax_srt_telemetry_embed*)> telemetry(embed,
++        robotweax_srt_telemetry_embed_stop);
++    auto attach = [&](SRTSOCKET s, bool issource) { if (srt_getsockstate(s) != SRTS_LISTENING)
++        robotweax_srt_telemetry_embed_attach(embed, s, issource ? ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER
++            : ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER, nullptr, 0); };
++
+     int pollid = srt_epoll_create();
+     if (pollid < 0)
+     {
+@@ -525,6 +545,7 @@ int main(int argc, char** argv)
+                             << src->GetSRTSocket() << endl;
+                         return 1;
+                     }
++                    attach(src->GetSRTSocket(), true);
+                     break;
+                 case UriParser::UDP:
+                 case UriParser::RTP:
+@@ -579,6 +600,7 @@ int main(int argc, char** argv)
+                             << tar->GetSRTSocket() << endl;
+                         return 1;
+                     }
++                    attach(tar->GetSRTSocket(), false);
+                     break;
+                 default:
+                     break;
+@@ -674,6 +696,7 @@ int main(int argc, char** argv)
+                                 srcConnected = true;
+                             else
+                                 tarConnected = true;
++                            attach(ns, issource);
+                         }
+                     }
+                     break;
+@@ -708,6 +731,7 @@ int main(int argc, char** argv)
+                         {
+                             // force re-connection
+                             srt_epoll_remove_usock(pollid, s);
++                            robotweax_srt_telemetry_embed_detach(embed, s);
+                             if (issource)
+                                 src.reset();
+                             else

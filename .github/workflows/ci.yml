@@ -227,6 +227,16 @@ jobs:
           cmake --build consumer
           ./consumer/robotweax_srt_telemetry_package_consumer
           ./consumer/robotweax_srt_telemetry_adapter_package_consumer
+          ./consumer/robotweax_srt_telemetry_embed_package_consumer
+
+      # Reference integration: Haivision srt-live-transmit with SRT Telemetry,
+      # built from the installed package; gate of 30 host lines.
+      - name: srt-live-transmit integration (host lines, build, end to end)
+        if: matrix.provider == 'haivision-srt'
+        run: |
+          python3 tools/count_host_lines.py integrations/srt-live-transmit/srt-live-transmit-v1.5.5.patch --max 30
+          integrations/srt-live-transmit/build.sh provider-src "${{ runner.temp }}/install" slt-build
+          python3 tools/srt_live_transmit_e2e.py --slt slt-build/srt-live-transmit
 
       # Observability end to end: the demo exports to Prometheus and, via
       # OTLP, to an OpenTelemetry Collector; the alert rules fire for the
