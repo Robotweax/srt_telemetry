@@ -1,6 +1,6 @@
 # Public SRT adapter qualification matrix
 
-Updated: 2026-09-27
+Updated: 2026-10-04
 
 This matrix separates build-time compatibility from live behavioral
 qualification. A pass in the first three columns does not authorize production
@@ -11,6 +11,7 @@ capabilities by itself.
 | Robotweax SRT `v0.2.6` | `50cba37bc89f423ee7c0a292c3c3eae71b5fc7f9`; release tag | Pass | Pass | Pass on macOS and Linux ARM64 | Pass against Haivision 1.5.5 in both caller/listener roles | Release-specific candidate; pressure limits retained |
 | Robotweax SRT `v0.2.0-11-ge3d61f7` | `e3d61f77e852001224b6586c63bcff46a3200223`; clean local clone | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Fabric-pinned interop candidate |
 | Robotweax SRT `v0.2.0-4-g271f832` | `271f832ef4bb96fab13777a313a0af9d7e20af7e`; clean local clone | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Interop candidate |
+| Haivision SRT v1.5.7 | `899348d8318eb9a3c5a5b6ec43c4a1114288773a`; tag `v1.5.7`; generated installed headers | Pass | Pass | Pass (Linux x86-64, 2026-10-04) | Pass against Robotweax SRT main in CI | Pinned CI provider since 2026-10-04 |
 | Haivision SRT v1.5.5 | `b6b4ae990daa8193625a4ddeaeaed03023b23125`; tag `v1.5.5`; generated installed headers | Pass | Pass | Pass | Pass, nine-field Live/Message IPv4 subset | Interop candidate |
 
 The [0.2.6 record](../../qualification/results/2026-09-27-srt-026/README.md)

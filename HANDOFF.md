@@ -32,7 +32,8 @@ embed: at most 30 lines of host code per integration.
 Boundaries, decided by the maintainer on 2026-10-01:
 
 - MIT licence; the built-in web UI ships in 1.0.
-- One binary works with both providers: Haivision SRT (v1.5.5 pinned) and
+- One binary works with both providers: Haivision SRT (v1.5.7 pinned since
+  2026-10-04, matching the Network Lab's interop reference; v1.5.5 before) and
   Robotweax SRT. The host links its own SRT library; the SDK never loads a
   second one. Everything goes through the public SRT API, injected by the
   host.
@@ -95,7 +96,7 @@ Component map (each with its doc):
 | `adapters/public_srt/` | `public_srt_adapter` (statistics session, connection monitor) and `embed` (one-call embedding) | [adapter](docs/architecture/public-srt-adapter.md), [connection monitor](docs/architecture/connection-monitor.md), [embedding](docs/architecture/embedding.md) |
 | `server/` | `http`: HTTP/WebSocket server, built-in UI (`server/ui`), OTLP exporter | [HTTP server](docs/architecture/http-server.md), [web UI](docs/architecture/web-ui.md), [OTLP](docs/architecture/otlp.md) |
 | `observability/` | Prometheus alert rules + tests, Grafana dashboards, Collector example | [alerting](docs/architecture/alerting.md) |
-| `integrations/srt-live-transmit/` | Patch for Haivision v1.5.5, `build.sh` | [README](integrations/srt-live-transmit/README.md) |
+| `integrations/srt-live-transmit/` | Patch for Haivision v1.5.7, `build.sh` | [README](integrations/srt-live-transmit/README.md) |
 | `adapters/public_srt/tests/` | Live tests, fault lab, dashboard demo, impairing relay | [fault lab](docs/qualification/fault-lab.md) |
 
 Results that hold today: the fault-lab gate passes 12 of 12 fault classes per
@@ -193,8 +194,8 @@ cmake --build build && ctest --test-dir build --output-on-failure
 **Providers** (as CI builds them):
 
 ```sh
-# Haivision SRT v1.5.5 (commit b6b4ae990daa8193625a4ddeaeaed03023b23125)
-git clone https://github.com/Haivision/srt.git hv && git -C hv checkout v1.5.5
+# Haivision SRT v1.5.7 (commit 899348d8318eb9a3c5a5b6ec43c4a1114288773a)
+git clone https://github.com/Haivision/srt.git hv && git -C hv checkout v1.5.7
 cmake -S hv -B hv-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_APPS=OFF \
   -DENABLE_STATIC=OFF -DCMAKE_INSTALL_PREFIX=$PWD/hv-install
 cmake --build hv-build && cmake --install hv-build
@@ -244,7 +245,7 @@ LD_LIBRARY_PATH=$PWD/hv-install/lib python3 tools/observability_e2e.py \
 
 ```sh
 cmake --install build-hv --prefix $PWD/tel-install
-python3 tools/count_host_lines.py integrations/srt-live-transmit/srt-live-transmit-v1.5.5.patch
+python3 tools/count_host_lines.py integrations/srt-live-transmit/srt-live-transmit-v1.5.7.patch
 integrations/srt-live-transmit/build.sh hv $PWD/tel-install slt-build   # applies the patch to hv
 python3 tools/srt_live_transmit_e2e.py --slt slt-build/srt-live-transmit
 ```

@@ -120,6 +120,14 @@ own. Every run passed with these scores:
 | Haivision SRT v1.5.5 | 12/12 | 12/12 | 0 | 3/3 OK | 8/8 / 7/7 |
 | Robotweax SRT | 12/12 | 12/12 | 0 | 3/3 OK | 8/8 / 7/7 |
 
+On 4 October 2026 the Haivision pin moved to v1.5.7 (`899348d8`, the Network
+Lab's interop reference). Two standalone runs on Linux x86-64 in this cloud
+workspace, one under ctest and one direct, both passed with the same scores:
+
+| Provider | Sender right | Receiver right | Wrong OK | Controls | Advice right, sender / receiver |
+| --- | --- | --- | --- | --- | --- |
+| Haivision SRT v1.5.7 | 12/12 | 12/12 | 0 | 3/3 OK | 8/8 / 7/7 |
+
 In one parallel run with an intermediate version of the code, the Haivision
 receiver went Failing (recovery
 headroom low) for 10 s under 2 % random loss, which is repaired loss that
