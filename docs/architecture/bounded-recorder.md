@@ -43,6 +43,9 @@ the [Flight Recorder product repository](https://github.com/Robotweax/srt_flight
 owns capture orchestration, case packaging, redaction, and the case view. It
 reuses this SDK's JSONL contract and incident analyzer.
 
-The SDK recorder is still not a persistent recorder. Streaming sample callbacks,
-protobuf export, an SDK-level trigger API, a bounded disk spool, and persistent
+The [embedding library](embedding.md#recordings) uses one recorder per source
+to write recordings (`jsonl=DIR`): the same export, written as a complete file
+when a socket is detached, when its source is removed and at stop. The SDK
+recorder itself is still not a persistent recorder. Protobuf export, an
+SDK-level trigger API, a bounded streaming disk spool, and persistent
 data-loss accounting remain open.

@@ -57,9 +57,24 @@ static inline void robotweax_srt_telemetry_host_connection_functions(
     config->getsockflag = robotweax_srt_telemetry_host_getsockflag;
 }
 
-/* Fills the provider and the SRT functions of an embed config. */
+/* The version of the srt.h in use, for recording headers: Robotweax SRT's
+ * own release version, else the Haivision SRT version. */
+#if defined(ROBOTWEAX_SRT_VERSION_STRING)
+#define ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER_VERSION ROBOTWEAX_SRT_VERSION_STRING
+#elif defined(SRT_VERSION_STRING)
+#define ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER_VERSION SRT_VERSION_STRING
+#else
+#define ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER_VERSION ""
+#endif
+
+/* Fills the provider, its version and the SRT functions of an embed config. */
 static inline void robotweax_srt_telemetry_host_embed_functions(robotweax_srt_telemetry_embed_config_v1 *config)
 {
+    if (strlen(ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER_VERSION) < sizeof(config->provider_version))
+    {
+        memcpy(config->provider_version, ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER_VERSION,
+               strlen(ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER_VERSION) + 1);
+    }
     config->provider = ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER;
     config->bistats = robotweax_srt_telemetry_host_bistats;
     config->getsockstate = robotweax_srt_telemetry_host_getsockstate;

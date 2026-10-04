@@ -57,7 +57,7 @@ one option for it:
 
 ```text
 [address:]port[,option...]      9810   0.0.0.0:9810   [::]:9810,token_file=/run/srt/token
-off[,option...]                 no HTTP server, e.g. off,otlp=http://collector:4318
+off[,option...]                 no HTTP server, e.g. off,otlp=http://collector:4318 or off,jsonl=/var/lib/srt
 ```
 
 | Option | Meaning |
@@ -70,8 +70,12 @@ off[,option...]                 no HTTP server, e.g. off,otlp=http://collector:4
 | `linger_s=N` | How long a lost connection stays on the dashboard, default 60 s |
 | `stream_id` | Label sources with their SRT stream ID (off by default: stream IDs can identify customers) |
 | `no_ui` | Serve `/metrics` and the API, without the dashboard |
+| `jsonl=DIR` | Write a [recording](#recordings) of every source into this existing directory |
+| `jsonl_s=N` | Seconds of 100 ms samples each recording keeps, default 600, at most 100000 |
+| `provider_revision=REV` | Source revision of the SRT library (e.g. a commit) for the recording header |
 
-A bare port binds 127.0.0.1, `:port` every interface; `off` needs `otlp=`.
+A bare port binds 127.0.0.1, `:port` every interface; `off` needs `otlp=` or
+`jsonl=`.
 Binding every interface without a token answers
 only requests addressed by IP literal, localhost or a `host=` name (DNS
 rebinding protection, see [HTTP server](http-server.md#security)).
@@ -105,6 +109,38 @@ may close it. While a source lingers its statistics are not read
 (`srt_source_up` 0, a `source_failed` event); the
 [alert rules](alerting.md) leave a lost connection to `SRTStreamFailing`.
 
+## Recordings
+
+With `jsonl=DIR` (config `recording_directory`) every source keeps its 100 ms
+samples (raw statistics and deltas) in a [bounded recorder](bounded-recorder.md)
+ring of `jsonl_s` seconds and is written as one file in the recorder's
+versioned JSONL format ([line schema](../../schema/telemetry-jsonl-line.schema.json)),
+the format SRT Doctor and the Flight Recorder read:
+
+- when its socket is detached (a host may exit right after), again when the
+  source is removed after the linger, and at `stop`. Each write replaces the
+  whole file through a synced temporary file and a rename, so a reader never
+  sees a partial recording. A reconnection that continues the source
+  continues its recording;
+- as `srt-telemetry-<stream>-<role>-<UTC start>-<pid>-<embed>-<source>.jsonl`,
+  unique across sources, embeds and processes and sorted by start;
+- with header `streamId` from the `stream` label (`name=`), `flowId` from a
+  `flow` label (else the stream), the role and provider, `providerVersion`
+  from the host's `srt.h` (`robotweax_srt_telemetry_host_embed_functions`),
+  `providerRevision` from `provider_revision=`, `buildProfile` `embed`, and
+  `capacity`/`overwrittenCount` when the ring was full.
+
+Label both ends of one stream with the same `flow` so a sender and a receiver
+recording are recognised as one path. The ring costs 472 bytes per
+sample: 600 s (6,000 samples) is about 2.8 MB per source, allocated when the
+socket is attached. Writes run on the embed thread or the detaching thread
+without the embed's lock; `robotweax_srt_telemetry_embed_recordings` counts
+written and failed recordings (a missing directory or a full disk). The
+directory must exist and be writable at `start`, else `start` returns
+`IO_FAILURE`. Recordings keep only the common v1 statistics, not the
+provider-specific extended fields, and a crashed process loses the samples not
+yet written; a streaming disk spool remains open.
+
 ## Threading
 
 One embed thread polls the connection monitors and ticks the sampler every
@@ -125,7 +161,9 @@ and frees the embed. Call it before `srt_cleanup`.
   functions; attach and detach rules; health OK on a clean stream; `/metrics`
   with every label; connection events; the lost connection, its linger and
   its removal; a reconnection continuing the same sources; a connection
-  attempt that never connects; stop with a socket attached. Clean under the
+  attempt that never connects; stop with a socket attached; recordings
+  written at detach and rewritten at stop, one complete file per source with
+  header metadata and a ring that overwrites and counts its oldest samples. Clean under the
   address sanitizer; under the thread sanitizer the only reports are between
   libsrt's own threads (socket teardown in its garbage collector against
   its receive workers), with no SRT Telemetry frame.
