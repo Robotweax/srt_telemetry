@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
     inputs:
       robotweax_srt_ref:
-        description: Robotweax SRT ref to test the adapter against
+        description: Robotweax SRT ref for the main track (default main)
         default: main
   schedule:
-    # Weekly run catches drift against Robotweax SRT main.
+    # Weekly run also on a quiet week: catches drift against Robotweax SRT main.
     - cron: "41 4 * * 1"
 
 permissions:
@@ -119,13 +119,22 @@ jobs:
           --check qualification/operator-evaluation/five-class-internal-rehearsal-v1/rehearsal-readiness.json
 
   provider:
-    name: Adapter on ${{ matrix.provider }}
+    # Robotweax SRT runs twice: its latest release, the standard reference
+    # (maintainer decision 2026-10-04), and main, so a change on main that
+    # breaks the adapter shows before it is released.
+    name: Adapter on ${{ matrix.provider }} (${{ matrix.track }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        provider: [haivision-srt, robotweax-srt]
+        include:
+          - provider: haivision-srt
+            track: release
+          - provider: robotweax-srt
+            track: release
+          - provider: robotweax-srt
+            track: main
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -141,12 +150,26 @@ jobs:
           repository: Haivision/srt
           ref: ${{ env.HAIVISION_SRT_COMMIT }}
           path: provider-src
+      - name: Resolve the Robotweax SRT ref
+        id: robotweax-ref
+        if: matrix.provider == 'robotweax-srt'
+        run: |
+          if [ "${{ matrix.track }}" = release ]; then
+            # Highest vMAJOR.MINOR.PATCH tag; release candidates never count.
+            ref=$(git ls-remote --tags --refs https://github.com/Robotweax/srt.git \
+              | sed -n 's#.*refs/tags/\(v[0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -1)
+            test -n "$ref"
+          else
+            ref="${{ inputs.robotweax_srt_ref || 'main' }}"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Robotweax SRT ${{ matrix.track }} track: \`$ref\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Check out Robotweax SRT
         if: matrix.provider == 'robotweax-srt'
         uses: actions/checkout@v4
         with:
           repository: Robotweax/srt
-          ref: ${{ inputs.robotweax_srt_ref || 'main' }}
+          ref: ${{ steps.robotweax-ref.outputs.ref }}
           path: provider-src
 
       - name: Record provider revision
@@ -217,7 +240,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fault-lab-${{ matrix.provider }}
+          name: fault-lab-${{ matrix.provider }}-${{ matrix.track }}
           path: fault-lab-${{ matrix.provider }}.txt
           if-no-files-found: ignore
       - name: Install and build the adapter package consumer

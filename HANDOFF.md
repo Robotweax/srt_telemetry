@@ -34,7 +34,8 @@ Boundaries, decided by the maintainer on 2026-10-01:
 - MIT licence; the built-in web UI ships in 1.0.
 - One binary works with both providers: Haivision SRT (v1.5.7 pinned since
   2026-10-04, matching the Network Lab's interop reference; v1.5.5 before) and
-  Robotweax SRT. The host links its own SRT library; the SDK never loads a
+  Robotweax SRT (its latest release is the standard reference, `main` a
+  second CI track; maintainer decision 2026-10-04). The host links its own SRT library; the SDK never loads a
   second one. Everything goes through the public SRT API, injected by the
   host.
 - Cross-endpoint diagnosis (sender and receiver together, root cause across a
@@ -200,8 +201,8 @@ cmake -S hv -B hv-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_APPS=OFF \
   -DENABLE_STATIC=OFF -DCMAKE_INSTALL_PREFIX=$PWD/hv-install
 cmake --build hv-build && cmake --install hv-build
 
-# Robotweax SRT main
-git clone https://github.com/Robotweax/srt.git rw
+# Robotweax SRT, latest release (the standard reference); use main for the main track
+git clone --branch v0.2.7 https://github.com/Robotweax/srt.git rw
 cmake -S rw -B rw-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
   -DROBOTWEAX_SRT_BUILD_TESTS=OFF -DROBOTWEAX_SRT_BUILD_TOOLS=OFF -DROBOTWEAX_SRT_BUILD_BENCHMARKS=OFF
 cmake --build rw-build
@@ -253,7 +254,9 @@ python3 tools/srt_live_transmit_e2e.py --slt slt-build/srt-live-transmit
 CI (`.github/workflows/ci.yml`) runs all of this: the core SDK on Ubuntu
 (GCC, Clang) and macOS with consumers; the evidence validators and the static
 dashboard check; and per provider the adapter, live tests, fault-lab gate,
-package consumers. The Haivision job additionally runs the srt-live-transmit
+package consumers; Robotweax SRT twice, at its latest release tag (the
+standard reference, resolved per run) and at `main`. The Haivision job
+additionally runs the srt-live-transmit
 integration, the alert rule tests and the observability end to end. A run
 takes about 20 minutes.
 
