@@ -170,14 +170,21 @@ the thresholds.
 ## Build and test
 
 Requirements: CMake ≥ 3.21, a C++20 compiler (GCC 13 or Clang), Ninja,
-Python 3, `libssl-dev` for Haivision SRT. `gh api` (REST) works through the
-session proxy; GraphQL commands such as `gh pr create` do not, so PRs are
-opened with `gh api repos/Robotweax/srt_telemetry/pulls --method POST`.
+Python 3, Git, `libssl-dev` for Haivision SRT. CI builds the core on Linux
+and macOS and the adapter, live tests and integrations on Linux only. The
+commands below were run as written from a fresh clone on Linux on 2026-10-04
+(core, both providers, adapter tests, srt-live-transmit end to end).
+
+GitHub access: any GitHub CLI or the REST API works. In the Claude Code cloud
+sessions used so far, only REST calls (`gh api ...`) pass the session proxy:
+PRs were opened with `gh api repos/Robotweax/srt_telemetry/pulls --method POST`
+and merged with `gh api .../pulls/N/merge --method PUT`, and branch deletion
+was refused, so the maintainer deletes merged branches.
 
 **Core SDK** (no provider needed):
 
 ```sh
-python3 -m pip install opentelemetry-proto==1.45.0   # OTLP schema test
+python3 -m pip install opentelemetry-proto==1.45.0   # OTLP schema test; add --break-system-packages on PEP 668 systems
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON -DROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST=ON
 cmake --build build && ctest --test-dir build --output-on-failure
@@ -207,13 +214,16 @@ cmake -S . -B build-hv -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON -DROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER=ON \
   -DROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR=$PWD/hv-install/include \
   -DROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY=$PWD/hv-install/lib/libsrt.so \
-  -DROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER=haivision-srt \
-  -DROBOTWEAX_SRT_TELEMETRY_BROWSER=/path/to/chrome     # optional: UI smoke test
+  -DROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER=haivision-srt
 cmake --build build-hv
 LD_LIBRARY_PATH=$PWD/hv-install/lib ctest --test-dir build-hv --output-on-failure --label-exclude lab
 LD_LIBRARY_PATH=$PWD/hv-install/lib ./build-hv/robotweax_srt_telemetry_public_srt_fault_lab --timeline
-LD_LIBRARY_PATH=$PWD/hv-install/lib ./build-hv/robotweax_srt_telemetry_public_srt_dashboard_demo --port 9810
+LD_LIBRARY_PATH=$PWD/hv-install/lib ./build-hv/robotweax_srt_telemetry_public_srt_dashboard_demo --port 9810  # until Ctrl-C
 ```
+
+The UI smoke test is added when CMake finds Chrome or Chromium; point
+`-DROBOTWEAX_SRT_TELEMETRY_BROWSER=` at one if it is not on the `PATH`. On
+distributions that install into `lib64`, adjust the Haivision paths.
 
 For Robotweax SRT use `rw-install` and `-DROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER=robotweax-srt`.
 Sanitizer builds: add `-DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=thread"`
@@ -230,7 +240,7 @@ LD_LIBRARY_PATH=$PWD/hv-install/lib python3 tools/observability_e2e.py \
   --prometheus /path/prometheus --otelcol /path/otelcol-contrib --grafana-home /path/grafana [--screenshots DIR]
 ```
 
-**srt-live-transmit integration:**
+**srt-live-transmit integration** (`hv` is the Haivision checkout from above):
 
 ```sh
 cmake --install build-hv --prefix $PWD/tel-install
