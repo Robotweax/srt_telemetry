@@ -1,139 +1,258 @@
-# Project handoff (2026-09-27)
+# Project handoff (2026-10-04)
 
-> **Direction change (2026-10-01).** The project now builds the sender and
-> receiver dashboard path described in the [roadmap](docs/roadmap.md): MIT
-> licence, CI on both providers, built-in web UI in 1.0. The incident analyzer
-> and operator-evaluation harness are frozen as reference material for SRT
-> Doctor. Statements below about the diagnostic-value gate describe the state
-> before that change.
+This is the entry point for continuing **Robotweax SRT Telemetry** without the
+earlier conversations. It describes the mission, the working rules, how to
+build and test, where the work stands and what comes next. It was written at
+`main` = `fc4b707` (merge of PR #22). Check GitHub for newer commits and open
+PRs before changing anything; at this snapshot no PR was open.
 
-This is the entry point for continuing **Robotweax SRT Telemetry** on another
-machine. It is a status snapshot, not a replacement for the linked evidence or
-an authorization to broaden provider claims. Start from the current `main` of
-<https://github.com/Robotweax/srt_telemetry>; this snapshot was prepared from
-`8f0ff2adcec19966aae93f43b964668030f9c081` (the merge of PR #7). Check
-GitHub again for newer commits and open PRs before making changes. At the time
-of this snapshot, no Telemetry PR was open.
+## Mission
 
-## Mission and boundaries
+SRT Telemetry is the embeddable library and dashboard stack for observing an
+SRT stream from the **sender or the receiver side**. Every endpoint answers
+"is it fine, and if not, which knob" at a glance: a verdict (OK, Watch, At
+risk, Failing, Unknown), the reason, and the suggested setting change. The
+target is to do this better than Haivision Media Gateway and to be easy to
+embed: at most 30 lines of host code per integration.
 
-Build a telemetry SDK for the **two** supported implementation families:
-qualified Robotweax SRT and Haivision SRT versions. The compatible public SRT
-API is the common baseline. The host chooses and links its own SRT library;
-the SDK must not load a second implementation into the process. Optional
-Robotweax-only observations need a documented, versioned public C API and an
-explicit capability, coordinated with the Robotweax SRT coding agent. An ABI
-match or successful loopback test alone is not a release-qualified metric.
+Boundaries, decided by the maintainer on 2026-10-01:
 
-The SDK currently provides a versioned C ABI, non-destructive lifetime-counter
-deltas, provider/capability and missing-data models, an injected public
-`srt_bistats` adapter, bounded in-memory recording with versioned JSONL export,
-and a deterministic local incident-analysis **candidate**. It is pre-alpha.
-There is no production agent, backend, dashboard, alert engine, or production
-RCA engine in this repository. The separate
-[Flight Recorder](https://github.com/Robotweax/srt_flight_recorder) consumes
-the SDK's JSONL/analyzer rather than defining another metric contract. The
-[Network Lab](https://github.com/Robotweax/srt_network_lab) owns the dedicated
-netem test environment; the
-[SRT protocol](https://github.com/Robotweax/srt) and its
-[knowledge base](https://github.com/Robotweax/srt_knowledge_base) are separate
-repositories.
+- MIT licence; the built-in web UI ships in 1.0.
+- One binary works with both providers: Haivision SRT (v1.5.5 pinned) and
+  Robotweax SRT. The host links its own SRT library; the SDK never loads a
+  second one. Everything goes through the public SRT API, injected by the
+  host.
+- Cross-endpoint diagnosis (sender and receiver together, root cause across a
+  path) belongs to **SRT Doctor**, not here. The incident analyzer and the
+  operator-evaluation harness are frozen reference material
+  ([tools](tools/README.md)).
 
-Read [README](README.md), [roadmap](docs/roadmap.md),
-[provider model](docs/architecture/provider-model.md),
-[field map](docs/architecture/srt-stats-field-map.md), and
-[qualification matrix](docs/qualification/public-srt-adapter-matrix.md)
-before changing contracts or diagnostics.
+The plan, with targets, benchmark against Haivision Media Gateway and the
+health model, is the "SRT Telemetry – Product & Architecture Plan" doc in the
+maintainer's Claude project; the phases are in the [roadmap](docs/roadmap.md).
 
-## Provenance and current evidence
+## Working rules
 
-- PR #6 retained the [Robotweax SRT 0.2.6 qualification candidate](qualification/results/2026-09-27-srt-026/README.md).
-  The exact Robotweax release is `v0.2.6` / `50cba37bc89f423ee7c0a292c3c3eae71b5fc7f9`;
-  the comparison provider is Haivision `v1.5.5` /
-  `b6b4ae990daa8193625a4ddeaeaed03023b23125`. The captured Telemetry
-  revision is `4fdc7cf8f643d52ffcbc7def0dd818462a6ba433`, not today's
-  `main`. The candidate has bidirectional macOS interop and sampling/lifecycle
-  results, 47 Linux CTests against Robotweax, five focused Linux tests against
-  Haivision, and 16 Linux Docker/netem runs. All 16 completed application
-  delivery with payload verification. Run
-  `python3 qualification/results/2026-09-27-srt-026/validate.py` to verify the
-  retained archive and matrix.
-- The Docker/LinuxKit run had 4 MiB UDP receive/send maxima, versus 32 MiB in
-  the earlier dedicated Lab; it is not an identical replay. Receiver-pause
-  runs showed public receive-buffer growth and recovery, but most failed the
-  stricter sender-overlap capture gate. One Haivision-to-Robotweax repetition
-  selected a path-loss hypothesis after one loss/retransmission event despite
-  zero qdisc drops and complete application delivery. Treat this as an
-  investigation question, not proof of physical-path loss.
-- At 1,400 pps with Robotweax sending, three runs reported 585/590/583
-  `sender_drop_packet_delta` events while every application payload arrived.
-  `pktSndDropTotal` counts local send/retransmission-buffer removal under
-  TTL/TLPKTDROP semantics; it does **not** prove network loss or lost
-  application payload. The 2,800-pps follow-up had no sender drops. Preserve
-  the distinct capture-gate result, analyzer result, qdisc observation, and
-  application-delivery result; do not tune thresholds merely to make a gate
-  pass.
-- PR #7 added explicit receiver-pause socket/drop/TTL settings, opt-in
-  per-message sequence verification, and `TRANSFER_FAILED`/completed-message
-  accounting to the incident peer. Its sender completion count means accepted
-  send calls, not remote application reception. See
-  [qualification usage](qualification/README.md).
-- The [operator evaluation](docs/qualification/operator-evaluation.md) has an
-  automated five-class comparison and an [immutable eight-scenario internal
-  rehearsal packet](qualification/operator-evaluation/five-class-internal-rehearsal-v1/README.md).
-  Eleven preflight checks pass, but no genuine participant results exist; the
-  product's diagnostic-value claim remains unproven.
+- **Maintainer:** SRTPioneer. Communication in the chat; the maintainer
+  answers "yes" to merge the current PR and start the next part.
+- **Merging:** only with the maintainer's approval in chat and after CI is
+  green on every job. Squash-merge through the REST API
+  (`PUT /repos/Robotweax/srt_telemetry/pulls/N/merge`, `merge_method` squash).
+  Never push to `main` directly.
+- **One PR per part.** Branch from `origin/main`. Fix every issue found while
+  building a part before starting the next one (maintainer, 2026-10-02).
+- **Independent review before the PR** for every change to the public ABI or
+  a concurrency-heavy component: a separate agent that has not seen the work
+  reviews the diff; fix its findings with tests. Every review so far found
+  real defects.
+- **Attribution (this repository):** commit as
+  `Marc Cymontkowski <117546249+SRTPioneer@users.noreply.github.com>`, with
+  **no** `Co-Authored-By`, `Claude-Session` or "Generated with Claude Code"
+  lines in commits or PR texts. The maintainer asked that Claude does not show
+  up at all. Set the identity in each new environment
+  (`git config user.name/user.email`). The SRT protocol repository has
+  different rules; do not copy them here.
+- **ABI:** C ABI with C++20 implementation. Versioned `_v1` structs with
+  `struct_size`/`abi_version`. No release tag exists yet, so unreleased v1
+  structs may still grow; after the first release they must not.
+- **Docs travel with code:** each component has a page in
+  `docs/architecture/`; `docs/architecture/metric-names.md` is generated by
+  `tools/metric_names_doc.py` (the export tests fail when it is stale); the
+  Grafana dashboards are generated by `observability/grafana/build_dashboards.py`
+  (`tools/check_dashboards.py` fails on hand edits).
+
+## Where the work stands
+
+| Phase | State | Main pieces |
+| --- | --- | --- |
+| 0 Hygiene and scope | Done (PRs #9–#10) | MIT, CI on both providers, consumers, dashboard-first README |
+| 1 Metric model | Done (#11–#12) | 52 of 54 `SRT_TRACEBSTATS` observations, connection monitor |
+| 2 Sampler, windows, health | Done (#13–#17) | 100 ms sampler, 1/10/60 s windows, history, event journal, health engine, fault lab gate |
+| 3 Outputs and dashboards | Parts 1–5a done (#18–#22) | Metric names, Prometheus/JSON, HTTP + WebSocket server, web UI, OTLP, Grafana, alert rules, embedding library, srt-live-transmit |
+| 3 part 5, rest | **Next** | GStreamer `srtsrc`/`srtsink`, Robotweax gateway |
+| 4 Qualification | Open | 24 h soak, reconnect storms, overhead at 1,000 sockets × 10 Hz, encryption/FEC/bonding in the fault lab |
+
+Component map (each with its doc):
+
+| Path | Library / tool | Doc |
+| --- | --- | --- |
+| `sdk/` | `RobotweaxSRTTelemetry::core`: contract, delta engine, metrics, windows, sampler, history, journal, health, renderers (Prometheus, JSON, OTLP) | [sampler](docs/architecture/sampler.md), [health engine](docs/architecture/health-engine.md), [metric names](docs/architecture/metric-names.md) |
+| `adapters/public_srt/` | `public_srt_adapter` (statistics session, connection monitor) and `embed` (one-call embedding) | [adapter](docs/architecture/public-srt-adapter.md), [connection monitor](docs/architecture/connection-monitor.md), [embedding](docs/architecture/embedding.md) |
+| `server/` | `http`: HTTP/WebSocket server, built-in UI (`server/ui`), OTLP exporter | [HTTP server](docs/architecture/http-server.md), [web UI](docs/architecture/web-ui.md), [OTLP](docs/architecture/otlp.md) |
+| `observability/` | Prometheus alert rules + tests, Grafana dashboards, Collector example | [alerting](docs/architecture/alerting.md) |
+| `integrations/srt-live-transmit/` | Patch for Haivision v1.5.5, `build.sh` | [README](integrations/srt-live-transmit/README.md) |
+| `adapters/public_srt/tests/` | Live tests, fault lab, dashboard demo, impairing relay | [fault lab](docs/qualification/fault-lab.md) |
+
+Results that hold today: the fault-lab gate passes 12 of 12 fault classes per
+role on both providers with no wrong OK, and the advice names the right knob
+8/8 (sender) and 7/7 (receiver). The observability end-to-end test shows
+`SRTStreamFailing` with advice for the impaired demo streams and none for the
+clean one. srt-live-transmit integrates in 28 host lines.
 
 ## Next work, in priority order
 
-1. Coordinate a dedicated-Linux-Lab receiver-pause replay in both provider
-   directions. Use the [Lab assignment](docs/qualification/receiver-backpressure-lab-followup.md)
-   and the 0.2.6 candidate as the comparison baseline. Record effective SRT
-   and kernel buffers, actual pause/resume and application send/read timing,
-   payload integrity, qdisc and public counters, raw paired JSONL, analyzer
-   output, binary revisions/hashes, and cleanup evidence. Preserve rejected
-   runs. Examine the single apparent path-loss selection with packet-level
-   evidence before changing the analyzer.
-2. Have a human facilitator conduct at least two genuine, counterbalanced
-   internal operator sessions using the immutable packet and its privacy
-   controls. Store pseudonymous outputs outside the packet; automated harness
-   answers are not human evidence. Only then assess the proposed diagnostic
-   value claim.
-3. Continue exact-version field/profile qualification and controlled sampling
-   budgets before publishing common or Robotweax-specific release
-   capabilities. Open items include reset/reconnect, additional address
-   families and modes, encryption/FEC/groups, long-duration behavior, and
-   representative deployment performance. Coordinate any new protocol signal
-   with the protocol agent and qualify its public C boundary independently.
+1. **GStreamer `srtsrc`/`srtsink`** (part 5): integrate through the embedding
+   library (C, `robotweax/srt_telemetry_embed.h`), within 30 host lines
+   counted by `tools/count_host_lines.py`, with a CI build and an end-to-end
+   test like `tools/srt_live_transmit_e2e.py`. The maintainer paused here on
+   2026-10-03 ("just merge for now"); ask before starting.
+2. **Robotweax gateway** integration (part 5), same gate. Expect many
+   simultaneous connections per role: label them apart (stream name or
+   `stream_id`), because a lingering source is continued by role and labels.
+3. **Phase 4 qualification:** overhead measurement at 1,000 sockets and 10 Hz
+   (target < 1 % of one core), 24 h soak, reconnect storms, encryption, FEC
+   and bonding scenarios in the fault lab.
 
-Do not promote the 0.2.6 candidate to a blanket provider capability, infer
-Haivision 1.5.7 behavior from 1.5.5, or claim a human diagnostic improvement
-from the automated rehearsal.
+## Decisions the maintainer still has to make
 
-## Resume on a new machine
+- Who owns the default health thresholds, and which field streams calibrate
+  them (thresholds are uncalibrated defaults today).
+- Formal confirmation of the SRT Doctor boundary.
+- Whether a verdict should stay red for a while after a reconnection (today it
+  returns to OK about 100 ms after the connection comes back, because the
+  indicator states from before the loss are kept).
+
+## Known issues and follow-ups
+
+- MAXBW advice overshoots (about 1.27–1.29 MB/s suggested for a 5.3 Mbit/s
+  stream): libsrt counts sender drops while packets still go out, so the
+  offered rate reads high. Needs calibration.
+- While a lost connection lingers on the dashboard, `srt_source_up` is 0 and
+  the journal has one "source failed: provider sample failure" event. The
+  alert rules account for it.
+- A lingering source is continued by the next attach with the same role and
+  labels; hosts with several connections per role must label them apart.
+- Public targets declare `cxx_std_20` as a usage requirement, so C++ hosts
+  compile as C++20 (srt-live-transmit included). Harmless with GCC 13;
+  unnecessary for a C ABI.
+- OTLP exporter: no TLS by design (send to a local Collector), `Retry-After`
+  is ignored.
+- Sanitizer runs are local only; there is no sanitizer job in CI. Under TSan
+  libsrt reports races between its own threads (no SRT Telemetry frame).
+- Health engine limits (low): trickle streams with gaps above the latency
+  never get a knob for drops; a wildcard over a two-label public suffix
+  (`*.co.uk`) passes `frame_ancestors`.
+- The browser token for the WebSocket feed travels in `?token=` (browser
+  limitation; documented).
+- The remote branch `phase3/srt-live-transmit` is merged and can be deleted;
+  the session proxy refuses branch deletion, so the maintainer deletes merged
+  branches in the GitHub UI.
+
+## Build and test
+
+Requirements: CMake ≥ 3.21, a C++20 compiler (GCC 13 or Clang), Ninja,
+Python 3, `libssl-dev` for Haivision SRT. `gh api` (REST) works through the
+session proxy; GraphQL commands such as `gh pr create` do not, so PRs are
+opened with `gh api repos/Robotweax/srt_telemetry/pulls --method POST`.
+
+**Core SDK** (no provider needed):
 
 ```sh
-git clone https://github.com/Robotweax/srt_telemetry.git
-cd srt_telemetry
-git fetch origin
-git status --short --branch
-gh pr list --repo Robotweax/srt_telemetry --state open
-
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-  -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-python3 qualification/results/2026-09-27-srt-026/validate.py
-python3 tools/operator_evaluation.py rehearsal \
-  --study qualification/operator-evaluation/five-class-internal-rehearsal-v1/study.json \
-  --check qualification/operator-evaluation/five-class-internal-rehearsal-v1/rehearsal-readiness.json
+python3 -m pip install opentelemetry-proto==1.45.0   # OTLP schema test
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON -DROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST=ON
+cmake --build build && ctest --test-dir build --output-on-failure
 ```
 
-These commands need Git, CMake, a C/C++ toolchain, Python 3, and `gh` for the
-PR query. The basic SDK tests do not require a provider installation. For the
-optional public adapter and live provider tests, use the exact header/library
-options and host-selected implementation described in [README](README.md) and
-[qualification instructions](qualification/README.md). Live tests need local
-UDP socket permission. A Docker/netem replay additionally needs an authorized
-Linux environment with namespace/qdisc privileges; do not assume that a
-checkout or a temporary path from the original machine exists on the new one.
+**Providers** (as CI builds them):
+
+```sh
+# Haivision SRT v1.5.5 (commit b6b4ae990daa8193625a4ddeaeaed03023b23125)
+git clone https://github.com/Haivision/srt.git hv && git -C hv checkout v1.5.5
+cmake -S hv -B hv-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_APPS=OFF \
+  -DENABLE_STATIC=OFF -DCMAKE_INSTALL_PREFIX=$PWD/hv-install
+cmake --build hv-build && cmake --install hv-build
+
+# Robotweax SRT main
+git clone https://github.com/Robotweax/srt.git rw
+cmake -S rw -B rw-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+  -DROBOTWEAX_SRT_BUILD_TESTS=OFF -DROBOTWEAX_SRT_BUILD_TOOLS=OFF -DROBOTWEAX_SRT_BUILD_BENCHMARKS=OFF
+cmake --build rw-build
+mkdir -p rw-install/lib && cp -a rw/include rw-install/ && cp -a rw-build/librobotweax-srt.so* rw-install/lib/
+```
+
+**Adapter, live tests, embedding, demo** (per provider):
+
+```sh
+cmake -S . -B build-hv -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON -DROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER=ON \
+  -DROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR=$PWD/hv-install/include \
+  -DROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY=$PWD/hv-install/lib/libsrt.so \
+  -DROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER=haivision-srt \
+  -DROBOTWEAX_SRT_TELEMETRY_BROWSER=/path/to/chrome     # optional: UI smoke test
+cmake --build build-hv
+LD_LIBRARY_PATH=$PWD/hv-install/lib ctest --test-dir build-hv --output-on-failure --label-exclude lab
+LD_LIBRARY_PATH=$PWD/hv-install/lib ./build-hv/robotweax_srt_telemetry_public_srt_fault_lab --timeline
+LD_LIBRARY_PATH=$PWD/hv-install/lib ./build-hv/robotweax_srt_telemetry_public_srt_dashboard_demo --port 9810
+```
+
+For Robotweax SRT use `rw-install` and `-DROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER=robotweax-srt`.
+Sanitizer builds: add `-DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=thread"`
+(or `address,undefined`) with GCC.
+
+**Observability end to end** (Prometheus 3.6.0, otelcol-contrib 0.135.0,
+Grafana 12.1.1 from their release tarballs; URLs in `.github/workflows/ci.yml`):
+
+```sh
+cd observability/prometheus && promtool test rules srt-telemetry-alerts.test.yml && cd -
+python3 tools/check_dashboards.py
+LD_LIBRARY_PATH=$PWD/hv-install/lib python3 tools/observability_e2e.py \
+  --demo build-hv/robotweax_srt_telemetry_public_srt_dashboard_demo \
+  --prometheus /path/prometheus --otelcol /path/otelcol-contrib --grafana-home /path/grafana [--screenshots DIR]
+```
+
+**srt-live-transmit integration:**
+
+```sh
+cmake --install build-hv --prefix $PWD/tel-install
+python3 tools/count_host_lines.py integrations/srt-live-transmit/srt-live-transmit-v1.5.5.patch
+integrations/srt-live-transmit/build.sh hv $PWD/tel-install slt-build   # applies the patch to hv
+python3 tools/srt_live_transmit_e2e.py --slt slt-build/srt-live-transmit
+```
+
+CI (`.github/workflows/ci.yml`) runs all of this: the core SDK on Ubuntu
+(GCC, Clang) and macOS with consumers; the evidence validators and the static
+dashboard check; and per provider the adapter, live tests, fault-lab gate,
+package consumers. The Haivision job additionally runs the srt-live-transmit
+integration, the alert rule tests and the observability end to end. A run
+takes about 20 minutes.
+
+## Pitfalls learned
+
+- Rates in `/metrics` come from the closed 10 s window: a test that expects
+  rates right after a (re)connection must wait up to one window.
+- After changing the embedding library, reinstall the package and relink the
+  host (srt-live-transmit links the static library); a stale install once
+  produced a false failure.
+- `setsid cmd &` inside a background job forks, so `$!` is not the program's
+  PID. Find leftovers by name (`pgrep -x srt-live-transm`), and never `pkill`
+  with a pattern that also matches the shell's own command line.
+- The fault lab and the dashboard demo impair traffic with an in-process
+  relay (`impairing_relay.hpp`), not netem; plain loopback runs have about
+  0.1 ms RTT.
+- The fault lab on a 2-vCPU machine can starve threads when both providers
+  run in parallel; CI runs providers on separate machines.
+- Through an OpenTelemetry Collector, window and counter metric names differ
+  from the native Prometheus names; health and source names do not. The
+  dashboards use native names; the stream alerts work on both paths.
+- Grafana under Playwright needs `locale="en-US"` (and `LANG=en_US.UTF-8`
+  for the server) or it fails on "Invalid language tag".
+
+## Earlier evidence that still applies
+
+The 2026-09-27 qualification work remains the evidence base:
+
+- [Robotweax SRT 0.2.6 qualification candidate](qualification/results/2026-09-27-srt-026/README.md)
+  (`v0.2.6` / `50cba37`, compared with Haivision `v1.5.5` / `b6b4ae9`); verify
+  with `python3 qualification/results/2026-09-27-srt-026/validate.py`. Do not
+  promote it to a blanket provider capability or infer Haivision 1.5.7
+  behaviour from 1.5.5.
+- `pktSndDropTotal` counts local send-buffer removal under TTL/TLPKTDROP; it
+  does not prove network loss or lost application payload
+  ([field map](docs/architecture/srt-stats-field-map.md#sender-drop-interpretation)).
+- Netem-based lab runs belong to the
+  [Network Lab](https://github.com/Robotweax/srt_network_lab); open follow-ups
+  are in [docs/qualification](docs/qualification/).
+- Related repositories: [SRT protocol](https://github.com/Robotweax/srt),
+  [Flight Recorder](https://github.com/Robotweax/srt_flight_recorder) (consumes
+  the JSONL export), [knowledge base](https://github.com/Robotweax/srt_knowledge_base).
