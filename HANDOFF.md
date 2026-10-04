@@ -1,10 +1,24 @@
 # Project handoff (2026-10-04)
 
-This is the entry point for continuing **Robotweax SRT Telemetry** without the
-earlier conversations. It describes the mission, the working rules, how to
-build and test, where the work stands and what comes next. It was written at
-`main` = `fc4b707` (merge of PR #22). Check GitHub for newer commits and open
-PRs before changing anything; at this snapshot no PR was open.
+This is the entry point for continuing **Robotweax SRT Telemetry** on any
+machine, from a checkout of this repository alone. It describes the mission,
+the working rules, how to build and test, where the work stands and what
+comes next. It was written at `main` = `fc4b707` (merge of PR #22). Check
+GitHub for newer commits and open PRs before changing anything.
+
+Everything needed is in the repository. Read in this order:
+
+1. this file;
+2. [product plan](docs/handoff-2026-10-04/product-plan.md): goal, 1.0
+   targets, benchmark against Haivision, health model, planned dashboards
+   and alerts, risks, each marked with what is built;
+3. [decision log](docs/handoff-2026-10-04/decision-log.md): why the code is
+   the way it is, per phase and part, including review findings;
+4. the [roadmap](docs/roadmap.md) and the architecture page of the component
+   you will change (`docs/architecture/`).
+
+Earlier working notes also exist in the maintainer's Claude project; they are
+superseded by these files and not needed to continue.
 
 ## Mission
 
@@ -27,9 +41,9 @@ Boundaries, decided by the maintainer on 2026-10-01:
   operator-evaluation harness are frozen reference material
   ([tools](tools/README.md)).
 
-The plan, with targets, benchmark against Haivision Media Gateway and the
-health model, is the "SRT Telemetry – Product & Architecture Plan" doc in the
-maintainer's Claude project; the phases are in the [roadmap](docs/roadmap.md).
+The plan with targets, benchmark and health model is in
+[product plan](docs/handoff-2026-10-04/product-plan.md); the phases and gates
+are in the [roadmap](docs/roadmap.md).
 
 ## Working rules
 
@@ -50,8 +64,9 @@ maintainer's Claude project; the phases are in the [roadmap](docs/roadmap.md).
   **no** `Co-Authored-By`, `Claude-Session` or "Generated with Claude Code"
   lines in commits or PR texts. The maintainer asked that Claude does not show
   up at all. Set the identity in each new environment
-  (`git config user.name/user.email`). The SRT protocol repository has
-  different rules; do not copy them here.
+  (`git config user.name/user.email`). `.claude/settings.json` turns Claude
+  Code's own attribution off for this repository; keep it. The SRT protocol
+  repository has different rules; do not copy them here.
 - **ABI:** C ABI with C++20 implementation. Versioned `_v1` structs with
   `struct_size`/`abi_version`. No release tag exists yet, so unreleased v1
   structs may still grow; after the first release they must not.
@@ -88,6 +103,20 @@ role on both providers with no wrong OK, and the advice names the right knob
 8/8 (sender) and 7/7 (receiver). The observability end-to-end test shows
 `SRTStreamFailing` with advice for the impaired demo streams and none for the
 clean one. srt-live-transmit integrates in 28 host lines.
+
+## Planned but not built
+
+From the [product plan](docs/handoff-2026-10-04/product-plan.md), still open
+besides the next work below: group (bonding) statistics and panels; a loss
+funnel and a lateness chart for receivers; capacity lines (link bandwidth,
+MAXBW, encoder target) in the sender throughput chart; peer address,
+connection mode and reconnect count as fields; host-supplied encoder target
+and application read rate; a paired sender/receiver view (display only);
+alerts for any unrecovered packet, KM not secured on an encrypted stream and
+reconnect storms; a 10 min ring at 100 ms resolution; reusable web components
+for hosts' own UIs; Go, Python and Rust bindings; FFmpeg and OBS
+integrations; shipping verdicts as Watch only until field streams calibrate
+the thresholds.
 
 ## Next work, in priority order
 
