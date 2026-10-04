@@ -63,15 +63,16 @@ void set(robotweax_srt_telemetry_metric_sample_v1 &s, const robotweax_srt_teleme
 }
 
 robotweax_srt_telemetry_metric_sample_v1 sample(const robotweax_srt_telemetry_endpoint_role role,
-                                                const std::uint64_t now, const Condition &c)
+                                                const std::uint64_t now, const Condition &c,
+                                                const std::uint64_t interval = period)
 {
     robotweax_srt_telemetry_metric_sample_v1 s{};
     s.struct_size = sizeof(s);
     s.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
     s.observed_at_unix_nano = UINT64_C(1'800'000'000) * second + now;
     s.sample_monotonic_nano = now;
-    s.interval_nano = period;
-    const double dt = 0.1;
+    s.interval_nano = interval;
+    const double dt = static_cast<double>(interval) / 1e9;
     const auto rate = [&](const robotweax_srt_telemetry_metric metric, const double per_second)
     { set(s, metric, per_second, per_second * dt); };
     set(s, ROBOTWEAX_SRT_TELEMETRY_METRIC_RTT_SECONDS, c.rtt);
@@ -148,6 +149,15 @@ struct Run
             const auto s = sample(role, now, c);
             static_cast<void>(robotweax_srt_telemetry_health_engine_push(engine, &s, &status));
         }
+        return status.verdict;
+    }
+
+    /* One sample covering `interval` (another sampling rate). */
+    Verdict feed_once(const Condition &c, const std::uint64_t interval)
+    {
+        now += interval;
+        const auto s = sample(role, now, c, interval);
+        static_cast<void>(robotweax_srt_telemetry_health_engine_push(engine, &s, &status));
         return status.verdict;
     }
 
@@ -550,6 +560,7 @@ void test_sender_classes()
                     ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION, 3);
         Condition congested = clean;
         congested.retransmitted_per_second = 100;
+        congested.sender_loss_per_second = 100; /* the repairs follow loss reports */
         congested.sender_drops_per_second = 30;
         congested.send_buffer_ratio = 0.9;
         after_stall(congested, "lasting heavy retransmission: bitrate", ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE, 8);
@@ -1170,6 +1181,242 @@ void test_sampler_health()
 
 } // namespace
 
+/* Faults whose ground truth the SRT Network Lab knows (srt_telemetry#27):
+ * a deep queue below the stream bitrate, and an outage, each with the
+ * metrics the lab recorded (5 Mbit/s, 2 s latency, 2 ms base RTT). */
+void test_lab_ground_truth()
+{
+    Condition clean;
+    clean.packets_per_second = 470;
+    clean.rtt = 0.002;
+    clean.latency = 2.0;
+    clean.send_buffer_ratio = 0.01;
+    const auto bad = [](const Verdict v) { return v >= ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH; };
+    /* A 3 Mbit/s path with a deep queue: RTT climbs about 430 ms/s, no
+     * loss, the receiver gets 270 packets/s, its buffer drains. */
+    const auto queue = [&](Run &run, Condition c, const bool receiver, bool &latency_advised)
+    {
+        latency_advised = false;
+        for (int i = 0; i < 90; ++i)
+        {
+            c.rtt = 0.002 + 0.043 * (i + 1);
+            if (receiver)
+            {
+                c.packets_per_second = 270;
+                c.headroom = std::max(0.0, 1.0 - 0.0215 * (i + 1));
+            }
+            else
+            {
+                c.send_buffer_ratio = std::min(0.95, 0.01 + 0.012 * (i + 1));
+            }
+            const auto verdict = run.feed(c, 0.1);
+            /* After the first 4 s (the lab's detection grace): never latency. */
+            if (i >= 40 && bad(verdict) && run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY)
+            {
+                latency_advised = true;
+            }
+        }
+    };
+    {
+        Run run(RECEIVER);
+        run.feed(clean, 6);
+        bool latency = false;
+        Condition c = clean;
+        c.capacity_bps = 2.95e6;
+        queue(run, c, true, latency);
+        check(bad(run.status.verdict) && run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE &&
+                  run.status.knob_direction == ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_DECREASE,
+              "deep queue, receiver: lower bitrate, got " + describe(run.status));
+        check(run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED,
+              "deep queue, receiver: path congested, got " + describe(run.status));
+        /* 270 packets/s of 1316 bytes is 2.84 Mbit/s; 80 % of it. */
+        check(run.status.suggested_value > 2.0e6 && run.status.suggested_value < 2.5e6,
+              "deep queue, receiver: below what the path delivers, got " + describe(run.status));
+        check(!latency, "deep queue, receiver: never more latency");
+        /* The queue empties: the late packets arrive at once, some too
+         * late (drops, belated repairs). That is the queue's aftermath. */
+        Condition after = clean;
+        after.rtt = 0.8;
+        after.headroom = 0.1;
+        after.drops_per_second = 200;
+        after.belated_per_second = 270;
+        after.loss_per_second = 300;
+        bool aftermath_latency = false;
+        for (int i = 0; i < 20; ++i)
+        {
+            run.feed(after, 0.1);
+            aftermath_latency = aftermath_latency || run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY;
+        }
+        check(!aftermath_latency && run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE,
+              "deep queue aftermath, receiver: still the bitrate, got " + describe(run.status));
+    }
+    {
+        Run run(SENDER);
+        run.feed(clean, 6);
+        bool latency = false;
+        queue(run, clean, false, latency);
+        check(bad(run.status.verdict) && run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE &&
+                  run.status.knob_direction == ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_DECREASE,
+              "deep queue, sender without an estimate: lower bitrate, got " + describe(run.status));
+        check(!latency, "deep queue, sender: never more latency");
+    }
+    {
+        Run run(SENDER);
+        Condition c = clean;
+        c.capacity_bps = 2.9e6;
+        run.feed(c, 6);
+        bool latency = false;
+        queue(run, c, false, latency);
+        check(run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE && run.status.suggested_value > 2.0e6 &&
+                  run.status.suggested_value < 2.5e6,
+              "deep queue, sender with an estimate: lower bitrate below it, got " + describe(run.status));
+    }
+    {
+        /* Outage seen from the sender: data keeps going into the void, the
+         * buffer fills, the timers re-send about 10 % without any loss
+         * report; when the path returns one burst of reports and repairs. */
+        Run run(SENDER);
+        run.feed(clean, 6);
+        bool bitrate = false;
+        const auto watch = [&](const Condition &c, const double seconds)
+        {
+            for (int i = 0; i < static_cast<int>(seconds * 10); ++i)
+            {
+                run.feed(c, 0.1);
+                /* Nothing to change for an outage: no knob at all. */
+                bitrate = bitrate || run.status.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE;
+                if (run.status.knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE)
+                {
+                    std::cerr << "  outage read: " << describe(run.status) << "\n";
+                }
+            }
+        };
+        Condition outage = clean;
+        outage.retransmitted_per_second = 45;
+        for (int i = 0; i < 21; ++i)
+        {
+            outage.send_buffer_ratio = 0.045 * (i + 1);
+            watch(outage, 0.1);
+        }
+        Condition burst = clean;
+        burst.send_buffer_ratio = 0.01;
+        burst.retransmitted_per_second = 10220;
+        burst.sender_loss_per_second = 10190;
+        watch(burst, 0.1);
+        watch(clean, 15);
+        check(!bitrate, "outage, sender: no knob, got " + describe(run.status));
+    }
+    {
+        /* Controls for the queue signature: an RTT step (route change) is
+         * a latency matter; a slow RTT rise with ample latency is OK. */
+        Condition base;
+        base.rtt = 0.02;
+        base.latency = 0.2;
+        Run step(RECEIVER);
+        step.feed(base, 6);
+        Condition high = base;
+        high.rtt = 0.14;
+        step.feed(high, 8);
+        check(step.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY,
+              "RTT step: latency, got " + describe(step.status));
+        /* Controls with a latency short enough that the advice shows: what
+         * is not a filling queue must keep the latency advice. */
+        const auto latency_kept = [&](Run &run, const std::string &what)
+        {
+            check(run.status.verdict >= ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+                      run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY &&
+                      run.status.reason != ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED,
+                  what + ": latency, not a congested path, got " + describe(run.status));
+        };
+        Condition tight = base;
+        tight.latency = 0.2;
+        {
+            /* A slow drift: 4 ms/s, 12 ms in 3 s, up to RTT 0.08 s. */
+            Run drift(RECEIVER);
+            drift.feed(tight, 6);
+            Condition rising = tight;
+            for (int i = 0; i < 150; ++i)
+            {
+                rising.rtt = 0.02 + 0.0004 * (i + 1);
+                drift.feed(rising, 0.1);
+            }
+            latency_kept(drift, "slow RTT drift");
+        }
+        {
+            /* A staircase: RTT steps 0.02 -> 0.05 -> 0.08 -> 0.11 over three
+             * samples (libsrt's smoothing of a route change), then stays. */
+            Run stair(RECEIVER);
+            stair.feed(tight, 6);
+            Condition c = tight;
+            for (const double rtt : {0.05, 0.08, 0.11})
+            {
+                c.rtt = rtt;
+                stair.feed(c, 0.1);
+            }
+            stair.feed(c, 6);
+            latency_kept(stair, "RTT staircase");
+        }
+        {
+            /* Jitter: RTT alternates between 0.03 and 0.09. */
+            Run jitter(RECEIVER);
+            jitter.feed(tight, 6);
+            Condition c = tight;
+            for (int i = 0; i < 80; ++i)
+            {
+                c.rtt = i % 2 == 0 ? 0.09 : 0.03;
+                jitter.feed(c, 0.1);
+            }
+            latency_kept(jitter, "RTT jitter");
+        }
+    }
+    {
+        /* The deep queue sampled once per second (the signature needs only
+         * three RTT samples): still a lower bitrate. */
+        Run run(SENDER);
+        Condition c = clean;
+        c.capacity_bps = 2.9e6;
+        for (int i = 0; i < 6; ++i)
+        {
+            run.feed_once(c, second);
+        }
+        for (int i = 0; i < 9; ++i)
+        {
+            c.rtt = 0.002 + 0.43 * (i + 1);
+            c.send_buffer_ratio = std::min(0.95, 0.01 + 0.12 * (i + 1));
+            run.feed_once(c, second);
+        }
+        check(run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE &&
+                  run.status.knob_direction == ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_DECREASE,
+              "deep queue at 1 s sampling: lower bitrate, got " + describe(run.status));
+    }
+    {
+        /* Heavy retransmission with loss reports in only one of three
+         * samples (bursty loss) is still congestion, not an outage: with
+         * and without drops, the bitrate. */
+        for (const double drops : {0.0, 30.0})
+        {
+            Run run(SENDER);
+            run.feed(clean, 6);
+            Condition c = clean;
+            c.retransmitted_per_second = 100;
+            c.sender_drops_per_second = drops;
+            c.send_buffer_ratio = 0.9;
+            for (int i = 0; i < 120; ++i)
+            {
+                c.sender_loss_per_second = i % 3 == 0 ? 300 : 0;
+                run.feed(c, 0.1);
+            }
+            check(run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_BITRATE &&
+                      run.status.reason != ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED,
+                  std::string("bursty loss reports, ") + (drops > 0 ? "with" : "without") +
+                      " drops: lower bitrate, got " + describe(run.status));
+            const auto &overhead = run.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_OVERHEAD_BUDGET];
+            check(overhead.reason != ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED,
+                  "bursty loss reports: the overhead budget is not an outage's");
+        }
+    }
+}
+
 int main()
 {
     test_api();
@@ -1180,6 +1427,7 @@ int main()
     test_unknown_and_context();
     test_review_cases();
     test_sampler_health();
+    test_lab_ground_truth();
     if (failures != 0)
     {
         std::cerr << failures << " health checks failed\n";

@@ -100,13 +100,14 @@ stall) and a suggested knob with a direction and a value.
 | Reason | Knob | Suggested value |
 | --- | --- | --- |
 | `recovery_headroom_low`, `late_repairs`, `latency_low_for_rtt`, most `unrecovered_loss` | latency, increase | max(1.5 × current, 4 × RTT, or 6 × RTT above 1 % loss), in 10 ms steps |
-| any of the above while the path is congested: `path_congested` | bitrate, decrease | 80 % of what the path delivers (receiver: unique received rate; sender: unique rate × (1 − reported loss share)) |
+| any of the above while the path is congested, or in the aftermath of congestion: `path_congested` | bitrate, decrease | 80 % of what the path delivers (receiver: unique received rate, while a queue fills the rate that arrived meanwhile, at most the capacity estimate; sender: unique rate × (1 − reported loss share), while a queue fills the capacity estimate, or no value without one) |
 | `unrecovered_loss` / `recovery_inefficient` with latency ≥ 8 × RTT and loss above 5 % in most samples | bitrate, decrease | 80 % of the received rate |
 | `undecryptable` | passphrase, check | none |
 | `overhead_budget_high` (relative MAXBW) | OHEADBW, increase | 1.5 × the retransmission share, in 5 % steps, at least 5 % above the current value; above 100 % (SRT's maximum) lower the bitrate instead |
 | `overhead_budget_high` (absolute MAXBW) | MAXBW, increase | 1.25 × the sending rate, in bytes/s as SRTO_MAXBW takes it |
+| `overhead_budget_high` within the count window (or the aftermath, if longer) of an acknowledgement stall: `acknowledgements_stalled` | none: the burst repairs an outage's backlog; the budget did not run short | none |
 | `path_capacity_exceeded` | bitrate, decrease | 70 % of the estimated capacity |
-| `sender_backlog`, `sender_drops` | by evidence, first match: flow window shrank → `peer_read_stall`, receiving application; sending at an absolute MAXBW → MAXBW, increase; above the estimated capacity → bitrate, decrease; latency short for the RTT → latency, increase; retransmissions above 10 % → bitrate, decrease; otherwise `acknowledgements_stalled` | 1.25 × offered rate (sent + dropped) in bytes/s; 70 % of capacity; latency as above; 80 % of the unique rate |
+| `sender_backlog`, `sender_drops` | by evidence, first match: flow window shrank → `peer_read_stall`, receiving application; sending at an absolute MAXBW → MAXBW, increase; above the estimated capacity with loss reports in the gauge window, a rising RTT or congestion, and not in an acknowledgement stall's aftermath → bitrate, decrease; latency short for the RTT → latency, increase; retransmissions above 10 % with loss reports in the gauge window, not in an acknowledgement stall's aftermath → bitrate, decrease; otherwise `acknowledgements_stalled` (retransmissions without loss reports are the sender's timers re-sending what nobody acknowledges; the burst of reports and repairs when the path returns is the outage's aftermath, and it inflates the rate against a stale estimate) | 1.25 × offered rate (sent + dropped) in bytes/s; 70 % of capacity; latency as above; 80 % of the unique rate |
 | `peer_read_stall`, `application_read_stall` | receiving application, check | none |
 | `acknowledgements_stalled` | none: data waits without loss reports, so the path or the peer is not acknowledging (an outage); no setting fixes it | none |
 | receiver drops in the aftermath of a gap in arrivals longer than the latency (an outage), with no other drops in the count window | none: no retransmission recovers that gap | none |
@@ -127,9 +128,11 @@ advised "raise the latency" 10 s after a 6 s outage). So:
   - *Sender.* An acknowledgement stall is a filling send buffer with no other
     cause. It starts after a gauge window without drops, so a buffer still
     draining after drops is not a stall. It continues while that diagnosis
-    holds. Drops in its aftermath are the outage's, including their burst of
-    loss reports and retransmissions. A shrunk flow window or a MAXBW cap
-    still gets its own advice.
+    holds, and while no loss reports arrive (reports mean the path
+    acknowledges again: the burst on its return does not renew the stall).
+    Drops in its aftermath are the outage's, including their burst of loss
+    reports and retransmissions. A shrunk flow window or a MAXBW cap still
+    gets its own advice.
 - **Kept diagnosis.** The diagnosis of new drops is kept while they are
   counted.
   - *Receiver.* The drop indicators keep it until new drops come: after a
@@ -156,12 +159,34 @@ samples over the last 5 minutes, in 10 s buckets. Lossy samples never raise
 it, so a congested path keeps its diagnosis for as long as it lasts. A route
 change without loss is adopted within 5 minutes. The path counts as congested
 when RTT exceeds 2 × baseline + 10 ms and loss above 5 % shows in most samples
-of the count window. A path that queues and
-drops is not helped by more latency, so latency advice turns into a bitrate
-decrease. In the fault lab, a 3 Mbit/s cap on a 5.4 Mbit/s stream raises RTT
+of the count window (a short queue that drops), or when a deep queue fills:
+over the last 3 s RTT rises by more than the baseline and at least 50 ms to
+over 2 × baseline + 10 ms, the rise is spread over the span (at least a
+quarter of it in each half), and RTT falls in at most 30 % of the sample
+pairs, with or without loss. A step in RTT (a route change, also when
+libsrt's smoothing spreads it over two or three samples) puts its whole rise
+into one half; jitter falls as often as it rises; a slow drift does not add
+50 ms in 3 s; none of them counts. The signature needs three RTT samples in
+the span, so it works from 1 s sampling down; equal consecutive values (a
+sampler reading faster than libsrt updates RTT) do not count against it. A
+path that queues is not helped by more latency, so latency advice turns into
+a bitrate decrease. That diagnosis also holds for the congestion's aftermath
+(2 s + latency + max(latency, 1 s) + two sampling intervals, at most the
+count window + max(latency, 1 s)): when the queue empties, the late packets,
+drops and the low headroom they leave are the queue's, not a latency
+problem. In the fault lab, a 3 Mbit/s cap on a 5.4 Mbit/s stream raises RTT
 from 21 to 286 ms with 44 % loss. Both ends switch from latency advice to a
 lower bitrate within about 1.5 s of the verdict: 2.5 Mbit/s at the sender,
 2.7 Mbit/s at the receiver.
+
+In the SRT Network Lab (srt_telemetry#27) a kernel-netem cap of 3 Mbit/s with
+a 4000-packet queue fills without loss: RTT climbs about 430 ms per second
+past the 2 s latency. Before the deep-queue signature both ends advised more
+latency (up to 15 s); the fault lab's `bandwidth_cap_deep_queue` reproduces it
+and now gets a lower bitrate at both ends about 3.3 s after onset. The same
+lab's 2 s outage made the sender advise a lower bitrate once the path
+returned (the burst of loss reports and repairs); `outage_2s_long_latency`
+reproduces it, and the sender now reports the stall without a knob.
 
 **What one end cannot know.** When a sender's MAXBW is set too low, the receiver
 sees packets arrive late and headroom fall, and it advises more latency. Only

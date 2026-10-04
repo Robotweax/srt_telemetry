@@ -67,10 +67,15 @@ developer machine.
 | `maxbw_too_low` | sender SRTO_MAXBW 2.8 Mbit/s (reset at fault end) | bad | bad | MAXBW (after the reset: MAXBW or none) / not judged |
 | `outage_long_latency` | blackhole for 6 s with 2.5 s latency (settle 20 s): drops come later after the path returns | bad | bad | none / none |
 | `outage_then_cap` | blackhole for 4 s, then a 3 Mbit/s cap for 30 s | bad | bad | none, then (from 14 s) bitrate / same |
+| `bandwidth_cap_deep_queue` | 3 Mbit/s cap with a 5.3 MB queue (no loss), 2 s latency, 8 s: RTT climbs past the latency (SRT Network Lab, srt_telemetry#27) | bad | bad | bitrate / bitrate |
+| `outage_2s_long_latency` | blackhole for 2 s with 2 s latency (settle 12 s): the receiver repairs everything (SRT Network Lab, srt_telemetry#27) | any | fine | none / not judged |
 | `connection_lost` | blackhole for good | Failing | Failing | — |
 
-Three of the twelve fault classes (loss, bursts, jitter) are false-alarm checks:
-a role passes them by staying OK or Watch. Seven classes require detection.
+Three of the fourteen fault classes (loss, bursts, jitter) are false-alarm
+checks: a role passes them by staying OK or Watch. The last two classes
+before `connection_lost` come from the SRT Network Lab, whose cases know their
+injected fault: there both ends advised more latency for a deep queue below
+the bitrate, and the sender advised a lower bitrate after a short outage.
 
 Where the expectations came from:
 - **Verdict sets:** written from what each end can observe before the first
@@ -103,7 +108,8 @@ For each role:
   judged.
 
 **Gate:** for each role:
-- at least 90 % of the fault classes right (11 of 12);
+- at least 90 % of the fault classes right (13 of 14; 11 of 12 before the two
+  Network Lab classes);
 - no wrong OK;
 - every control OK;
 - right advice in every fault class that has a knob expectation.
@@ -127,6 +133,17 @@ workspace, one under ctest and one direct, both passed with the same scores:
 | Provider | Sender right | Receiver right | Wrong OK | Controls | Advice right, sender / receiver |
 | --- | --- | --- | --- | --- | --- |
 | Haivision SRT v1.5.7 | 12/12 | 12/12 | 0 | 3/3 OK | 8/8 / 7/7 |
+
+On 4 October 2026, with the two Network Lab classes (srt_telemetry#27): one
+full run per provider on its own, Robotweax SRT at main and Haivision SRT
+v1.5.7, both passed; six repetitions of each new class on the provider where
+it had been flaky during development (Haivision for the outage, Robotweax for
+the deep queue) all passed with the right advice:
+
+| Provider | Sender right | Receiver right | Wrong OK | Controls | Advice right, sender / receiver |
+| --- | --- | --- | --- | --- | --- |
+| Haivision SRT v1.5.7 | 14/14 | 14/14 | 0 | 3/3 OK | 10/10 / 8/8 |
+| Robotweax SRT | 14/14 | 14/14 | 0 | 3/3 OK | 10/10 / 8/8 |
 
 In one parallel run with an intermediate version of the code, the Haivision
 receiver went Failing (recovery
