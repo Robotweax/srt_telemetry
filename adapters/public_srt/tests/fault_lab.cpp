@@ -321,6 +321,40 @@ std::vector<Scenario> scenarios()
         list.push_back(s);
     }
     {
+        /* From the SRT Network Lab (srt_telemetry#27): a cap with a deep
+         * queue, as kernel netem has, fills without loss; RTT climbs past
+         * the latency. A short-path latency problem it is not. */
+        Scenario s;
+        s.name = "bandwidth_cap_deep_queue";
+        s.description = "path capped at 3 Mbit/s for a 5.3 Mbit/s stream with a 5.3 MB queue (no loss), 2 s latency, 8 s";
+        s.latency_ms = 2000;
+        s.fault_seconds = 8;
+        s.fault.forward_rate_bps = 3e6;
+        s.fault.queue_limit_bytes = 4000 * 1316;
+        s.expect_sender = bad;
+        s.expect_receiver = bad;
+        s.knob_sender = {K_BITRATE};
+        s.knob_receiver = {K_BITRATE};
+        list.push_back(s);
+    }
+    {
+        /* From the SRT Network Lab: an outage shorter than the latency.
+         * The sender's backlog nears its drop threshold, then the path
+         * returns with one burst of loss reports and repairs. Nothing to
+         * change; the receiver repairs everything. */
+        Scenario s;
+        s.name = "outage_2s_long_latency";
+        s.description = "path blackholed for 2 s with 2 s latency, then restored";
+        s.latency_ms = 2000;
+        s.fault.blackhole = true;
+        s.fault_seconds = 2;
+        s.settle_seconds = 12;
+        s.expect_sender = {OK, WATCH, AT_RISK, FAILING};
+        s.expect_receiver = fine;
+        s.knob_sender = {K_NONE};
+        list.push_back(s);
+    }
+    {
         Scenario s;
         s.name = "connection_lost";
         s.description = "path blackholed for good: the peers time out";

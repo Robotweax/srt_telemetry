@@ -326,6 +326,12 @@ struct robotweax_srt_telemetry_health_engine
      * The drops when the path returns are the outage's: the backlog is
      * too old to send, and the burst of loss reports is no evidence of a
      * bitrate problem. */
+    /* Last time the path was diagnosed as congested (queueing), and what
+     * it delivered then. Late repairs, drops and low headroom right after
+     * are that episode's aftermath: the bitrate, not the latency. */
+    bool congestion_seen = false;
+    std::uint64_t congestion_last = 0;
+    double congestion_rate = 0;
     bool ack_stall_seen = false;
     std::uint64_t ack_stall_last = 0;
     std::uint64_t last_sender_drop = 0; /* monotonic time of the latest */
@@ -577,13 +583,106 @@ struct Evaluation
     bool has_latency;
     double latency = 0;
     double rtt = 0;
-    /* RTT well above its baseline with sustained loss: the path queues and
-     * drops (congestion). Latency does not fix that; the bitrate does. */
+    /* The path queues: RTT well above its baseline with sustained loss (a
+     * short queue that drops), or RTT climbing steadily without loss (a
+     * deep queue that fills). Latency does not fix that; the bitrate does. */
     bool congested = false;
     double congestion_rate = 0; /* bit/s the path delivers, for advice */
 };
 
 Advice bitrate_decrease(Reason reason, double bits_per_second);
+
+/* How long RTT must climb to count as a queue filling. */
+constexpr std::uint64_t queue_span_nano = 3 * SECOND;
+
+/* A deep queue filling on the path: over queue_span, RTT rises by more
+ * than the baseline (and at least 50 ms) to over twice the baseline, the
+ * rise is spread over the span (at least a quarter of it in each half), and
+ * RTT falls in at most 30 % of the sample pairs. A step (route change, the
+ * fault lab's rtt_step, or a staircase of two or three samples) puts its
+ * whole rise into one half; jitter falls as often as it rises; a slow drift
+ * does not add 50 ms in 3 s. Works from about 1 s sampling down (three RTT
+ * samples), and repeated equal values (libsrt updates RTT less often than a
+ * fine sampler reads it) do not count against it. Returns the bit/s that
+ * arrived meanwhile (receiver: what the path delivers), or a negative value
+ * when the RTT is not climbing. */
+double queue_filling(const Engine &engine, const bool receiver, const std::uint64_t now)
+{
+    if (!engine.has_baseline_rtt || now < queue_span_nano || engine.entries.empty())
+    {
+        return -1.0;
+    }
+    const auto since = now - queue_span_nano;
+    const auto in_span = [&](const Entry &entry)
+    { return entry.monotonic >= since && (entry.available & bit(gauge_metric[G_RTT])) != 0; };
+    /* First pass: the span's ends, falls and what arrived (no allocation). */
+    std::size_t points = 0;
+    std::size_t falls = 0;
+    std::uint64_t start_at = 0;
+    std::uint64_t end_at = 0;
+    double start = 0;
+    double end = 0;
+    double bits = 0;
+    double seconds = 0;
+    for (const auto &entry : engine.entries)
+    {
+        if (!in_span(entry))
+        {
+            continue;
+        }
+        const auto rtt = entry.gauges[G_RTT];
+        if (points == 0)
+        {
+            start = rtt;
+            start_at = entry.monotonic;
+        }
+        else
+        {
+            falls += rtt < end ? 1u : 0u;
+            const auto count = receiver ? C_UNIQUE_RECEIVED_BITS : C_UNIQUE_SENT_BITS;
+            if ((entry.available & bit(count_metric[count])) != 0)
+            {
+                bits += entry.counts[count];
+                seconds += static_cast<double>(entry.interval) / 1e9;
+            }
+        }
+        end = rtt;
+        end_at = entry.monotonic;
+        points += 1;
+    }
+    /* The span the samples cover may miss up to two sampling intervals. */
+    const auto slack = std::max<std::uint64_t>(200'000'000, 2 * engine.entries.back().interval);
+    if (points < 3 || now - start_at + slack < queue_span_nano)
+    {
+        return -1.0;
+    }
+    /* Second pass: the sample nearest the middle of the span. */
+    const auto middle_time = start_at + (end_at - start_at) / 2;
+    std::uint64_t best = std::numeric_limits<std::uint64_t>::max();
+    double middle = start;
+    for (const auto &entry : engine.entries)
+    {
+        if (!in_span(entry) || entry.monotonic == start_at || entry.monotonic == end_at)
+        {
+            continue;
+        }
+        const auto distance =
+            entry.monotonic > middle_time ? entry.monotonic - middle_time : middle_time - entry.monotonic;
+        if (distance < best)
+        {
+            best = distance;
+            middle = entry.gauges[G_RTT];
+        }
+    }
+    const auto baseline = engine.baseline_rtt;
+    const auto rise = end - start;
+    if (rise < std::max(0.05, baseline) || end <= 2.0 * baseline + 0.01 || middle - start < 0.25 * rise ||
+        end - middle < 0.25 * rise || 10 * falls > 3 * (points - 1))
+    {
+        return -1.0;
+    }
+    return seconds > 0 ? bits / seconds : 0.0;
+}
 
 Advice latency_advice(const Evaluation &e, const Reason reason, const double loss_ratio)
 {
@@ -661,6 +760,36 @@ bool sustained_loss(const Engine &engine, const Count c)
         }
     }
     return with_count > 0 && 2 * with_loss >= with_count;
+}
+
+/* Any loss report in the last gauge window. */
+bool recent_loss(const Engine &engine, const Count c, const std::uint64_t now)
+{
+    for (auto it = engine.entries.rbegin(); it != engine.entries.rend(); ++it)
+    {
+        if (it->monotonic + engine.config.gauge_window_nano <= now)
+        {
+            break;
+        }
+        if ((it->available & bit(count_metric[c])) != 0 && it->counts[c] > 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Within the aftermath of the sender's latest acknowledgement stall (an
+ * outage): its stale backlog, the burst of loss reports and the repairs
+ * when the path returns are the outage's, not a setting's. */
+bool after_ack_stall(const Engine &engine, const double latency, const std::uint64_t at_least = 0)
+{
+    if (!engine.ack_stall_seen || engine.entries.empty())
+    {
+        return false;
+    }
+    return engine.last_monotonic - engine.ack_stall_last <=
+           std::max(at_least, aftermath_nano(latency, engine.entries.back().interval));
 }
 
 Advice drop_advice(const Evaluation &e, const Reason fallback)
@@ -872,6 +1001,15 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         }
         const auto value = allowed > 0 ? retransmitted / allowed
                                        : (retransmitted > 0 ? std::numeric_limits<double>::infinity() : 0.0);
+        /* Repairs of an outage's backlog are a burst while the count
+         * window (or the outage's aftermath, if longer) holds them: the
+         * budget did not run short, the path was gone. Graded, but no
+         * setting to change (srt_telemetry#27). */
+        if (after_ack_stall(engine, e.has_latency ? e.latency : 0.0, engine.config.count_window_nano))
+        {
+            advice = {ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED, ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
+                      ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE, 0.0, true};
+        }
         auto raw = graded(e, indicator, std::isfinite(value) ? value : 1e9, advice);
         return raw;
     }
@@ -964,9 +1102,14 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
                       round_up(1.25 * (unique_rate + dropped_rate) / 8.0, 1000.0)};
         }
         else if (capacity > 0 && rate / capacity > engine.thresholds[PATH].watch &&
-                 (e.congested || sum(engine, C_SENDER_LOSS) > 0 ||
-                  (engine.has_baseline_rtt && e.rtt > 1.5 * engine.baseline_rtt + 0.005)))
+                 (e.congested || recent_loss(engine, C_SENDER_LOSS, engine.last_monotonic) ||
+                  (engine.has_baseline_rtt && e.rtt > 1.5 * engine.baseline_rtt + 0.005)) &&
+                 !after_ack_stall(engine, e.has_latency ? e.latency : 0.0))
         {
+            /* Loss reports count only while they come (a capped path keeps
+             * sending them; an outage's burst stays in the count window long
+             * after the path is back). Not in an outage's aftermath: the
+             * repair burst inflates the rate, and the estimate is stale. */
             /* The estimate follows the arrival rate and goes stale when
              * nothing is acknowledged: above it only counts with evidence
              * that the path is busy, either loss reports or an RTT that
@@ -977,8 +1120,15 @@ Raw compute(const Evaluation &e, const std::size_t indicator)
         {
             advice = latency_advice(e, reason, 0.0);
         }
-        else if (unique_rate > 0 && rate - unique_rate > 0.1 * unique_rate)
+        else if (unique_rate > 0 && rate - unique_rate > 0.1 * unique_rate &&
+                 recent_loss(engine, C_SENDER_LOSS, engine.last_monotonic) &&
+                 !after_ack_stall(engine, e.has_latency ? e.latency : 0.0))
         {
+            /* Repairs the receiver asks for. Retransmissions without any
+             * loss report are the sender's timers re-sending what nobody
+             * acknowledges (an outage), and the burst of reports when the
+             * path returns is the outage's aftermath: neither is a bitrate
+             * problem. */
             advice = bitrate_decrease(reason, 0.8 * unique_rate);
             advice.weak = true;
         }
@@ -1439,6 +1589,38 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
                 }
             }
         }
+        if (!e.congested)
+        {
+            const auto delivered = queue_filling(*engine, receiver, now);
+            if (delivered >= 0)
+            {
+                /* No loss yet, so the delivered rate is known only at the
+                 * receiver (what arrives) or from the capacity estimate. A
+                 * sender without one advises a lower bitrate, no value. */
+                e.congested = true;
+                const bool estimate = e.gauges.available[G_LINK_CAPACITY] && e.gauges.samples[G_LINK_CAPACITY] > 0;
+                const double capacity =
+                    estimate ? e.gauges.sum[G_LINK_CAPACITY] / static_cast<double>(e.gauges.samples[G_LINK_CAPACITY])
+                             : 0.0;
+                e.congestion_rate = receiver ? (capacity > 0 ? std::min(delivered, capacity) : delivered) : capacity;
+            }
+        }
+        if (e.congested)
+        {
+            engine->congestion_seen = true;
+            engine->congestion_last = now;
+            engine->congestion_rate = e.congestion_rate;
+        }
+        else if (engine->congestion_seen &&
+                 now - engine->congestion_last <=
+                     std::min(aftermath_nano(e.has_latency ? e.latency : 0.0, sample->interval_nano),
+                              engine->config.count_window_nano +
+                                  static_cast<std::uint64_t>(
+                                      std::max(e.has_latency ? std::clamp(e.latency, 0.0, 3600.0) : 0.0, 1.0) * 1e9)))
+        {
+            e.congested = true;
+            e.congestion_rate = engine->congestion_rate;
+        }
         for (std::size_t i = 0; i < INDICATORS; ++i)
         {
             if (engine->role_applies[i])
@@ -1472,6 +1654,9 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             if (!receiver && backlog.applicable && backlog.available &&
                 grade(BACKLOG, engine->thresholds[BACKLOG], backlog.value) > OK &&
                 backlog.advice.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_ACKNOWLEDGEMENTS_STALLED &&
+                /* Loss reports arrive: the path acknowledges (its aftermath
+                 * does not renew the stall it follows). */
+                !recent_loss(*engine, C_SENDER_LOSS, now) &&
                 (continuing || (!new_drops && drop_free)))
             {
                 engine->ack_stall_seen = true;
