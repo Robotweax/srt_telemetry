@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <random>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -36,9 +37,9 @@ using SteadyClock = std::chrono::steady_clock;
 
 constexpr std::uint16_t default_port = 9810;
 constexpr std::uint32_t default_recording_seconds = 600;
-/* The recorder holds at most 1,000,000 records: 100000 s at 100 ms. */
-constexpr std::uint32_t maximum_recording_seconds = 100'000;
-std::atomic<std::uint64_t> embeds_started{0};
+/* 10 hours: 360,000 samples, 170 MB of ring per source, about 0.7 GB of
+ * JSONL. Longer recordings belong in a streaming spool, not a ring. */
+constexpr std::uint32_t maximum_recording_seconds = 36'000;
 
 std::uint64_t unix_nano()
 {
@@ -196,17 +197,18 @@ struct Endpoint
 };
 
 /* One source's recording: a bounded ring of its samples and the header
- * metadata, written as one JSONL file. Shared so a write can run outside the
- * embed's lock while the source goes on (or is already gone). */
+ * metadata, written as one JSONL file by the writer thread. Shared so a write
+ * can run while the source goes on (or is already gone). */
 struct Recording
 {
     robotweax_srt_telemetry_recorder *recorder = nullptr;
     robotweax_srt_telemetry_endpoint_role role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN;
     std::string stream_id;
     std::string flow_id;
+    std::string directory;
     std::string path;
-    /* Serializes writes of this recording (a detach and the embed thread). */
-    std::mutex write_mutex;
+    /* Written at least once: later versions are written even when empty. */
+    bool written = false;
 
     ~Recording()
     {
@@ -268,13 +270,17 @@ struct robotweax_srt_telemetry_embed
     std::map<std::int32_t, std::unique_ptr<Endpoint>> active;
     std::vector<std::unique_ptr<Endpoint>> retired;
 
-    /* Recordings by source ID, and those due to be written once the lock is
-     * released. Both guarded by mutex; on_sample runs inside a tick, which
-     * the embed thread only calls with mutex held. */
+    /* Recordings by source ID, guarded by mutex; on_sample runs inside a
+     * tick, which the embed thread only calls with mutex held. */
     std::map<std::uint64_t, std::shared_ptr<Recording>> recordings;
-    std::vector<std::shared_ptr<Recording>> pending_writes;
-    /* Distinguishes embeds of one process in recording file names. */
-    std::uint64_t instance = 0;
+
+    /* The writer thread: files are written there, never on the sampling
+     * thread or a host thread. Lock order: mutex, then writer_mutex. */
+    std::mutex writer_mutex;
+    std::condition_variable writer_cv;
+    std::vector<std::shared_ptr<Recording>> writes;
+    bool writer_running = true;
+    std::thread writer;
     std::atomic<std::uint64_t> recordings_written{0};
     std::atomic<std::uint64_t> recordings_failed{0};
 };
@@ -302,44 +308,59 @@ void on_sample(void *user_data, const robotweax_srt_telemetry_source_info_v1 *so
     }
 }
 
-int append_line(void *user_data, const char *line, const std::size_t size)
+/* Streams the export into the file through a fixed buffer, so a write
+ * never holds more than the recorder's snapshot and 64 KiB of text. */
+struct FileSink
 {
+    int fd = -1;
+    std::string buffer;
+    bool failed = false;
+
+    bool flush()
+    {
+        std::size_t done = 0;
+        while (done < buffer.size())
+        {
+            const auto written = ::write(fd, buffer.data() + done, buffer.size() - done);
+            if (written < 0 && errno == EINTR)
+            {
+                continue;
+            }
+            if (written <= 0)
+            {
+                failed = true;
+                return false;
+            }
+            done += static_cast<std::size_t>(written);
+        }
+        buffer.clear();
+        return true;
+    }
+};
+
+constexpr std::size_t sink_buffer_bytes = 64 * 1024;
+
+int file_sink(void *user_data, const char *line, const std::size_t size)
+{
+    auto &sink = *static_cast<FileSink *>(user_data);
     try
     {
-        static_cast<std::string *>(user_data)->append(line, size);
-        return 0;
+        sink.buffer.append(line, size);
     }
     catch (const std::bad_alloc &)
     {
+        sink.failed = true;
         return 1;
     }
+    return sink.buffer.size() >= sink_buffer_bytes && !sink.flush() ? 1 : 0;
 }
 
-bool write_all(const int fd, const std::string &data)
-{
-    std::size_t done = 0;
-    while (done < data.size())
-    {
-        const auto written = ::write(fd, data.data() + done, data.size() - done);
-        if (written < 0 && errno == EINTR)
-        {
-            continue;
-        }
-        if (written <= 0)
-        {
-            return false;
-        }
-        done += static_cast<std::size_t>(written);
-    }
-    return true;
-}
-
-/* Writes one recording as a complete file: a temporary file in the same
- * directory, synced, then renamed over the previous version, so a reader
- * never sees a partial recording. Runs without the embed's lock. */
+/* Writes one recording as a complete file: a new temporary file (mkstemp,
+ * never an existing path or link) in the same directory, synced, renamed
+ * over the previous version and the directory synced, so a reader never
+ * sees a partial recording. Writer thread only, no embed lock. */
 bool write_recording(const Embed &embed, Recording &recording)
 {
-    std::lock_guard lock(recording.write_mutex);
     robotweax_srt_telemetry_jsonl_export_config_v1 config{};
     config.struct_size = sizeof(config);
     config.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
@@ -350,45 +371,80 @@ bool write_recording(const Embed &embed, Recording &recording)
     config.build_profile = "embed";
     config.role = recording.role;
     config.configured_provider = embed.config.provider;
-    std::string text;
-    if (robotweax_srt_telemetry_recorder_export_jsonl(recording.recorder, &config, append_line, &text) !=
-        ROBOTWEAX_SRT_TELEMETRY_OK)
-    {
-        return false;
-    }
-    const auto slash = recording.path.rfind('/');
-    const auto temporary = recording.path.substr(0, slash + 1) + "." + recording.path.substr(slash + 1) + ".tmp";
-    const int fd = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+
+    std::string temporary = recording.directory + "/.srt-telemetry-XXXXXX";
+    const int fd = ::mkstemp(temporary.data());
     if (fd < 0)
     {
         return false;
     }
-    const bool ok = write_all(fd, text) && ::fsync(fd) == 0;
+    FileSink sink;
+    sink.fd = fd;
+    bool ok = ::fchmod(fd, 0644) == 0;
+    try
+    {
+        sink.buffer.reserve(sink_buffer_bytes + 4096);
+    }
+    catch (const std::bad_alloc &)
+    {
+        ok = false;
+    }
+    ok = ok && robotweax_srt_telemetry_recorder_export_jsonl(recording.recorder, &config, file_sink, &sink) ==
+                   ROBOTWEAX_SRT_TELEMETRY_OK;
+    ok = ok && sink.flush() && ::fsync(fd) == 0;
     if (::close(fd) != 0 || !ok || std::rename(temporary.c_str(), recording.path.c_str()) != 0)
     {
         ::unlink(temporary.c_str());
         return false;
     }
+    /* The rename itself survives a power loss only once the directory is
+     * synced. */
+    const int directory = ::open(recording.directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (directory >= 0)
+    {
+        static_cast<void>(::fsync(directory));
+        ::close(directory);
+    }
     return true;
 }
 
-void write_recordings(Embed &embed, const std::vector<std::shared_ptr<Recording>> &recordings)
+void writer_loop(Embed &embed)
 {
-    for (const auto &recording : recordings)
+    std::unique_lock lock(embed.writer_mutex);
+    while (true)
     {
-        if (write_recording(embed, *recording))
+        embed.writer_cv.wait(lock, [&] { return !embed.writes.empty() || !embed.writer_running; });
+        if (embed.writes.empty())
         {
-            embed.recordings_written.fetch_add(1, std::memory_order_relaxed);
+            return; /* stopped and drained */
         }
-        else
+        auto writes = std::move(embed.writes);
+        embed.writes.clear();
+        lock.unlock();
+        for (const auto &recording : writes)
         {
-            embed.recordings_failed.fetch_add(1, std::memory_order_relaxed);
+            /* Nothing to say yet: no file for a source that never sampled
+             * (an attempt that never connected). */
+            if (!recording->written && robotweax_srt_telemetry_recorder_size(recording->recorder) == 0)
+            {
+                continue;
+            }
+            if (write_recording(embed, *recording))
+            {
+                recording->written = true;
+                embed.recordings_written.fetch_add(1, std::memory_order_relaxed);
+            }
+            else
+            {
+                embed.recordings_failed.fetch_add(1, std::memory_order_relaxed);
+            }
         }
+        lock.lock();
     }
 }
 
-/* Queues a source's recording for writing after the lock is released;
- * forget: the source is gone, this is its final version. Lock held. */
+/* Hands a source's recording to the writer; forget: the source is gone and
+ * this is its final version. Mutex held. */
 void queue_recording(Embed &embed, const std::uint64_t source_id, const bool forget)
 {
     const auto found = embed.recordings.find(source_id);
@@ -396,22 +452,35 @@ void queue_recording(Embed &embed, const std::uint64_t source_id, const bool for
     {
         return;
     }
-    try
     {
-        if (std::find(embed.pending_writes.begin(), embed.pending_writes.end(), found->second) ==
-            embed.pending_writes.end())
+        std::lock_guard lock(embed.writer_mutex);
+        try
         {
-            embed.pending_writes.push_back(found->second);
+            if (std::find(embed.writes.begin(), embed.writes.end(), found->second) == embed.writes.end())
+            {
+                embed.writes.push_back(found->second);
+            }
+        }
+        catch (const std::bad_alloc &)
+        {
+            embed.recordings_failed.fetch_add(1, std::memory_order_relaxed);
         }
     }
-    catch (const std::bad_alloc &)
-    {
-        embed.recordings_failed.fetch_add(1, std::memory_order_relaxed);
-    }
+    embed.writer_cv.notify_one();
     if (forget)
     {
         embed.recordings.erase(found);
     }
+}
+
+/* A random file name part, so names are unique across containers and hosts
+ * that share a directory (where PIDs and counters repeat). */
+std::string nonce()
+{
+    std::random_device device;
+    char text[17];
+    std::snprintf(text, sizeof(text), "%08x%08x", device(), device());
+    return text;
 }
 
 /* Starts a recording for a new source. Lock held. */
@@ -432,6 +501,7 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
             return error;
         }
         recording->role = endpoint.role;
+        recording->directory = embed.config.recording_directory;
         for (const auto &[key, value] : endpoint.labels)
         {
             if (key == "stream")
@@ -451,9 +521,8 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
         {
             recording->flow_id = recording->stream_id;
         }
-        /* Unique across sources, embeds in one process and processes over
-         * time, and sortable by start: stream, role, UTC start, process,
-         * embed, source. */
+        /* Sorted by start, then stream and role; the random part makes it
+         * unique. */
         const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         std::tm utc{};
         char started[32] = {};
@@ -461,11 +530,10 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
         {
             std::snprintf(started, sizeof(started), "unknown-time");
         }
-        recording->path = std::string(embed.config.recording_directory) + "/srt-telemetry-" +
-                          file_part(recording->stream_id) + "-" +
+        recording->path = recording->directory + "/srt-telemetry-" + started + "-" + file_part(recording->stream_id) +
+                          "-" +
                           (endpoint.role == ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER ? "sender" : "receiver") +
-                          "-" + started + "-" + std::to_string(::getpid()) + "-" + std::to_string(embed.instance) +
-                          "-" + std::to_string(endpoint.source_id) + ".jsonl";
+                          "-" + nonce() + ".jsonl";
         embed.recordings.emplace(endpoint.source_id, std::move(recording));
     }
     catch (const std::bad_alloc &)
@@ -605,14 +673,6 @@ void run(Embed &embed)
             }
         }
         static_cast<void>(robotweax_srt_telemetry_sampler_tick(embed.sampler, wall, mono));
-        if (!embed.pending_writes.empty())
-        {
-            auto writes = std::move(embed.pending_writes);
-            embed.pending_writes.clear();
-            lock.unlock();
-            write_recordings(embed, writes);
-            lock.lock();
-        }
         /* Fixed cadence; after an overrun, continue from now (the windows
          * flag the gap). */
         next += period;
@@ -702,10 +762,18 @@ void teardown(Embed *embed)
     }
     embed->active.clear();
     embed->retired.clear();
-    /* Final versions: the thread is gone, nothing records any more. */
-    write_recordings(*embed, embed->pending_writes);
-    embed->pending_writes.clear();
     embed->recordings.clear();
+    /* Final versions: the sampling thread is gone and every source was
+     * queued above; the writer drains its queue and ends. */
+    if (embed->writer.joinable())
+    {
+        {
+            std::lock_guard lock(embed->writer_mutex);
+            embed->writer_running = false;
+        }
+        embed->writer_cv.notify_all();
+        embed->writer.join();
+    }
     robotweax_srt_telemetry_sampler_destroy(embed->sampler);
     delete embed;
 }
@@ -872,7 +940,7 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
         !terminated(config->service_name, sizeof(config->service_name)) || !printable(config->service_name) ||
         !terminated(config->name, sizeof(config->name)) || !printable(config->name) ||
         !terminated(config->recording_directory, sizeof(config->recording_directory)) ||
-        config->recording_seconds == 0 || config->recording_seconds > maximum_recording_seconds ||
+        config->recording_seconds > maximum_recording_seconds ||
         config->reserved2 != 0 || !terminated(config->provider_version, sizeof(config->provider_version)) ||
         !printable(config->provider_version) ||
         !terminated(config->provider_revision, sizeof(config->provider_revision)) ||
@@ -900,6 +968,10 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
     {
         created = new Embed;
         created->config = *config;
+        if (created->config.recording_seconds == 0)
+        {
+            created->config.recording_seconds = default_recording_seconds; /* a zeroed config */
+        }
         created->config.labels = nullptr;
         created->config.label_count = 0;
         for (std::size_t i = 0; i < config->label_count; ++i)
@@ -907,7 +979,6 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
             created->labels.emplace_back(config->labels[i].key, config->labels[i].value);
         }
         created->service_name = config->service_name[0] != '\0' ? config->service_name : "srt-telemetry";
-        created->instance = embeds_started.fetch_add(1, std::memory_order_relaxed) + 1;
     }
     catch (const std::bad_alloc &)
     {
@@ -976,6 +1047,10 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
     {
         try
         {
+            if (config->recording_directory[0] != '\0')
+            {
+                created->writer = std::thread([created] { writer_loop(*created); });
+            }
             created->thread = std::thread([created] { run(*created); });
         }
         catch (const std::exception &)
@@ -1166,6 +1241,8 @@ robotweax_srt_telemetry_embed_attach(robotweax_srt_telemetry_embed *embed, const
     }
     catch (const std::bad_alloc &)
     {
+        /* The host is told the socket is not attached: no recording either. */
+        embed->recordings.erase(endpoint->source_id);
         remove(*embed, *endpoint);
         return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
     }
@@ -1179,7 +1256,6 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_detach(ro
     {
         return ROBOTWEAX_SRT_TELEMETRY_OK;
     }
-    std::vector<std::shared_ptr<Recording>> writes;
     {
         std::lock_guard lock(embed->mutex);
         const auto found = embed->active.find(socket);
@@ -1199,8 +1275,8 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_detach(ro
         else
         {
             /* Shown as lost until the linger ends; the socket is not read
-             * again. Its recording so far is written now: a host may exit
-             * soon after detaching. */
+             * again. Its recording so far is written now (by the writer
+             * thread): a host may exit soon after detaching and stop. */
             queue_recording(*embed, endpoint->source_id, false);
             endpoint->retired = true;
             endpoint->context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
@@ -1215,10 +1291,7 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_detach(ro
                 remove(*embed, *endpoint);
             }
         }
-        writes = std::move(embed->pending_writes);
-        embed->pending_writes.clear();
     }
-    write_recordings(*embed, writes);
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 

@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -116,7 +117,7 @@ void test_parse()
     for (const char *bad : {"", "abc", "::1:9810", "[::1]", "[::1]9810", "9810,bogus=1", "9810,token=",
                             "9810,token_file=/nonexistent/x", "65536", "9810,stream_id=1", "host:9810,linger_s=x", "off",
                             "9810,", ",9810", "9810,linger_s=99999999999", "9810,jsonl=",
-                            "9810,jsonl_s=0", "9810,jsonl_s=100001", "9810,provider_revision="})
+                            "9810,jsonl_s=0", "9810,jsonl_s=36001", "9810,provider_revision="})
     {
         auto config = base_config();
         const auto before = config;
@@ -582,16 +583,24 @@ void test_recordings()
           "detach both ends");
     std::uint64_t written = 0;
     std::uint64_t failed = 0;
-    robotweax_srt_telemetry_embed_recordings(embed, &written, &failed);
-    check(written == 2 && failed == 0, "both recordings written at detach");
+    check(wait_until(
+              [&] {
+                  robotweax_srt_telemetry_embed_recordings(embed, &written, &failed);
+                  return written == 2;
+              },
+              5'000) &&
+              failed == 0,
+          "both recordings written soon after detach, by the writer thread");
     const auto files = recordings_in(directory);
     check(files.size() == 2, "one file per source, no temporary files left");
-    std::size_t detached_samples = 0;
+    std::map<std::string, std::size_t> detached_samples;
     for (const auto &file : files)
     {
         const auto name = file.filename().string();
         const auto role = name.find("-sender-") != std::string::npos ? "sender" : "receiver";
-        check(name.rfind("srt-telemetry-cam-9-", 0) == 0 && file.extension() == ".jsonl", "file name: " + name);
+        check(name.rfind("srt-telemetry-20", 0) == 0 && name.find("Z-cam-9-") != std::string::npos &&
+                  file.extension() == ".jsonl",
+              "file name: " + name);
         const auto lines = read_lines(file);
         std::size_t samples = 0;
         check(complete_recording(lines, role, samples), std::string("complete recording: ") + role);
@@ -606,7 +615,7 @@ void test_recordings()
         check(lines.size() > 1 && json_field(lines.back(), counter) != "null" &&
                   std::stoull(json_field(lines.back(), counter)) > 100,
               std::string("traffic recorded: ") + counter);
-        detached_samples = samples;
+        detached_samples[role] = samples;
     }
     stream.stop();
 
@@ -618,7 +627,7 @@ void test_recordings()
     {
         std::size_t samples = 0;
         const auto role = file.filename().string().find("-sender-") != std::string::npos ? "sender" : "receiver";
-        check(complete_recording(read_lines(file), role, samples) && samples >= detached_samples,
+        check(complete_recording(read_lines(file), role, samples) && samples >= detached_samples[role],
               std::string("final recording complete: ") + role);
     }
 
@@ -636,7 +645,9 @@ void test_recordings()
                                                1) == ROBOTWEAX_SRT_TELEMETRY_OK,
           "attach sender to the short ring");
     again.start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    /* 3 s of samples into a 1 s ring: overwrites for certain, also on a
+     * slow machine. */
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     check(robotweax_srt_telemetry_embed_detach(ring, again.sender) == ROBOTWEAX_SRT_TELEMETRY_OK,
           "detach with linger 0 removes and writes");
     again.stop();
@@ -658,6 +669,149 @@ void test_recordings()
     std::filesystem::remove_all(directory);
 }
 
+std::uint64_t recordings_written(robotweax_srt_telemetry_embed *embed, std::uint64_t *failed = nullptr)
+{
+    std::uint64_t written = 0;
+    robotweax_srt_telemetry_embed_recordings(embed, &written, failed);
+    return written;
+}
+
+/* Linger expiry inside the embed thread, a reconnection continuing one
+ * recording, no file for a socket that never sampled, hostile stream labels,
+ * a failing directory and a zeroed config. */
+void test_recording_lifecycle()
+{
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-lifecycle-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+
+    /* A zeroed config (a host that builds it by hand) with recordings off. */
+    robotweax_srt_telemetry_embed_config_v1 zeroed;
+    std::memset(&zeroed, 0, sizeof(zeroed));
+    zeroed.struct_size = sizeof(zeroed);
+    zeroed.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    robotweax_srt_telemetry_host_embed_functions(&zeroed);
+    zeroed.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
+    std::snprintf(zeroed.otlp_endpoint, sizeof(zeroed.otlp_endpoint), "http://127.0.0.1:9");
+    zeroed.otlp_interval_ms = 10'000; /* the exporter's own minimum is 100 ms */
+    robotweax_srt_telemetry_embed *plain = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&zeroed, &plain) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "a zeroed config without recordings starts (recording_seconds 0)");
+    robotweax_srt_telemetry_embed_stop(plain);
+    std::snprintf(zeroed.recording_directory, sizeof(zeroed.recording_directory), "%s", directory.c_str());
+    check(robotweax_srt_telemetry_embed_start(&zeroed, &plain) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "recording_seconds 0 with recordings means the default");
+    robotweax_srt_telemetry_embed_stop(plain);
+
+    auto config = base_config();
+    const auto spec = "off,name=cam-9,jsonl=" + directory.string() + ",linger_s=2";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "lifecycle spec");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "lifecycle start");
+    if (embed == nullptr)
+    {
+        return;
+    }
+    const robotweax_srt_telemetry_label_v1 flow[] = {{"flow", "studio-link"}};
+
+    /* A reconnection during the linger continues the same recording. */
+    Stream first;
+    check(first.open(nullptr) && robotweax_srt_telemetry_embed_attach(embed, first.sender,
+                                                                      ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                                      flow, 1) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "first connection attached");
+    first.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    check(robotweax_srt_telemetry_embed_detach(embed, first.sender) == ROBOTWEAX_SRT_TELEMETRY_OK, "first detached");
+    first.stop();
+    Stream second;
+    check(second.open(nullptr) && robotweax_srt_telemetry_embed_attach(embed, second.sender,
+                                                                       ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                                       flow, 1) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "reconnection attached during the linger");
+    second.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    check(robotweax_srt_telemetry_embed_detach(embed, second.sender) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "reconnection detached");
+    second.stop();
+    /* The linger (2 s) ends inside the embed thread: removal writes again. */
+    check(wait_until([&] { return recordings_written(embed) >= 3; }, 8'000),
+          "two detach writes and one removal write");
+    auto files = recordings_in(directory);
+    check(files.size() == 1, "a continued source is one recording");
+    std::size_t samples = 0;
+    check(files.size() == 1 && complete_recording(read_lines(files[0]), "sender", samples) && samples >= 15,
+          "the recording spans both connections: " + std::to_string(samples));
+
+    /* A socket that never sampled leaves no file. */
+    const auto idle = srt_create_socket();
+    check(robotweax_srt_telemetry_embed_attach(embed, idle, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER, flow, 1) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_detach(embed, idle) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "an unconnected socket attached and detached");
+    srt_close(idle);
+
+    /* A hostile stream label stays a plain file name in the directory. */
+    Stream hostile;
+    const robotweax_srt_telemetry_label_v1 path[] = {{"stream", "../../etc/x\"y\\z"}};
+    check(hostile.open(nullptr) && robotweax_srt_telemetry_embed_attach(embed, hostile.receiver,
+                                                                        ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER,
+                                                                        path, 1) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "attach with a path-like stream label");
+    hostile.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    check(robotweax_srt_telemetry_embed_detach(embed, hostile.receiver) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "hostile detached");
+    hostile.stop();
+    check(wait_until([&] { return recordings_written(embed) >= 4; }, 5'000), "hostile recording written");
+    std::uint64_t failed = 0;
+    static_cast<void>(recordings_written(embed, &failed));
+    check(failed == 0, "no failed writes so far");
+    files = recordings_in(directory);
+    check(files.size() == 2 && std::all_of(files.begin(), files.end(),
+                                           [&](const auto &file) { return file.parent_path() == directory; }),
+          "no file for the idle socket; the hostile one stays inside the directory");
+
+    robotweax_srt_telemetry_embed_stop(embed);
+    std::filesystem::remove_all(directory);
+}
+
+void test_recording_failure_counter()
+{
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-failure-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    auto config = base_config();
+    const auto spec = "off,name=cam-9,jsonl=" + directory.string() + ",linger_s=0";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "failure spec");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "failure start");
+    Stream stream;
+    check(stream.open(nullptr) && robotweax_srt_telemetry_embed_attach(embed, stream.sender,
+                                                                       ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                                       nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "failure attach");
+    stream.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    std::filesystem::remove_all(directory);
+    check(robotweax_srt_telemetry_embed_detach(embed, stream.sender) == ROBOTWEAX_SRT_TELEMETRY_OK, "failure detach");
+    stream.stop();
+    std::uint64_t failed = 0;
+    check(wait_until(
+              [&] {
+                  static_cast<void>(recordings_written(embed, &failed));
+                  return failed == 1;
+              },
+              5'000) &&
+              recordings_written(embed) == 0,
+          "a write into a removed directory is counted as failed");
+    robotweax_srt_telemetry_embed_stop(embed);
+}
+
 } // namespace
 
 int main()
@@ -667,6 +821,8 @@ int main()
     test_parse();
     test_lifecycle();
     test_recordings();
+    test_recording_lifecycle();
+    test_recording_failure_counter();
     srt_cleanup();
     if (failures != 0)
     {

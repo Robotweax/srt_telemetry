@@ -119,14 +119,15 @@ extern "C"
         const robotweax_srt_telemetry_label_v1 *labels;
         size_t label_count;
         /* Recordings (docs/architecture/embedding.md#recordings): when set,
-         * an existing directory. Every source keeps its 100 ms samples in a
-         * ring of recording_seconds and is written there as one versioned
-         * JSONL recording (the bounded recorder's format) when its socket is
-         * detached, when it is removed and at stop. Empty: no recordings. */
+         * an existing, writable directory. Every source keeps its 100 ms
+         * samples in a ring of recording_seconds and is written there as one
+         * versioned JSONL recording (the bounded recorder's format) by a
+         * writer thread when its socket is detached, when it is removed and
+         * at stop, which waits for the writes. Empty: no recordings. */
         char recording_directory[ROBOTWEAX_SRT_TELEMETRY_EMBED_TEXT_CAPACITY];
-        /* Ring length per source, default 600 s, at most 100000 s (the
-         * recorder's 1,000,000 records at 100 ms). The oldest samples are
-         * overwritten and counted in the recording header. */
+        /* Ring length per source, default 600 s (0 also means 600), at most
+         * 36000 s; 472 bytes per sample, allocated at attach. The oldest
+         * samples are overwritten and counted in the recording header. */
         uint32_t recording_seconds;
         uint32_t reserved2;
         /* Recording header metadata, printable ASCII: the SRT library version
@@ -192,9 +193,10 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_sampler *
     robotweax_srt_telemetry_embed_sampler(robotweax_srt_telemetry_embed *embed);
 
-    /* Recordings written and failed so far (either may be NULL). A failure
-     * (directory gone, disk full) loses that recording; it is retried with
-     * the source's next write, if any. */
+    /* Recording file writes done and failed so far (either may be NULL); a
+     * source is written up to three times (detach, removal, stop). A failed
+     * write (directory gone, disk full) leaves the previous version; the
+     * source's next write, if any, tries again. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API void
     robotweax_srt_telemetry_embed_recordings(robotweax_srt_telemetry_embed *embed, uint64_t *written,
                                              uint64_t *failed);
@@ -203,8 +205,10 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API uint16_t
     robotweax_srt_telemetry_embed_http_port(robotweax_srt_telemetry_embed *embed);
 
-    /* Stops everything, forgets every socket (the host still closes them)
-     * and frees the embed. NULL: nothing done. */
+    /* Stops everything, writes every recording's final version and waits
+     * for it, forgets every socket (the host still closes them) and frees
+     * the embed. Must not overlap attach or detach on another thread.
+     * NULL: nothing done. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API void robotweax_srt_telemetry_embed_stop(robotweax_srt_telemetry_embed *embed);
 
 #ifdef __cplusplus

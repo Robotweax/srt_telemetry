@@ -71,7 +71,7 @@ off[,option...]                 no HTTP server, e.g. off,otlp=http://collector:4
 | `stream_id` | Label sources with their SRT stream ID (off by default: stream IDs can identify customers) |
 | `no_ui` | Serve `/metrics` and the API, without the dashboard |
 | `jsonl=DIR` | Write a [recording](#recordings) of every source into this existing directory |
-| `jsonl_s=N` | Seconds of 100 ms samples each recording keeps, default 600, at most 100000 |
+| `jsonl_s=N` | Seconds of 100 ms samples each recording keeps, default 600, at most 36000 |
 | `provider_revision=REV` | Source revision of the SRT library (e.g. a commit) for the recording header |
 
 A bare port binds 127.0.0.1, `:port` every interface; `off` needs `otlp=` or
@@ -117,41 +117,50 @@ ring of `jsonl_s` seconds and is written as one file in the recorder's
 versioned JSONL format ([line schema](../../schema/telemetry-jsonl-line.schema.json)),
 the format SRT Doctor and the Flight Recorder read:
 
-- when its socket is detached (a host may exit right after), again when the
-  source is removed after the linger, and at `stop`. Each write replaces the
-  whole file through a synced temporary file and a rename, so a reader never
-  sees a partial recording. A reconnection that continues the source
-  continues its recording;
-- as `srt-telemetry-<stream>-<role>-<UTC start>-<pid>-<embed>-<source>.jsonl`,
-  unique across sources, embeds and processes and sorted by start;
+- by the embed's writer thread, never on the sampling thread or the host's
+  thread: when the socket is detached (a host may exit right after it, so
+  call `stop`, which waits for every write), again when the source is removed
+  after the linger, and at `stop`. Each write streams into a new temporary
+  file (`mkstemp`) in the same directory, syncs it, renames it over the
+  previous version and syncs the directory, so a reader never sees a partial
+  recording and a completed write survives a power loss. A reconnection that
+  continues the source continues its recording;
+- as `srt-telemetry-<UTC start>-<stream>-<role>-<random>.jsonl`: sorted by
+  start, unique also across containers and hosts that share a directory;
 - with header `streamId` from the `stream` label (`name=`), `flowId` from a
   `flow` label (else the stream), the role and provider, `providerVersion`
   from the host's `srt.h` (`robotweax_srt_telemetry_host_embed_functions`),
   `providerRevision` from `provider_revision=`, `buildProfile` `embed`, and
-  `capacity`/`overwrittenCount` when the ring was full.
+  `capacity`/`overwrittenCount` when the ring was full;
+- not at all for a source that never produced a sample (an attempt that never
+  connected).
 
 Label both ends of one stream with the same `flow` so a sender and a receiver
-recording are recognised as one path. The ring costs 472 bytes per
-sample: 600 s (6,000 samples) is about 2.8 MB per source, allocated when the
-socket is attached. Writes run on the embed thread or the detaching thread
-without the embed's lock; `robotweax_srt_telemetry_embed_recordings` counts
-written and failed recordings (a missing directory or a full disk). The
-directory must exist and be writable at `start`, else `start` returns
-`IO_FAILURE`. Recordings keep only the common v1 statistics, not the
-provider-specific extended fields, and a crashed process loses the samples not
-yet written; a streaming disk spool remains open.
+recording are recognised as one path. The ring holds 472 bytes per sample,
+allocated when the socket is attached: 600 s (6,000 samples) is 2.8 MB per
+source, the maximum 36,000 s is 170 MB. A written sample takes about 1.9 kB of
+JSONL, so 600 s make an 11.6 MB file; a write holds a copy of the ring and
+64 KiB of text, not the file. `robotweax_srt_telemetry_embed_recordings` counts
+file writes done and failed (a source is written up to three times). The
+directory must exist and be writable at `start` (else `IO_FAILURE`); nothing
+removes old files, so retention is the host's job. Recordings keep only the
+common v1 statistics, not the provider-specific extended fields, and samples
+not yet written are lost if the process crashes; a streaming disk spool
+remains open.
 
 ## Threading
 
 One embed thread polls the connection monitors and ticks the sampler every
 100 ms; `attach` and `detach` take the same lock, so they never race a tick.
 The HTTP server and the OTLP exporter have their own threads and read the
-sampler under its lock. `embed_sampler` gives access to the sampler for
+sampler under its lock. With recordings a writer thread writes the files; it
+takes the recorder's snapshot without the embed's lock. `embed_sampler` gives access to the sampler for
 thresholds, callbacks or rendering. The embed ticks it, so do not start,
 stop, tick or destroy it; its callbacks run on the embed thread under the
 embed's lock, so they must not call `attach` or `detach`.
 
-`stop` stops the threads, forgets every socket (the host still closes them)
+`stop` must not overlap `attach` or `detach` on another thread. It stops the
+threads, waits for the final recordings, forgets every socket (the host still closes them)
 and frees the embed. Call it before `srt_cleanup`.
 
 ## Tests
@@ -161,9 +170,13 @@ and frees the embed. Call it before `srt_cleanup`.
   functions; attach and detach rules; health OK on a clean stream; `/metrics`
   with every label; connection events; the lost connection, its linger and
   its removal; a reconnection continuing the same sources; a connection
-  attempt that never connects; stop with a socket attached; recordings
-  written at detach and rewritten at stop, one complete file per source with
-  header metadata and a ring that overwrites and counts its oldest samples. Clean under the
+  attempt that never connects; stop with a socket attached; recordings:
+  written after detach and rewritten at stop, one complete file per source
+  with header metadata, a ring that overwrites and counts its oldest samples,
+  a linger expiry written by the embed thread, a reconnection continuing one
+  recording, no file for a socket that never sampled, a path-like stream
+  label kept inside the directory, a removed directory counted as a failed
+  write, and a zeroed config. Clean under the
   address sanitizer; under the thread sanitizer the only reports are between
   libsrt's own threads (socket teardown in its garbage collector against
   its receive workers), with no SRT Telemetry frame.
