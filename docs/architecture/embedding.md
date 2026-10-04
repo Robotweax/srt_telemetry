@@ -123,7 +123,9 @@ the format SRT Doctor and the Flight Recorder read:
   after the linger, and at `stop`. Each write streams into a new temporary
   file (`mkstemp`) in the same directory, syncs it, renames it over the
   previous version and syncs the directory, so a reader never sees a partial
-  recording and a completed write survives a power loss. A reconnection that
+  recording; on Linux a completed write normally survives a power loss too
+  (macOS `fsync` does not flush the drive cache). Files get mode 0644 within
+  the process umask read at `start`. A reconnection that
   continues the source continues its recording;
 - as `srt-telemetry-<UTC start>-<stream>-<role>-<random>.jsonl`: sorted by
   start, unique also across containers and hosts that share a directory;
@@ -140,7 +142,10 @@ recording are recognised as one path. The ring holds 472 bytes per sample,
 allocated when the socket is attached: 600 s (6,000 samples) is 2.8 MB per
 source, the maximum 36,000 s is 170 MB. A written sample takes about 1.9 kB of
 JSONL, so 600 s make an 11.6 MB file; a write holds a copy of the ring and
-64 KiB of text, not the file. `robotweax_srt_telemetry_embed_recordings` counts
+64 KiB of text, not the file. That copy is taken under the recorder's lock,
+which the next sample waits for: a few ms at the default, up to about 150 ms
+(a gap-flagged window) for a 36,000 s ring, as does allocating such a ring at
+attach. Keep rings short where every 100 ms sample matters. `robotweax_srt_telemetry_embed_recordings` counts
 file writes done and failed (a source is written up to three times). The
 directory must exist and be writable at `start` (else `IO_FAILURE`); nothing
 removes old files, so retention is the host's job. Recordings keep only the

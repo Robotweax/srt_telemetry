@@ -281,6 +281,8 @@ struct robotweax_srt_telemetry_embed
     std::vector<std::shared_ptr<Recording>> writes;
     bool writer_running = true;
     std::thread writer;
+    /* The process umask at start, applied to recordings. */
+    mode_t file_umask = 022;
     std::atomic<std::uint64_t> recordings_written{0};
     std::atomic<std::uint64_t> recordings_failed{0};
 };
@@ -373,14 +375,16 @@ bool write_recording(const Embed &embed, Recording &recording)
     config.configured_provider = embed.config.provider;
 
     std::string temporary = recording.directory + "/.srt-telemetry-XXXXXX";
-    const int fd = ::mkstemp(temporary.data());
+    const int fd = ::mkostemp(temporary.data(), O_CLOEXEC);
     if (fd < 0)
     {
         return false;
     }
     FileSink sink;
     sink.fd = fd;
-    bool ok = ::fchmod(fd, 0644) == 0;
+    /* mkostemp creates 0600: open it up as far as the host's umask allows,
+     * as a plain open(0644) would. */
+    bool ok = ::fchmod(fd, 0644 & ~embed.file_umask) == 0;
     try
     {
         sink.buffer.reserve(sink_buffer_bytes + 4096);
@@ -536,8 +540,9 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
                           "-" + nonce() + ".jsonl";
         embed.recordings.emplace(endpoint.source_id, std::move(recording));
     }
-    catch (const std::bad_alloc &)
+    catch (const std::exception &)
     {
+        /* bad_alloc, or random_device without an entropy source. */
         return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
     }
     return ROBOTWEAX_SRT_TELEMETRY_OK;
@@ -968,6 +973,12 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
     {
         created = new Embed;
         created->config = *config;
+        if (config->recording_directory[0] != '\0')
+        {
+            /* Read once; umask has no read-only call. */
+            created->file_umask = ::umask(022);
+            ::umask(created->file_umask);
+        }
         if (created->config.recording_seconds == 0)
         {
             created->config.recording_seconds = default_recording_seconds; /* a zeroed config */
