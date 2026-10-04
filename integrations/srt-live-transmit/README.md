@@ -1,6 +1,6 @@
 # srt-live-transmit with SRT Telemetry
 
-A patch for Haivision SRT v1.5.5's `srt-live-transmit` that adds one option:
+A patch for Haivision SRT v1.5.7's `srt-live-transmit` that adds one option:
 
 ```text
 srt-live-transmit -telemetry <[address:]port[,options]> SOURCE TARGET
@@ -25,7 +25,7 @@ Open `http://<host>:9810/` for the dashboard, scrape `/metrics` with the
 
 ## What changes in the program
 
-28 host lines ([the patch](srt-live-transmit-v1.5.5.patch)): 3 in
+28 host lines ([the patch](srt-live-transmit-v1.5.7.patch)): 3 in
 `CMakeLists.txt`, 25 in `apps/srt-live-transmit.cpp`.
 
 - The `-telemetry` option, and a start that stops the program with an error
@@ -55,7 +55,7 @@ cmake -S srt_telemetry -B telemetry-build -DROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC
     -DROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR=/usr/local/include -DCMAKE_INSTALL_PREFIX=/opt/srt-telemetry
 cmake --build telemetry-build && cmake --install telemetry-build
 
-git clone --branch v1.5.5 https://github.com/Haivision/srt.git
+git clone --branch v1.5.7 https://github.com/Haivision/srt.git
 srt_telemetry/integrations/srt-live-transmit/build.sh srt /opt/srt-telemetry
 ./srt-live-transmit-build/srt-live-transmit -h
 ```

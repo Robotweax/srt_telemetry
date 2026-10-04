@@ -11,6 +11,12 @@ Both are observed through a selected public SRT API profile. The initial target
 is `srt-1.5.5`. A compatible header or ABI layout alone does not prove that a
 field has identical runtime meaning, availability, or evidence quality.
 
+The qualified Haivision SRT version is v1.5.7 (`899348d8`) since 4 October
+2026, the same reference the Network Lab uses for interoperability; it exposes
+the `srt-1.5.5` statistics surface unchanged, and the field-coverage,
+connection-event, embedding and fault-lab tests pass on it. Evidence recorded
+with v1.5.5 before that date keeps its version.
+
 Each adapter declaration records:
 
 ```yaml

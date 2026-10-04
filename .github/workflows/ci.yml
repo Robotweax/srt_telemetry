@@ -22,9 +22,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Haivision SRT v1.5.5, the pinned comparison provider used by the retained evidence.
-  HAIVISION_SRT_COMMIT: b6b4ae990daa8193625a4ddeaeaed03023b23125
-  HAIVISION_SRT_VERSION: "1.5.5"
+  # Haivision SRT v1.5.7, the pinned comparison provider (maintainer decision 2026-10-04;
+  # the retained 2026-09 evidence used v1.5.5 and stays as recorded).
+  HAIVISION_SRT_COMMIT: 899348d8318eb9a3c5a5b6ec43c4a1114288773a
+  HAIVISION_SRT_VERSION: "1.5.7"
   # Observability end to end.
   PROMETHEUS_VERSION: "3.6.0"
   OTELCOL_VERSION: "0.135.0"
@@ -234,7 +235,7 @@ jobs:
       - name: srt-live-transmit integration (host lines, build, end to end)
         if: matrix.provider == 'haivision-srt'
         run: |
-          python3 tools/count_host_lines.py integrations/srt-live-transmit/srt-live-transmit-v1.5.5.patch --max 30
+          python3 tools/count_host_lines.py integrations/srt-live-transmit/srt-live-transmit-v1.5.7.patch --max 30
           integrations/srt-live-transmit/build.sh provider-src "${{ runner.temp }}/install" slt-build
           python3 tools/srt_live_transmit_e2e.py --slt slt-build/srt-live-transmit
 

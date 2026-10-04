@@ -13,7 +13,8 @@ during Phase 0.
 
 - MIT licence, installed with the package;
 - CI on Linux (GCC, Clang) and macOS for the core SDK, and the public SRT
-  adapter against Haivision SRT v1.5.5 and Robotweax SRT `main`;
+  adapter against Haivision SRT v1.5.5 and Robotweax SRT `main` (the
+  Haivision pin moved to v1.5.7 on 2026-10-04);
 - installed-package consumers for static and shared builds, including a C-only
   host linking the static adapter;
 - the IPv6-only JSONL recording test skips cleanly where `::1` is missing;
@@ -38,7 +39,8 @@ during Phase 0.
 **Gate:** the field-coverage test makes all 52 mapped observations available
 on both providers, and the connection-events test passes plain, encrypted,
 wrong-passphrase, FEC and peer-close scenarios on both: **passing** on
-Haivision SRT v1.5.5 and Robotweax SRT `main`.
+Haivision SRT v1.5.5 and Robotweax SRT `main`; repeated on v1.5.7 on
+2026-10-04.
 
 ## Phase 2: sampler, windows, health engine (3 EW): done
 
@@ -91,7 +93,7 @@ The evidence foundation stays the base of every phase above:
 - common provider contract, versioned C ABI, non-destructive lifetime-counter
   delta engine, availability and data-quality model;
 - injected public SRT API adapter working unchanged against Haivision SRT
-  v1.5.5 and Robotweax SRT;
+  v1.5.7 (v1.5.5 before 2026-10-04) and Robotweax SRT;
 - bounded in-memory recorder with versioned JSONL export;
 - cross-provider interop, sampling and lifecycle candidates, and the 0.2.6
   qualification archive;
