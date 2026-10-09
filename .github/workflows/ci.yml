@@ -183,13 +183,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: provider-install
-          key: ${{ matrix.provider }}-${{ steps.rev.outputs.sha }}-ubuntu-24.04-v1
+          # v2: Haivision SRT built with ENABLE_BONDING=ON (group tests).
+          key: ${{ matrix.provider }}-${{ steps.rev.outputs.sha }}-ubuntu-24.04-v2
 
       - name: Build Haivision SRT
         if: matrix.provider == 'haivision-srt' && steps.cache.outputs.cache-hit != 'true'
         run: |
           cmake -S provider-src -B provider-build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release -DENABLE_APPS=OFF -DENABLE_STATIC=OFF \
+            -DCMAKE_BUILD_TYPE=Release -DENABLE_APPS=OFF -DENABLE_STATIC=OFF -DENABLE_BONDING=ON \
             -DCMAKE_INSTALL_PREFIX="$PWD/provider-install"
           cmake --build provider-build
           cmake --install provider-build
@@ -223,6 +224,7 @@ jobs:
           -DROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR="${{ steps.paths.outputs.include }}"
           -DROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY="${{ steps.paths.outputs.library }}"
           -DROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER=${{ matrix.provider }}
+          -DROBOTWEAX_SRT_TELEMETRY_REQUIRE_GROUP_TEST=ON
           -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/install"
       - name: Build
         run: cmake --build build

@@ -162,8 +162,11 @@ separate session whose socket is the group ID and qualify
 | `receiver_drop_packet_total` / ext `receiver_drop_wire_byte_total` | dropped on every link: what the application actually lost |
 | ext `connection_age_seconds` | time since the first member connected |
 
-Group mapping is unit-tested with an injected `srt_bistats`. Live bonding
-qualification belongs to the Phase 4 fault-lab work and is still open.
+Group mapping is unit-tested with an injected `srt_bistats`. The group
+session ([connection groups](public-srt-group.md)) reads the group and all its
+members in one call. Its live loopback test shows the group unique counters
+equal to what the application sent and read on both providers. Impaired-path
+qualification belongs to the Network Lab's multi-path work and is still open.
 
 ## Sender-drop interpretation
 
@@ -200,8 +203,8 @@ build; it does not establish identical timing or counts for Haivision versions.
 
 - Live values (not just availability) for FEC counters with
   `SRTO_PACKETFILTER` negotiated, undecryptable counters with a wrong
-  passphrase, belated and reorder fields under reordering, and live group
-  statistics with bonding (Phase 4 fault lab).
+  passphrase, belated and reorder fields under reordering, and group
+  statistics over impaired paths (Network Lab multi-path setups).
 - Recording extended fields in the bounded recorder and JSONL (Phase 2 compact
   record). Until then the extended sample is available through the adapter API.
 

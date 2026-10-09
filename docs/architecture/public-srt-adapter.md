@@ -68,6 +68,10 @@ provider-specific candidate masks
 (`..._GROUP_CANDIDATE_FIELDS`, `..._GROUP_EXT_CANDIDATE_FIELDS`) as starting
 points for a qualification record, not as blanket claims.
 
+A group handle can be sampled by a statistics session, but the
+[group session](public-srt-group.md) reads the group together with its
+members, their states, addresses and path names in one call.
+
 ## Current evidence boundary
 
 Automated checks compile the exact callback type and the mapping implementation
