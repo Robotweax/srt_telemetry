@@ -61,6 +61,12 @@ static int group_session_check(void)
         return 0;
     }
     result.struct_size = sizeof(result);
+    if (robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(session, NULL) !=
+        ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        robotweax_srt_telemetry_public_srt_group_session_destroy(session);
+        return 0;
+    }
     result.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
     error = robotweax_srt_telemetry_public_srt_group_session_sample(session, 1, 1, &result);
     robotweax_srt_telemetry_public_srt_group_session_destroy(session);

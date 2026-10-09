@@ -1,6 +1,7 @@
 #include <robotweax/srt_telemetry_public_srt_group.h>
 
 #include "public_srt_internal.hpp"
+#include "public_srt_path_data.hpp"
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -32,6 +33,7 @@ constexpr int group_data_attempts = 3;
 constexpr std::size_t initial_buffer = 16;
 /* Removed members waiting for room in a result; older ones are dropped. */
 constexpr std::size_t max_pending_removals = 1024;
+constexpr std::size_t max_path_records = 1024;
 
 struct DeltaEngineDeleter
 {
@@ -240,6 +242,11 @@ struct robotweax_srt_telemetry_public_srt_group_session
     /* Removed members not reported yet (no room in an earlier result). */
     std::vector<std::unique_ptr<Member>> removed;
     std::vector<SRT_SOCKGROUPDATA> buffer;
+    robotweax_srt_telemetry_public_srt_group_path_data_v1_fn path_data = nullptr;
+    std::vector<ROBOTWEAX_SRT_GroupPathDataV1_> path_buffer;
+    std::size_t path_count = 0;
+    bool path_snapshot_available = false;
+    bool sample_started = false;
     std::vector<std::int32_t> carrying;
     /* Reserved before sampling so update_active cannot throw. */
     std::vector<std::int32_t> carrying_scratch;
@@ -285,7 +292,85 @@ struct PathName
 {
     std::string name;
     std::uint32_t source = ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE;
+    bool pending = false;
 };
+
+/* Independent snapshots are joined by member ID, never by array position.
+ * Three bounded attempts handle membership growth. A failed/oversized/malformed
+ * snapshot is missing metadata, not an observed absence of a label. */
+void read_path_data(Session &session)
+{
+    session.path_count = 0;
+    session.path_snapshot_available = false;
+    for (int attempt = 0; attempt < group_data_attempts; ++attempt)
+    {
+        std::fill(session.path_buffer.begin(), session.path_buffer.end(),
+                  ROBOTWEAX_SRT_GroupPathDataV1_{});
+        auto count = session.path_buffer.size();
+        const auto result = session.path_data(session.config.group, session.path_buffer.data(), &count);
+        if (result >= 0)
+        {
+            if (static_cast<std::size_t>(result) != count || count > session.path_buffer.size())
+            {
+                return;
+            }
+            session.path_count = count;
+            session.path_snapshot_available = true;
+            return;
+        }
+        if (count <= session.path_buffer.size() || count > max_path_records)
+        {
+            return;
+        }
+        session.path_buffer.resize(count);
+    }
+}
+
+PathName identifier_for(const Session &session, const std::int32_t socket)
+{
+    if (!session.path_snapshot_available)
+    {
+        return {{}, ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE, true};
+    }
+    const ROBOTWEAX_SRT_GroupPathDataV1_ *found = nullptr;
+    for (std::size_t i = 0; i < session.path_count; ++i)
+    {
+        const auto &record = session.path_buffer[i];
+        if (record.member_id == socket)
+        {
+            if (found != nullptr)
+            {
+                return {{}, ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE, true};
+            }
+            found = &record;
+        }
+    }
+    if (found == nullptr || found->identifier_length > 32 || (found->flags & ~3U) != 0 ||
+        (found->identifier_length == 0 && found->flags != 0) ||
+        !std::all_of(found->identifier + found->identifier_length, found->identifier + 32,
+                     [](const auto byte) { return byte == 0; }))
+    {
+        return {{}, ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE, true};
+    }
+    if (found->identifier_length == 0)
+    {
+        return {}; /* An actual unlabeled record permits the ordinary fallback. */
+    }
+    if ((found->flags & 2U) == 0)
+    {
+        return {{}, ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE, true};
+    }
+    constexpr char hex[] = "0123456789abcdef";
+    std::string name = "pathid-";
+    name.reserve(7 + 2 * found->identifier_length);
+    for (std::size_t i = 0; i < found->identifier_length; ++i)
+    {
+        const auto byte = found->identifier[i];
+        name += hex[byte >> 4];
+        name += hex[byte & 15];
+    }
+    return {std::move(name), ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_IDENTIFIER};
+}
 
 /* Names the path of a member with the given (not yet committed) identity. */
 PathName path_for(const Session &session, const std::int32_t socket, const std::int32_t token,
@@ -309,6 +394,14 @@ PathName path_for(const Session &session, const std::int32_t socket, const std::
             valid_path_name(name, sizeof(name)))
         {
             return {name, ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_HOST};
+        }
+    }
+    if (session.path_data != nullptr)
+    {
+        auto identifier = identifier_for(session, socket);
+        if (identifier.pending || identifier.source != ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE)
+        {
+            return identifier;
         }
     }
     if (token >= 0)
@@ -432,11 +525,15 @@ robotweax_srt_telemetry_error sample_member(Session &session, Member &member,
     member.peer_address = std::move(peer);
     member.local_address = std::move(local);
     member.local_final = local_final;
-    if (name_path)
+    if (name_path && path.source != ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE)
     {
         member.path = std::move(path.name);
         member.path_source = path.source;
         member.unreported_flags |= ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_ASSIGNED;
+    }
+    if (path.pending)
+    {
+        entry.flags |= ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_PENDING;
     }
     entry.flags |= member.unreported_flags;
     if (usable(data))
@@ -579,6 +676,10 @@ robotweax_srt_telemetry_error sample_locked(Session &session, const std::uint64_
     }
     const auto order = distinct_listing(session, listed);
     result.listed_member_count = static_cast<std::uint32_t>(order.size());
+    if (session.path_data != nullptr && result.member_capacity != 0)
+    {
+        read_path_data(session);
+    }
 
     /* Resolve every listed socket to exactly one Member: a known member, a
      * pending removal that is listed again (it returns, and its removal is not
@@ -810,6 +911,33 @@ extern "C" void robotweax_srt_telemetry_public_srt_group_session_destroy(
     delete session;
 }
 
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(
+    robotweax_srt_telemetry_public_srt_group_session *session,
+    robotweax_srt_telemetry_public_srt_group_path_data_v1_fn getter)
+{
+    if (session == nullptr || session->sample_started ||
+        (getter != nullptr &&
+         (session->config.provider != ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT ||
+          (session->config.capabilities & ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_PATH_IDENTIFIERS_V1) == 0)))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    try
+    {
+        if (getter != nullptr)
+        {
+            session->path_buffer.resize(initial_buffer);
+        }
+        session->path_data = getter;
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+}
+
 extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_group_session_sample(
     robotweax_srt_telemetry_public_srt_group_session *session,
     const std::uint64_t observed_at_unix_nano, const std::uint64_t sample_monotonic_nano,
@@ -830,6 +958,7 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_grou
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
     initialize_result(*result);
+    session->sample_started = true;
     try
     {
         return sample_locked(*session, observed_at_unix_nano, sample_monotonic_nano, *result);

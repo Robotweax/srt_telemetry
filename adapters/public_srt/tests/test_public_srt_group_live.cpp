@@ -63,7 +63,7 @@ struct Session
     {
         robotweax_srt_telemetry_public_srt_group_session_destroy(session);
     }
-    bool create(const std::int32_t group, const std::uint32_t type)
+    bool create(const std::int32_t group, const std::uint32_t type, const bool labeled = false)
     {
         robotweax_srt_telemetry_public_srt_group_config_v1 config{};
         config.struct_size = sizeof(config);
@@ -77,8 +77,26 @@ struct Session
             ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_GROUP_EXT_CANDIDATE_FIELDS;
         config.member_qualified_fields = ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_V1_5_5_CANDIDATE_FIELDS;
         robotweax_srt_telemetry_host_group_functions(&config);
-        return robotweax_srt_telemetry_public_srt_group_session_create(&config, &session) ==
-               ROBOTWEAX_SRT_TELEMETRY_OK;
+        (void)labeled;
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+        if (labeled)
+        {
+            config.capabilities |= ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_PATH_IDENTIFIERS_V1;
+        }
+#endif
+        if (robotweax_srt_telemetry_public_srt_group_session_create(&config, &session) !=
+            ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            return false;
+        }
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+        if (labeled)
+        {
+            return robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(
+                       session, robotweax_srt_group_path_data_v1) == ROBOTWEAX_SRT_TELEMETRY_OK;
+        }
+#endif
+        return true;
     }
     robotweax_srt_telemetry_error sample()
     {
@@ -119,9 +137,9 @@ struct Observed
     std::int32_t listener_primary = -1;
 };
 
-int run(const bool backup, const bool require)
+int run(const bool backup, const bool require, const bool labeled = false)
 {
-    const std::string name = backup ? "backup" : "broadcast";
+    const std::string name = std::string(backup ? "backup" : "broadcast") + (labeled ? "-pathid" : "");
     const auto type = backup ? ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP
                              : ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST;
     const SRTSOCKET group = srt_create_group(backup ? SRT_GTYPE_BACKUP : SRT_GTYPE_BROADCAST);
@@ -135,6 +153,14 @@ int run(const bool backup, const bool require)
     const SRTSOCKET listener = srt_create_socket();
     int yes = 1;
     srt_setsockflag(listener, SRTO_GROUPCONNECT, &yes, sizeof(yes));
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+    if (labeled)
+    {
+        check(srt_setsockflag(group, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0 &&
+                  srt_setsockflag(listener, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0,
+              name + ": bilateral path policy");
+    }
+#endif
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = 0; /* any free port */
@@ -179,7 +205,27 @@ int run(const bool backup, const bool require)
     endpoints.push_back(srt_prepare_endpoint(nullptr, reinterpret_cast<sockaddr *>(&address), sizeof(address)));
     endpoints[0].weight = 20;
     endpoints[1].weight = 10;
-    if (srt_connect_group(group, endpoints.data(), static_cast<int>(endpoints.size())) == SRT_ERROR)
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+    if (labeled)
+    {
+        for (std::size_t i = 0; i < endpoints.size(); ++i)
+        {
+            const unsigned char label[] = {'p', 0, static_cast<unsigned char>(i + 1)};
+            endpoints[i].config = srt_create_config();
+            check(endpoints[i].config != nullptr &&
+                      srt_config_add(endpoints[i].config, SRTO_ROBOTWEAX_PATHID,
+                                     label, sizeof(label)) == 0,
+                  name + ": endpoint binary label");
+        }
+    }
+#endif
+    const auto connect_result = srt_connect_group(group, endpoints.data(), static_cast<int>(endpoints.size()));
+    for (auto &endpoint : endpoints)
+    {
+        srt_delete_config(endpoint.config);
+        endpoint.config = nullptr;
+    }
+    if (connect_result == SRT_ERROR)
     {
         std::cerr << "FAIL: connect_group: " << srt_getlasterror_str() << '\n';
         srt_close(listener);
@@ -217,8 +263,8 @@ int run(const bool backup, const bool require)
 
     Session caller;
     Session callee;
-    check(caller.create(group, type), name + ": caller group session");
-    check(accepted == SRT_INVALID_SOCK || callee.create(accepted, type),
+    check(caller.create(group, type, labeled), name + ": caller group session");
+    check(accepted == SRT_INVALID_SOCK || callee.create(accepted, type, labeled),
           name + ": listener group session");
 
     /* srt_connect_group returns after the first link: wait for both. */
@@ -257,9 +303,12 @@ int run(const bool backup, const bool require)
             for (std::uint32_t i = 0; i < c.member_count; ++i)
             {
                 const auto &m = c.members[i];
-                check(m.path_source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_TOKEN && m.token >= 0 &&
-                          std::string(m.path) == "token-" + std::to_string(m.token),
-                      name + ": caller paths come from the tokens");
+                check(m.token >= 0 &&
+                          (labeled ? (m.path_source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_IDENTIFIER &&
+                                      std::string(m.path) == (m.weight == 20 ? "pathid-700001" : "pathid-700002"))
+                                   : (m.path_source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_TOKEN &&
+                                      std::string(m.path) == "token-" + std::to_string(m.token))),
+                      name + ": caller label or ordinary token path; local token preserved");
                 check(m.peer_address == std::string("127.0.0.1:") + std::to_string(port),
                       name + ": caller peer address");
                 check(m.local_address[0] != '\0', name + ": caller local address known");
@@ -267,8 +316,11 @@ int run(const bool backup, const bool require)
             for (std::uint32_t i = 0; i < l.member_count; ++i)
             {
                 const auto &m = l.members[i];
-                check(m.token == -1 && m.path_source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_ADDRESSES,
-                      name + ": the accepting side has no tokens (protocol gap)");
+                check(m.token == -1 &&
+                          (labeled ? (m.path_source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_IDENTIFIER &&
+                                      std::string(m.path) == (m.weight == 20 ? "pathid-700001" : "pathid-700002"))
+                                   : m.path_source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_ADDRESSES),
+                      name + ": receiver label or ordinary addresses; token remains -1");
                 check(m.local_address == std::string("127.0.0.1:") + std::to_string(port),
                       name + ": listener local address");
                 check(m.weight == 20 || m.weight == 10, name + ": weight reaches the listener");
@@ -379,6 +431,16 @@ int main(int argc, char **argv)
     {
         status = run(false, require);
     }
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+    if (status == 0)
+    {
+        status = run(true, require, true);
+    }
+    if (status == 0)
+    {
+        status = run(false, require, true);
+    }
+#endif
     srt_cleanup();
     if (status != 0)
     {
