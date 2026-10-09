@@ -17,6 +17,7 @@
 
 #include <string.h>
 #include <robotweax/srt_telemetry_public_srt_connection.h>
+#include <robotweax/srt_telemetry_public_srt_group.h>
 
 /* The provider of the srt.h in use: Robotweax SRT's compatibility headers
  * define these guards; anything else is taken as Haivision SRT. */
@@ -55,6 +56,30 @@ static inline void robotweax_srt_telemetry_host_connection_functions(
     config->getsockstate = robotweax_srt_telemetry_host_getsockstate;
     config->getrejectreason = robotweax_srt_telemetry_host_getrejectreason;
     config->getsockflag = robotweax_srt_telemetry_host_getsockflag;
+}
+
+static inline int robotweax_srt_telemetry_host_group_data(int32_t group, struct SRT_SocketGroupData_ *members,
+                                                         size_t *count)
+{
+    return srt_group_data((SRTSOCKET)group, members, count);
+}
+
+static inline int robotweax_srt_telemetry_host_getsockname(int32_t socket, struct sockaddr *name, int *length)
+{
+    return srt_getsockname((SRTSOCKET)socket, name, length);
+}
+
+/* Fills the provider and the injected functions of a group config. Haivision
+ * SRT built without ENABLE_BONDING still links: srt_group_data then fails and
+ * so does group_session_sample. */
+static inline void robotweax_srt_telemetry_host_group_functions(
+    robotweax_srt_telemetry_public_srt_group_config_v1 *config)
+{
+    config->provider = ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER;
+    config->bistats = robotweax_srt_telemetry_host_bistats;
+    config->group_data = robotweax_srt_telemetry_host_group_data;
+    config->getsockname = robotweax_srt_telemetry_host_getsockname;
+    config->getsockstate = robotweax_srt_telemetry_host_getsockstate;
 }
 
 /* The version of the srt.h in use, for recording headers: Robotweax SRT's

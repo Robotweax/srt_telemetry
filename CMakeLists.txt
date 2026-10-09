@@ -13,6 +13,8 @@ include(CMakePackageConfigHelpers)
 option(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS "Build telemetry tests" ON)
 option(ROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST
     "Fail configuration when the OTLP protobuf test cannot run (CI)" OFF)
+option(ROBOTWEAX_SRT_TELEMETRY_REQUIRE_GROUP_TEST
+    "Fail, instead of skip, the live group test when the SRT library has no groups" OFF)
 option(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER
     "Build the injected public SRT API adapter" OFF)
 set(ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR "" CACHE PATH
@@ -145,7 +147,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
 
     add_library(robotweax_srt_telemetry_public_srt_adapter
         adapters/public_srt/src/public_srt_adapter.cpp
-        adapters/public_srt/src/public_srt_connection.cpp)
+        adapters/public_srt/src/public_srt_connection.cpp
+        adapters/public_srt/src/public_srt_group.cpp)
     add_library(RobotweaxSRTTelemetry::public_srt_adapter ALIAS
         robotweax_srt_telemetry_public_srt_adapter)
     target_compile_features(robotweax_srt_telemetry_public_srt_adapter
@@ -233,6 +236,17 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
             PRIVATE cxx_std_20)
         add_test(NAME robotweax_srt_telemetry_public_srt_connection_tests
             COMMAND robotweax_srt_telemetry_public_srt_connection_tests)
+
+        add_executable(robotweax_srt_telemetry_public_srt_group_tests
+            adapters/public_srt/tests/test_public_srt_group.cpp)
+        target_include_directories(robotweax_srt_telemetry_public_srt_group_tests
+            PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
+        target_link_libraries(robotweax_srt_telemetry_public_srt_group_tests
+            PRIVATE RobotweaxSRTTelemetry::public_srt_adapter)
+        target_compile_features(robotweax_srt_telemetry_public_srt_group_tests
+            PRIVATE cxx_std_20)
+        add_test(NAME robotweax_srt_telemetry_public_srt_group_tests
+            COMMAND robotweax_srt_telemetry_public_srt_group_tests)
 
         if(ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY)
             find_package(Threads REQUIRED)
@@ -345,6 +359,33 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 PROPERTIES TIMEOUT 600 LABELS lab)
             add_test(NAME robotweax_srt_telemetry_public_srt_runtime_tests
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests)
+            # Live groups need an SRT library with connection groups (Haivision
+            # SRT with ENABLE_BONDING=ON); the test is skipped otherwise unless
+            # ROBOTWEAX_SRT_TELEMETRY_REQUIRE_GROUP_TEST makes that a failure.
+            add_executable(robotweax_srt_telemetry_public_srt_group_live_tests
+                adapters/public_srt/tests/test_public_srt_group_live.cpp)
+            target_include_directories(robotweax_srt_telemetry_public_srt_group_live_tests
+                PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
+            target_link_libraries(robotweax_srt_telemetry_public_srt_group_live_tests
+                PRIVATE RobotweaxSRTTelemetry::public_srt_adapter
+                        ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY}
+                        Threads::Threads)
+            target_compile_features(robotweax_srt_telemetry_public_srt_group_live_tests
+                PRIVATE cxx_std_20)
+            if(EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt.h" AND
+               NOT EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt/srt.h")
+                target_compile_definitions(robotweax_srt_telemetry_public_srt_group_live_tests
+                    PRIVATE ROBOTWEAX_SRT_TELEMETRY_USE_FLAT_SRT_HEADER)
+            endif()
+            if(ROBOTWEAX_SRT_TELEMETRY_REQUIRE_GROUP_TEST)
+                add_test(NAME robotweax_srt_telemetry_public_srt_group_live_tests
+                    COMMAND robotweax_srt_telemetry_public_srt_group_live_tests --require)
+            else()
+                add_test(NAME robotweax_srt_telemetry_public_srt_group_live_tests
+                    COMMAND robotweax_srt_telemetry_public_srt_group_live_tests)
+                set_tests_properties(robotweax_srt_telemetry_public_srt_group_live_tests
+                    PROPERTIES SKIP_RETURN_CODE 77)
+            endif()
             add_test(NAME robotweax_srt_telemetry_public_srt_lifecycle_tests
                 COMMAND robotweax_srt_telemetry_public_srt_runtime_tests --lifecycle)
             add_test(NAME robotweax_srt_telemetry_public_srt_field_coverage_test

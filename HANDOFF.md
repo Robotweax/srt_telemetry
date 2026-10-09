@@ -94,7 +94,7 @@ Component map (each with its doc):
 | Path | Library / tool | Doc |
 | --- | --- | --- |
 | `sdk/` | `RobotweaxSRTTelemetry::core`: contract, delta engine, metrics, windows, sampler, history, journal, health, renderers (Prometheus, JSON, OTLP) | [sampler](docs/architecture/sampler.md), [health engine](docs/architecture/health-engine.md), [metric names](docs/architecture/metric-names.md) |
-| `adapters/public_srt/` | `public_srt_adapter` (statistics session, connection monitor) and `embed` (one-call embedding) | [adapter](docs/architecture/public-srt-adapter.md), [connection monitor](docs/architecture/connection-monitor.md), [embedding](docs/architecture/embedding.md) |
+| `adapters/public_srt/` | `public_srt_adapter` (statistics session, connection monitor, group session) and `embed` (one-call embedding) | [adapter](docs/architecture/public-srt-adapter.md), [connection monitor](docs/architecture/connection-monitor.md), [connection groups](docs/architecture/public-srt-group.md), [embedding](docs/architecture/embedding.md) |
 | `server/` | `http`: HTTP/WebSocket server, built-in UI (`server/ui`), OTLP exporter | [HTTP server](docs/architecture/http-server.md), [web UI](docs/architecture/web-ui.md), [OTLP](docs/architecture/otlp.md) |
 | `observability/` | Prometheus alert rules + tests, Grafana dashboards, Collector example | [alerting](docs/architecture/alerting.md) |
 | `integrations/srt-live-transmit/` | Patch for Haivision v1.5.7, `build.sh` | [README](integrations/srt-live-transmit/README.md) |

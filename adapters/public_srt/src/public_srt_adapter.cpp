@@ -1,4 +1,4 @@
-#include <robotweax/srt_telemetry_public_srt.h>
+#include "public_srt_internal.hpp"
 
 #if defined(ROBOTWEAX_SRT_TELEMETRY_USE_FLAT_SRT_HEADER)
 #include <srt.h>
@@ -381,6 +381,32 @@ create_session(const robotweax_srt_telemetry_public_srt_config_v2 &config,
 }
 
 } // namespace
+
+// Shared with the group session (public_srt_internal.hpp).
+namespace robotweax_srt_telemetry_detail
+{
+
+std::uint64_t provider_ext_candidates(const robotweax_srt_telemetry_provider provider)
+{
+    return ext_candidate_fields(provider);
+}
+
+void map_raw(const SRT_TRACEBSTATS &statistics,
+             const robotweax_srt_telemetry_public_srt_config_v2 &config,
+             const std::uint64_t observed_at_unix_nano, const std::uint64_t sample_monotonic_nano,
+             robotweax_srt_telemetry_raw_sample_v1 &raw)
+{
+    populate_raw(statistics, config, observed_at_unix_nano, sample_monotonic_nano, raw);
+}
+
+void map_ext(const SRT_TRACEBSTATS &statistics,
+             const robotweax_srt_telemetry_public_srt_config_v2 &config,
+             robotweax_srt_telemetry_ext_sample_v1 &ext)
+{
+    populate_ext(statistics, config, ext);
+}
+
+} // namespace robotweax_srt_telemetry_detail
 
 extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_session_create(
     const robotweax_srt_telemetry_public_srt_config_v1 *config,
