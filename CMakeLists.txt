@@ -36,6 +36,10 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     target_compile_features(robotweax_srt_telemetry_trigger_window_tests PRIVATE cxx_std_20)
     add_test(NAME robotweax_srt_telemetry_trigger_window_tests
         COMMAND robotweax_srt_telemetry_trigger_window_tests)
+    add_test(NAME robotweax_srt_telemetry_enum_declaration_check
+        COMMAND ${CMAKE_COMMAND}
+            "-DHEADER_DIRS=${CMAKE_CURRENT_SOURCE_DIR}/sdk/include;${CMAKE_CURRENT_SOURCE_DIR}/adapters/public_srt/include;${CMAKE_CURRENT_SOURCE_DIR}/server/include"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckEnumDeclarations.cmake)
 endif()
 
 add_library(robotweax_srt_telemetry

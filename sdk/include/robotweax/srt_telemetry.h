@@ -25,10 +25,20 @@ extern "C"
 {
 #endif
 
+/* Every enum of this API has int as its fixed underlying type in C++. A C
+ * host may pass any int in an enum field or parameter; with a fixed type that
+ * value is a valid C++ enum value, so the library can read and reject it
+ * without undefined behaviour. The representation is the same as in C. */
+#ifdef __cplusplus
+#define ROBOTWEAX_SRT_TELEMETRY_ENUM_INT : int
+#else
+#define ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
+#endif
+
 #define ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION 1u
 #define ROBOTWEAX_SRT_TELEMETRY_VERSION "0.1.0-alpha.0"
 
-    typedef enum robotweax_srt_telemetry_error
+    typedef enum robotweax_srt_telemetry_error ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_OK = 0,
         ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT = 1,
@@ -47,7 +57,15 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_IO_FAILURE = 9
     } robotweax_srt_telemetry_error;
 
-    typedef enum robotweax_srt_telemetry_provider
+#ifndef __cplusplus
+    /* The C++ side sees int-sized enums. A C host built with short enums
+     * (-fshort-enums, some ARM EABI targets) would disagree on every struct
+     * layout, so it fails to compile here instead. */
+    typedef char robotweax_srt_telemetry_enums_must_be_int_sized
+        [sizeof(robotweax_srt_telemetry_error) == sizeof(int) ? 1 : -1];
+#endif
+
+    typedef enum robotweax_srt_telemetry_provider ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_PROVIDER_UNKNOWN = 0,
         ROBOTWEAX_SRT_TELEMETRY_PROVIDER_HAIVISION_SRT = 1,
@@ -314,7 +332,7 @@ extern "C"
         uint64_t belated_packet_delta;
     } robotweax_srt_telemetry_ext_delta_v1;
 
-    typedef enum robotweax_srt_telemetry_endpoint_role
+    typedef enum robotweax_srt_telemetry_endpoint_role ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN = 0,
         ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER = 1,

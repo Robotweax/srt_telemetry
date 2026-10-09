@@ -1,4 +1,5 @@
 #include <robotweax/srt_telemetry.h>
+#include <robotweax/srt_telemetry_sampler.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -73,6 +74,25 @@ static int test_ext_from_c(void)
 
 int main(void)
 {
+    /* Every API enum is int-sized in C, as in C++ (ROBOTWEAX_SRT_TELEMETRY_ENUM_INT). */
+    if (sizeof(robotweax_srt_telemetry_error) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_provider) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_endpoint_role) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_render_format) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_health_verdict) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_health_indicator) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_health_reason) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_health_knob) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_knob_direction) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_connection_condition) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_event_kind) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_event_severity) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_metric) != sizeof(int) ||
+        sizeof(robotweax_srt_telemetry_metric_kind) != sizeof(int))
+    {
+        return 90;
+    }
+
     robotweax_srt_telemetry_delta_engine *engine = NULL;
     if (strcmp(robotweax_srt_telemetry_version(), "0.1.0-alpha.0") != 0)
     {

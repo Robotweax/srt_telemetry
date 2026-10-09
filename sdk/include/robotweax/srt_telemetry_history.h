@@ -93,7 +93,7 @@ extern "C"
 
     /* ------------------------------------------------------------- events */
 
-    typedef enum robotweax_srt_telemetry_event_kind
+    typedef enum robotweax_srt_telemetry_event_kind ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_EVENT_HOST = 0, /* host-defined; see code */
         ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_ADDED = 1,
@@ -117,7 +117,7 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_EVENT_VERDICT_CHANGED = 14
     } robotweax_srt_telemetry_event_kind;
 
-    typedef enum robotweax_srt_telemetry_event_severity
+    typedef enum robotweax_srt_telemetry_event_severity ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO = 1,
         ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING = 2,

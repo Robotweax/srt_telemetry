@@ -478,10 +478,7 @@ void test_config_validation()
     config.provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_UNKNOWN;
     expect(config, ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "rejects an unknown provider");
     config = good;
-    {
-        const std::underlying_type_t<robotweax_srt_telemetry_provider> invalid = 99;
-        std::memcpy(&config.provider, &invalid, sizeof(invalid)); /* as a C host could */
-    }
+    config.provider = static_cast<robotweax_srt_telemetry_provider>(99); /* as a C host could */
     expect(config, ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "rejects an out-of-range provider");
     config = good;
     config.abi_version = 99;

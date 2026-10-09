@@ -20,7 +20,7 @@ extern "C"
 {
 #endif
 
-    typedef enum robotweax_srt_telemetry_metric
+    typedef enum robotweax_srt_telemetry_metric ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         /* Rates from counter deltas (per second). */
         ROBOTWEAX_SRT_TELEMETRY_METRIC_SENT_BITS_PER_SECOND = 0,
@@ -88,7 +88,7 @@ extern "C"
      ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(ROBOTWEAX_SRT_TELEMETRY_METRIC_RECEIVE_BUFFER_SECONDS) |   \
      ROBOTWEAX_SRT_TELEMETRY_METRIC_BIT(ROBOTWEAX_SRT_TELEMETRY_METRIC_RECOVERY_HEADROOM_RATIO))
 
-    typedef enum robotweax_srt_telemetry_metric_kind
+    typedef enum robotweax_srt_telemetry_metric_kind ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_METRIC_KIND_RATE = 1,
         ROBOTWEAX_SRT_TELEMETRY_METRIC_KIND_GAUGE = 2,
