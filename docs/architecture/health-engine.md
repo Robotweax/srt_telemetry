@@ -13,8 +13,8 @@ explaining differences between the two ends is SRT Doctor's job.
 
 | Verdict | Meaning |
 | --- | --- |
-| OK | Every applicable indicator is within its thresholds, and the required one is graded. |
-| Watch | Something moved: a single dropped packet, a margin narrowing. Nothing to change yet. |
+| OK | Every applicable indicator is within its thresholds, and the required one is graded. Also a connected backup path waiting as standby (reason `standby`; see [Context](#context)). |
+| Watch | Something moved: a single dropped packet, a margin narrowing. Nothing to change yet. Also the most a connection-group path shows (see [Context](#context)). |
 | At risk | The stream works, but a margin is close to gone; the advice says what to change. |
 | Failing | The viewer is losing data, or the connection is lost. |
 | Unknown | No grade is possible: no packets, a missing metric, a failed statistics read, connecting, or an unknown role. The reason names which, and `missing_metrics` names the metrics. |
@@ -201,6 +201,31 @@ it from a connection-monitor poll with
 `robotweax_srt_telemetry_public_srt_health_context`. Pass the previous context
 back in: Haivision SRT reports `OPENED` after a broken connection, and the
 helper uses the previous condition to call that lost.
+
+Two flags describe a member of an SRT connection group:
+
+- `HEALTH_CONTEXT_GROUP_MEMBER` caps the verdict at Watch, because one path of
+  several may fail without harm. The reason and advice stay. The status gets
+  `HEALTH_STATUS_CAPPED`, and `uncapped_verdict` holds the path's own grade.
+  A single socket is never capped.
+- `HEALTH_CONTEXT_GROUP_STANDBY` (only with GROUP_MEMBER) marks a connected
+  Main/Backup member that is not the active one. It carries only keepalives,
+  so it is OK with reason `standby` rather than graded on an idle link: no
+  data, or an RTT estimate without traffic (an idle SRT link measures no RTT
+  and reports its initial estimate, about 100 ms). Its latency-based
+  indicators (latency sufficiency, recovery headroom) keep no state while it
+  waits, so no grade from the idle period comes along when it takes over;
+  they start fresh and settle within about 2 s (the enter hold). Its loss and
+  drop indicators keep grading, so a path that flaps between active and
+  standby is still graded. A lost standby still reads lost.
+
+  A connected standby reads OK even on an impaired link: SRT carries only
+  keepalives on it, and notices a dead link only through their timeout.
+  Whether a backup is ready shows only once it carries the stream (see the
+  protocol findings on RTT measurement for standby links).
+
+The embed sets both from the group session; see
+[connection groups](embedding.md#connection-groups).
 
 ## Sampler integration
 

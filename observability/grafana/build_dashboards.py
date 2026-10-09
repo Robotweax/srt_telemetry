@@ -29,7 +29,7 @@ VERDICTS = [(0, "Unknown", "unknown"), (1, "OK", "ok"), (2, "Watch", "watch"), (
 REASONS = {
     "none": "all clear", "no_data": "no data", "missing_metric": "metric missing",
     "missing_setting": "setting missing", "source_error": "statistics read failed", "connecting": "connecting",
-    "connection_lost": "connection lost", "role_unknown": "role unknown",
+    "connection_lost": "connection lost", "role_unknown": "role unknown", "standby": "standby",
     "recovery_headroom_low": "little recovery headroom", "latency_low_for_rtt": "latency short for the RTT",
     "unrecovered_loss": "unrecovered loss", "undecryptable": "undecryptable packets",
     "late_repairs": "repairs arrive late", "recovery_inefficient": "repairs failing",

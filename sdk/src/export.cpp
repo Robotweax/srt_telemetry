@@ -836,6 +836,11 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
             json_string(out, robotweax_srt_telemetry_health_verdict_name(h.verdict));
             out += ",\"reason\":";
             json_string(out, robotweax_srt_telemetry_health_reason_name(h.reason));
+            /* A group member's verdict is capped at Watch; its own grade. */
+            out += ",\"capped\":";
+            out += (h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0 ? "true" : "false";
+            out += ",\"uncapped_verdict\":";
+            json_string(out, robotweax_srt_telemetry_health_verdict_name(h.uncapped_verdict));
             out += ",\"knob\":";
             json_string(out, robotweax_srt_telemetry_health_knob_name(h.knob));
             out += ",\"direction\":";

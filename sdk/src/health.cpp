@@ -12,10 +12,12 @@
 
 static_assert(sizeof(robotweax_srt_telemetry_health_indicator_status_v1) == 24,
               "indicator status layout is part of the ABI");
-static_assert(sizeof(robotweax_srt_telemetry_health_status_v1) == 72 + 16 * 24,
+/* Unreleased v1: grew by uncapped_verdict (groups, 2026-10-09). */
+static_assert(sizeof(robotweax_srt_telemetry_health_status_v1) == 80 + 16 * 24,
               "health status layout is part of the ABI");
 static_assert(offsetof(robotweax_srt_telemetry_health_status_v1, suggested_value) == 56 &&
-                  offsetof(robotweax_srt_telemetry_health_status_v1, indicators) == 72,
+                  offsetof(robotweax_srt_telemetry_health_status_v1, uncapped_verdict) == 72 &&
+                  offsetof(robotweax_srt_telemetry_health_status_v1, indicators) == 80,
               "health status layout is part of the ABI");
 static_assert(sizeof(robotweax_srt_telemetry_health_config_v1) == 48, "health config layout is part of the ABI");
 static_assert(sizeof(robotweax_srt_telemetry_health_context_v1) == 32, "health context layout is part of the ABI");
@@ -337,6 +339,8 @@ struct robotweax_srt_telemetry_health_engine
     std::uint64_t last_sender_drop = 0; /* monotonic time of the latest */
 
     Verdict verdict = UNKNOWN;
+    /* The verdict before a group member's cap (equal to verdict otherwise). */
+    Verdict uncapped = UNKNOWN;
     std::uint64_t verdict_since = 0;
 };
 
@@ -1386,7 +1390,11 @@ robotweax_srt_telemetry_health_engine_set_context(robotweax_srt_telemetry_health
     const auto connection = static_cast<std::int64_t>(context->connection);
     if (connection < ROBOTWEAX_SRT_TELEMETRY_CONNECTION_UNREPORTED ||
         connection > ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST ||
-        (context->flags & ~ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS) != 0)
+        (context->flags & ~(ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS |
+                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY)) != 0 ||
+        ((context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
+         (context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER) == 0))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
@@ -1731,9 +1739,17 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
                 }
             }
         }
+        /* A connected standby path carries only keepalives: SRT measures no
+         * RTT on it (an idle link reports its initial estimate), so the
+         * latency-based indicators would latch grades of an idle link and
+         * show them once it takes over. Those two keep no state while it
+         * waits; the others keep grading (a path that flaps between active
+         * and standby is still graded on loss and drops). */
+        const bool standby = (engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
+                             engine->context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
         for (std::size_t i = 0; i < INDICATORS; ++i)
         {
-            if (raws[i].applicable)
+            if (raws[i].applicable && !(standby && (i == LATENCY || i == HEADROOM)))
             {
                 update_hysteresis(*engine, engine->hysteresis[i], raws[i], now);
             }
@@ -1779,9 +1795,19 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
     }
 
     /* Verdict. */
-    const auto finish = [&](const Verdict verdict, const Reason reason)
+    const auto finish = [&](const Verdict graded, const Reason reason)
     {
+        /* A group member is one path of several: it never pages on its own. */
+        auto verdict = graded;
+        status->uncapped_verdict = graded;
+        if ((engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER) != 0 &&
+            graded > WATCH)
+        {
+            verdict = WATCH;
+            status->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED;
+        }
         set_verdict(*engine, verdict, now);
+        engine->uncapped = graded;
         status->verdict = verdict;
         status->reason = reason;
         status->verdict_since_monotonic_nano = engine->verdict_since;
@@ -1799,6 +1825,12 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
     {
         return finish(UNKNOWN, ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTING);
     }
+    if ((engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
+        engine->context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED)
+    {
+        status->primary_indicator = -1;
+        return finish(OK, ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY);
+    }
     if (source_error)
     {
         /* A failed read or two keeps the verdict; after enter_hold without
@@ -1807,7 +1839,7 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             engine->verdict != UNKNOWN)
         {
             status->primary_indicator = -1;
-            return finish(engine->verdict, ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
+            return finish(engine->uncapped, ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
         }
         return finish(UNKNOWN, ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
     }
@@ -1944,6 +1976,8 @@ robotweax_srt_telemetry_health_reason_name(const robotweax_srt_telemetry_health_
         return "connection_lost";
     case ROBOTWEAX_SRT_TELEMETRY_REASON_ROLE_UNKNOWN:
         return "role_unknown";
+    case ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY:
+        return "standby";
     case ROBOTWEAX_SRT_TELEMETRY_REASON_RECOVERY_HEADROOM_LOW:
         return "recovery_headroom_low";
     case ROBOTWEAX_SRT_TELEMETRY_REASON_LATENCY_LOW_FOR_RTT:

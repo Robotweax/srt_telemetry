@@ -69,6 +69,20 @@ connection-monitor poll into events with
 | `settings_changed` | code = changed settings fields | info |
 | `peer_version_changed` | current = peer version | info |
 
+The embed journals connection-group events (see
+[connection groups](embedding.md#connection-groups)):
+
+| Event | On | Values | Severity |
+| --- | --- | --- | --- |
+| `member_added` | group | code = member socket; detail `path=<name>` | info |
+| `member_removed` | group | code = member socket; detail `path=<name>` | warning |
+| `member_state_changed` | member | previous / current member state (`SRT_MEMBERSTATUS`); code = member socket; detail with the socket states | warning when broken or not connected, else info |
+| `active_member_changed` | group | Backup: previous / current active member socket, detail `path=<a> -> <b>`; Broadcast: current = number of carrying paths, detail `carrying=<names>` | info |
+
+Details are cut at 95 characters, so long path names (up to 159) and long
+`carrying=` lists are shortened there; the member's row carries the full
+name in its `path` label.
+
 With health enabled, the sampler also journals `verdict_changed` (see
 [Health engine](health-engine.md)), and each compact record carries the worst
 verdict of its window with its reason.

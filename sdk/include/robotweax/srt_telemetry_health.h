@@ -83,6 +83,9 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST = 6,
         /* The endpoint role is unknown, so no indicator applies. */
         ROBOTWEAX_SRT_TELEMETRY_REASON_ROLE_UNKNOWN = 7,
+        /* A connected Main/Backup member waiting as standby: it carries no
+         * stream, so its indicators have nothing to grade (verdict OK). */
+        ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY = 8,
 
         ROBOTWEAX_SRT_TELEMETRY_REASON_RECOVERY_HEADROOM_LOW = 16,
         ROBOTWEAX_SRT_TELEMETRY_REASON_LATENCY_LOW_FOR_RTT = 17,
@@ -165,6 +168,16 @@ extern "C"
 
 /* health_context_v1.flags: the bandwidth settings below are known. */
 #define ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS UINT32_C(1)
+/* health_context_v1.flags: the endpoint is one member (path) of a connection
+ * group. Losing or impairing one path is what a group is built to survive, so
+ * the verdict is capped at Watch; the reason and advice stay, and the status
+ * carries HEALTH_STATUS_CAPPED with the grade the member would have had. */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER (UINT32_C(1) << 1)
+/* health_context_v1.flags, with GROUP_MEMBER: a connected Main/Backup member
+ * that is not the active one. It carries only keepalives, so the verdict is
+ * OK / REASON_STANDBY instead of a grade of an idle link (no data, or an RTT
+ * estimate without traffic). A lost standby still reads as lost. */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY (UINT32_C(1) << 2)
 
     /* What the statistics cannot tell: connection state and settings, as the
      * connection monitor reads them. Optional; set it when it changes. */
@@ -203,6 +216,11 @@ extern "C"
         robotweax_srt_telemetry_health_reason reason;
     } robotweax_srt_telemetry_health_indicator_status_v1;
 
+/* health_status_v1.flags: the verdict was capped at Watch because the
+ * endpoint is a group member (HEALTH_CONTEXT_GROUP_MEMBER); uncapped_verdict
+ * holds the grade it would have had. */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED UINT32_C(1)
+
     typedef struct robotweax_srt_telemetry_health_status_v1
     {
         uint32_t struct_size;
@@ -217,11 +235,16 @@ extern "C"
         int32_t primary_indicator;
         robotweax_srt_telemetry_health_knob knob;
         robotweax_srt_telemetry_knob_direction knob_direction;
-        uint32_t reserved;
+        /* HEALTH_STATUS_* flags. */
+        uint32_t flags;
         /* Suggested knob value in the knob's unit, or 0 when none. */
         double suggested_value;
         /* METRIC_BIT()s an applicable indicator needed but did not get. */
         uint64_t missing_metrics;
+        /* With HEALTH_STATUS_CAPPED: the verdict before the cap; otherwise
+         * equal to verdict. */
+        robotweax_srt_telemetry_health_verdict uncapped_verdict;
+        uint32_t reserved;
         robotweax_srt_telemetry_health_indicator_status_v1
             indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_SLOTS_V1];
     } robotweax_srt_telemetry_health_status_v1;

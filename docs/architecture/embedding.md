@@ -84,8 +84,10 @@ rebinding protection, see [HTTP server](http-server.md#security)).
 
 Each source carries, in this order: the embed's labels (config `labels`),
 the labels passed to `attach`, `stream` (from `name=`), `provider`, and
-`stream_id` when enabled. A label the host sets wins over the automatic one
-of the same key. At most 5 host labels, within the sampler's 8; they follow
+`stream_id` when enabled, and for connection groups `group` and `path` (see
+below). A label the host sets wins over the automatic one of the same key,
+except `group` and `path`, which only the embed sets. At most 5 host labels,
+within the sampler's 10; they follow
 the sampler's rules (keys `[A-Za-z_][A-Za-z0-9_]*`, printable values under
 256 bytes, no key twice), checked at `start` and `attach`.
 
@@ -108,6 +110,101 @@ After `detach` the embed makes no further SRT call on the socket, so the host
 may close it. While a source lingers its statistics are not read
 (`srt_source_up` 0, a `source_failed` event); the
 [alert rules](alerting.md) leave a lost connection to `SRTStreamFailing`.
+
+## Connection groups
+
+`robotweax_srt_telemetry_embed_attach_group` monitors a Broadcast or
+Main/Backup group and all its members, with the
+[group session](public-srt-group.md):
+
+```c
+robotweax_srt_telemetry_embed_group_v1 g;
+robotweax_srt_telemetry_embed_group_default(&g);
+g.group = group;                                  /* srt_create_group, or srt_accept */
+g.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+g.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
+robotweax_srt_telemetry_embed_attach_group(telemetry, &g);
+...
+robotweax_srt_telemetry_embed_detach(telemetry, group);  /* before srt_close(group) */
+```
+
+The embed config needs `group_data` and `getsockname`;
+`robotweax_srt_telemetry_host_embed_functions` fills them.
+
+**Rows.**
+- One row for the group, labelled `group=backup` or `group=broadcast`. Its
+  counters are the group's own: unique packets, and what the application
+  lost.
+- One row per member path, also labelled `path=<name>`. A path gets its row
+  when the member first connects.
+- Every tick samples the group and all members once with the tick's
+  timestamps, so the rows are aligned in time.
+- Path names come from the host's `path_name` callback, else the caller's
+  token (`token-1`), else the addresses (`local>peer`); see
+  [path names](public-srt-group.md#path-names).
+
+**Path names** must be unique within a group. A host that names its paths
+(for example by interface or peer address) passes a callback:
+
+```c
+static int name_path(void *user, const robotweax_srt_telemetry_group_member_identity_v1 *m,
+                     char *name, size_t capacity)
+{
+    (void)user;
+    if (strncmp(m->peer_address, "10.1.", 5) == 0) { snprintf(name, capacity, "lte-1"); return 1; }
+    if (strncmp(m->peer_address, "10.2.", 5) == 0) { snprintf(name, capacity, "sat"); return 1; }
+    return 0; /* automatic name */
+}
+g.path_name = name_path;
+```
+
+The callback runs on the embed's thread under its lock, once per member
+socket, when the member first connects. If a second socket appears on a path,
+the row keeps its socket while that socket is usable (or while the new one is
+not connected yet), and the new socket takes the row once the old one is
+broken or gone. That happens with duplicate names, and with a reconnect under
+the same name before the broken member leaves the list; Robotweax SRT keeps
+broken members listed until they are closed.
+
+**Health.**
+- A member path is capped at Watch while the group has another usable path:
+  losing or impairing one path is what a group is built to survive. The
+  reason and advice stay, and the snapshot carries `capped` and the path's own
+  `uncapped_verdict`.
+- The last usable path carries the stream alone and is graded uncapped, so
+  its problems alert like a single socket's.
+- A connected Main/Backup member other than the active one is OK with reason
+  `standby`. It carries only keepalives, so there is nothing to grade.
+- The group's own row is graded on what the group counters allow: a receiver
+  on unrecovered loss; a sender has no buffer metric and stays Unknown. The
+  group verdict proper (from the paths) is the next part. A broken group reads
+  lost (Failing) through the connection monitor on the group handle.
+- Before its first connection a group has no statistics. Its row then gets
+  empty samples rather than failed reads, so it shows as connecting and
+  `SRTSourceStatisticsFailing` stays quiet.
+
+**Events**, with the tick's timestamps:
+
+| Event | On | Values |
+| --- | --- | --- |
+| `member_added` | group row | code = member socket, detail `path=<name>` |
+| `member_removed` | group row | code = member socket, detail `path=<name>` |
+| `member_state_changed` | member row | previous / current member state (`SRT_MEMBERSTATUS`), code = member socket |
+| `active_member_changed` | group row | Backup: previous / current member socket, detail `path=<a> -> <b>`; Broadcast: detail `carrying=<paths>` |
+| `connected` / `disconnected` | group row | the group handle's state |
+
+**Over time.**
+- A member that leaves the group stays on the dashboard as a lost path (Watch)
+  for `linger_s`.
+- A new member on the same path (same name) continues the path's row: one
+  history per path across reconnects. That holds for a caller that reconnects
+  with the same token, or with host names.
+- On the accepting side SRT reports no token, so a reconnected member that
+  arrives from a new port gets a new, address-named row unless the host names
+  its paths.
+- `detach` of the group takes its member rows along, each as a lost row, and
+  a group attached again with the same role and labels during the linger
+  continues the group's row.
 
 ## Recordings
 

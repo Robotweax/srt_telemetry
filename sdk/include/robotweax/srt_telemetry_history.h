@@ -114,7 +114,17 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_EVENT_SETTINGS_CHANGED = 12,
         ROBOTWEAX_SRT_TELEMETRY_EVENT_PEER_VERSION_CHANGED = 13,
         /* Reserved for the health engine. */
-        ROBOTWEAX_SRT_TELEMETRY_EVENT_VERDICT_CHANGED = 14
+        ROBOTWEAX_SRT_TELEMETRY_EVENT_VERDICT_CHANGED = 14,
+        /* Connection groups (public SRT group session), on the group's
+         * source; code: member socket; detail: "path=<path>". */
+        ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED = 15,
+        ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_REMOVED = 16,
+        /* On the member's source; previous/current: member states
+         * (SRT_MEMBERSTATUS); code: member socket. */
+        ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_STATE_CHANGED = 17,
+        /* On the group's source; previous/current: member sockets (-1: none);
+         * detail: "path=<previous> -> <current>". */
+        ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED = 18
     } robotweax_srt_telemetry_event_kind;
 
     typedef enum robotweax_srt_telemetry_event_severity ROBOTWEAX_SRT_TELEMETRY_ENUM_INT

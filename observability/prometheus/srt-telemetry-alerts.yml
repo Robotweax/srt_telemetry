@@ -70,9 +70,11 @@ groups:
       # Unknown while statistics are readable: no packets, a missing metric
       # or setting, connecting. Never treat silence as fine. Matching on all
       # labels keeps sources apart that share job, instance and source_id
-      # (several services behind one OpenTelemetry Collector).
+      # (several services behind one OpenTelemetry Collector). A connection
+      # group's own row (group set, no path) has no verdict of its own yet:
+      # its members are graded, and a broken group still alerts as Failing.
       - alert: SRTStreamUngraded
-        expr: srt_health_verdict == 0 and srt_source_up == 1
+        expr: (srt_health_verdict == 0 unless srt_health_verdict{group!="",path=""}) and srt_source_up == 1
         for: 2m
         labels:
           severity: warning

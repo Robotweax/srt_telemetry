@@ -201,6 +201,36 @@ tests:
         alertname: SRTStreamUngraded
         exp_alerts: []
 
+  # Connection groups: the group's own row has no verdict of its own yet,
+  # so it never alerts as ungraded; an ungraded member path still does.
+  - interval: 10s
+    input_series:
+      - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="20",role="sender",stream="cam",group="backup"}'
+        values: '0x23'
+      - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="20",role="sender",stream="cam",group="backup"}'
+        values: '1x23'
+      - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="21",role="sender",stream="cam",group="backup",path="token-1"}'
+        values: '0x23'
+      - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="21",role="sender",stream="cam",group="backup",path="token-1"}'
+        values: '1x23'
+    alert_rule_test:
+      - eval_time: 130s
+        alertname: SRTStreamUngraded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: srt
+              instance: "enc:9810"
+              source_id: "21"
+              role: sender
+              stream: cam
+              group: backup
+              path: token-1
+            exp_annotations:
+              summary: "SRT sender 21 on enc:9810 cannot be graded"
+              description: "The health engine has no grade for this endpoint: no packets, a metric or setting the verdict needs is missing, or the connection is being set up."
+              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#verdicts"
+
   # A target that stays down keeps its alert for hours, not just the hour
   # after its last scrape.
   - interval: 1m

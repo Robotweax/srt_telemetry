@@ -342,6 +342,27 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 endif()
                 add_test(NAME robotweax_srt_telemetry_embed_tests COMMAND robotweax_srt_telemetry_embed_tests)
                 set_tests_properties(robotweax_srt_telemetry_embed_tests PROPERTIES TIMEOUT 120)
+                add_executable(robotweax_srt_telemetry_embed_group_tests
+                    adapters/public_srt/tests/test_embed_group.cpp)
+                target_include_directories(robotweax_srt_telemetry_embed_group_tests
+                    PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
+                target_link_libraries(robotweax_srt_telemetry_embed_group_tests
+                    PRIVATE RobotweaxSRTTelemetry::embed ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY} Threads::Threads)
+                target_compile_features(robotweax_srt_telemetry_embed_group_tests PRIVATE cxx_std_20)
+                if(EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt.h" AND
+                   NOT EXISTS "${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR}/srt/srt.h")
+                    target_compile_definitions(robotweax_srt_telemetry_embed_group_tests
+                        PRIVATE ROBOTWEAX_SRT_TELEMETRY_USE_FLAT_SRT_HEADER)
+                endif()
+                if(ROBOTWEAX_SRT_TELEMETRY_REQUIRE_GROUP_TEST)
+                    add_test(NAME robotweax_srt_telemetry_embed_group_tests
+                        COMMAND robotweax_srt_telemetry_embed_group_tests --require)
+                else()
+                    add_test(NAME robotweax_srt_telemetry_embed_group_tests
+                        COMMAND robotweax_srt_telemetry_embed_group_tests)
+                    set_tests_properties(robotweax_srt_telemetry_embed_group_tests PROPERTIES SKIP_RETURN_CODE 77)
+                endif()
+                set_tests_properties(robotweax_srt_telemetry_embed_group_tests PROPERTIES TIMEOUT 120)
                 # Browser smoke test of the built-in UI against the demo.
                 find_package(Python3 COMPONENTS Interpreter)
                 find_program(ROBOTWEAX_SRT_TELEMETRY_BROWSER

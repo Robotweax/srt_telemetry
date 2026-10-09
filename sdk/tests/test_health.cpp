@@ -1035,6 +1035,143 @@ void on_health(void *user, const robotweax_srt_telemetry_source_info_v1 *,
     static_cast<HealthEvents *>(user)->verdicts.push_back(status->verdict);
 }
 
+/* A group member is one path of several: capped at Watch, grade kept. */
+void test_group_member_cap()
+{
+    Run run(RECEIVER);
+    robotweax_srt_telemetry_health_context_v1 context;
+    robotweax_srt_telemetry_health_context_init(&context);
+    context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+    context.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER;
+    check(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "group member flag accepted");
+    check(run.feed(Condition{}, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+              run.status.flags == 0 && run.status.uncapped_verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK,
+          "a clean member is OK, not capped");
+    context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+    static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context));
+    check(run.feed(Condition{}, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+              run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST &&
+              (run.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0 &&
+              run.status.uncapped_verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
+          "a lost member is Watch with the reason, capped from Failing");
+
+    /* A short source error keeps the uncapped grade. */
+    run.now += period;
+    robotweax_srt_telemetry_metric_sample_v1 failed{};
+    failed.struct_size = sizeof(failed);
+    failed.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    failed.observed_at_unix_nano = run.now;
+    failed.sample_monotonic_nano = run.now;
+    failed.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
+    context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+    static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context));
+    run.feed(Condition{}, 3);
+    run.now += period;
+    failed.observed_at_unix_nano = run.now;
+    failed.sample_monotonic_nano = run.now;
+    static_cast<void>(robotweax_srt_telemetry_health_engine_push(run.engine, &failed, &run.status));
+    check(run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR &&
+              run.status.uncapped_verdict == run.status.verdict,
+          "a source error keeps the member's own grade");
+
+    context.flags = UINT32_C(1) << 3;
+    check(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "unknown context flags rejected");
+    context.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY;
+    check(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "standby only for group members");
+
+    /* An idle Backup standby: OK / standby, not a grade of an idle link. */
+    Run standby(RECEIVER);
+    robotweax_srt_telemetry_health_context_v1 idle;
+    robotweax_srt_telemetry_health_context_init(&idle);
+    idle.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+    idle.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER | ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY;
+    check(robotweax_srt_telemetry_health_engine_set_context(standby.engine, &idle) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "standby flag accepted");
+    Condition silent{};
+    silent.receiving = false;
+    check(standby.feed(silent, 6) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+              standby.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY &&
+              std::string_view(robotweax_srt_telemetry_health_reason_name(standby.status.reason)) == "standby",
+          "an idle standby is OK / standby");
+    /* Taking over: no grade latched from the idle period comes along. A
+     * standby with an idle link's RTT estimate (latency barely above it)
+     * would grade latency Failing; after taking over with a measured RTT it
+     * starts clean. */
+    {
+        Run takeover(SENDER);
+        robotweax_srt_telemetry_health_context_v1 waiting;
+        robotweax_srt_telemetry_health_context_init(&waiting);
+        waiting.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        waiting.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                        ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY;
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(takeover.engine, &waiting));
+        Condition idle_link{};
+        idle_link.rtt = 0.100; /* SRT's initial estimate on a link without traffic */
+        idle_link.latency = 0.120;
+        check(takeover.feed(idle_link, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                  takeover.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY,
+              "an idle standby with an initial RTT estimate is OK / standby");
+        waiting.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER;
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(takeover.engine, &waiting));
+        Condition carrying{};
+        carrying.rtt = 0.0001;
+        carrying.latency = 0.120;
+        /* Fresh indicators: a short Unknown while they settle, never the
+         * idle period's latched Failing. */
+        const auto after = takeover.feed(carrying, 1);
+        check(after != ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING && after != ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK &&
+                  takeover.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_LATENCY_SUFFICIENCY].state !=
+                      ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
+              "after taking over, no latched latency grade from the idle period");
+        check(takeover.feed(carrying, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "and OK once the path has carried");
+    }
+
+    /* A path flapping between active and standby every half second while it
+     * loses data is still graded on the loss (only latency-based state is
+     * reset in standby). */
+    {
+        Run flap(RECEIVER);
+        robotweax_srt_telemetry_health_context_v1 member;
+        robotweax_srt_telemetry_health_context_init(&member);
+        member.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        Condition lossy{};
+        lossy.loss_per_second = 60;
+        lossy.drops_per_second = 30;
+        bool graded_failing = false;
+        for (int half = 0; half < 16; ++half)
+        {
+            member.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                           (half % 2 == 0 ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY : 0u);
+            static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(flap.engine, &member));
+            flap.feed(lossy, 0.5);
+            graded_failing = graded_failing || (half % 2 == 1 && flap.status.uncapped_verdict ==
+                                                                     ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING);
+        }
+        check(graded_failing, "a flapping lossy path is still graded (Failing, capped at Watch)");
+    }
+
+    idle.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+    static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(standby.engine, &idle));
+    check(standby.feed(silent, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+              standby.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST,
+          "a lost standby reads lost (capped at Watch)");
+
+    Run plain(RECEIVER);
+    plain.feed(Condition{}, 3);
+    robotweax_srt_telemetry_health_context_v1 lost;
+    robotweax_srt_telemetry_health_context_init(&lost);
+    lost.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+    static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(plain.engine, &lost));
+    check(plain.feed(Condition{}, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING && plain.status.flags == 0 &&
+              plain.status.uncapped_verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
+          "a single socket still fails");
+}
+
 void test_sampler_health()
 {
     robotweax_srt_telemetry_sampler_config_v1 config{};
@@ -1426,6 +1563,7 @@ int main()
     test_sender_classes();
     test_unknown_and_context();
     test_review_cases();
+    test_group_member_cap();
     test_sampler_health();
     test_lab_ground_truth();
     if (failures != 0)

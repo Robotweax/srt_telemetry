@@ -33,7 +33,7 @@ and `robotweax_srt_telemetry_public_srt_source_config`, which make a session a
 source with one `srt_bistats` call per tick. Any other statistics source, such
 as a recorded file or a different transport, can implement the same callback.
 
-Each source has a role and up to 8 labels. Keys are `[A-Za-z_][A-Za-z0-9_]*`,
+Each source has a role and up to 10 labels. Keys are `[A-Za-z_][A-Za-z0-9_]*`,
 at most 63 bytes. Values are printable ASCII, at most 255 bytes. Labels are
 copied when the source is added and passed to every callback; exporters will
 use them as metric labels.
