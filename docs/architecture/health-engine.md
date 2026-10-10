@@ -225,7 +225,22 @@ Two flags describe a member of an SRT connection group:
   protocol findings on RTT measurement for standby links).
 
 The embed sets both from the group session; see
-[connection groups](embedding.md#connection-groups).
+[connection groups](embedding.md#connection-groups). A member's status always
+carries `HEALTH_STATUS_GROUP_MEMBER`, capped or not, so outputs can tell a
+path from a single socket (`srt_health_path_verdict` exports its own grade).
+
+**A new connection is graded on its own evidence.** A context that reports
+the connection lost and later connected again belongs to a new connection: a
+group member reconnecting on its path, or a socket continuing a lost source's
+row. On that connected report the engine drops what it measured on the old
+connection (indicator holds, the count window, RTT baseline, diagnoses) and
+keeps only the verdict bookkeeping and a group's paths. Without this a path
+that reconnected after an outage kept its predecessor's stalled
+acknowledgements for the 10 s leave hold, and a Main/Backup group, whose
+reconnected primary takes over at once, paged on a working stream. The new
+connection is Unknown until it has shown its own evidence (the enter hold),
+then graded as usual. A recovery on the same connection keeps its leave
+hold.
 
 ### Connection groups
 

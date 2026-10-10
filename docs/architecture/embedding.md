@@ -142,6 +142,10 @@ The embed config needs `group_data` and `getsockname`;
 - Path names come from the host's `path_name` callback, else the caller's
   token (`token-1`), else the addresses (`local>peer`); see
   [path names](public-srt-group.md#path-names).
+- Exports: the group row has `srt_group_usable_paths` and
+  `srt_group_expected_paths`, each path row `srt_health_path_verdict` (its
+  own grade); see [metric names](metric-names.md#health). The built-in UI and
+  the Grafana dashboards show a group as one endpoint with its paths.
 
 **Path names** must be unique within a group. A host that names its paths
 (for example by interface or peer address) passes a callback:

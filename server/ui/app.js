@@ -451,6 +451,62 @@
       });
   }
 
+  /* Connection groups (docs/architecture/embedding.md#connection-groups):
+   * the group's row carries group=<type>, each path's row the same labels
+   * and role plus path=<name>. */
+  function pathName(src) {
+    const l = src.labels || {};
+    return typeof l.path === 'string' && typeof l.group === 'string' ? clean(l.path) : null;
+  }
+
+  function isGroupRow(src) {
+    const l = src.labels || {};
+    return typeof l.group === 'string' && typeof l.path !== 'string';
+  }
+
+  function groupKey(role, labels, skipPath) {
+    const entries = Object.entries(labels || {}).filter(([k]) => !(skipPath && k === 'path'));
+    entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return JSON.stringify([String(role), entries]);
+  }
+
+  /* Each group row's paths, in path-name order; a path whose group row is
+   * gone stands on its own. */
+  function groupPaths(iterable) {
+    const sources = [...iterable];
+    const groups = new Map();
+    for (const src of sources) if (isGroupRow(src)) groups.set(groupKey(src.role, src.labels, false), src.id);
+    const paths = new Map();
+    const parent = new Map();
+    for (const src of sources) {
+      if (pathName(src) === null) continue;
+      const gid = groups.get(groupKey(src.role, src.labels, true));
+      if (gid === undefined) continue;
+      parent.set(src.id, gid);
+      if (!paths.has(gid)) paths.set(gid, []);
+      paths.get(gid).push(src);
+    }
+    for (const list of paths.values()) list.sort((a, b) => pathName(a).localeCompare(pathName(b)) || a.id - b.id);
+    return { paths, parent };
+  }
+
+  /* "2 of 3 paths" on a group row, from its health. */
+  function pathCount(src) {
+    const g = src.health?.group;
+    if (!g || !Number.isFinite(g.usable_paths) || !Number.isFinite(g.expected_paths)) return null;
+    return { usable: g.usable_paths, expected: g.expected_paths, short: g.usable_paths < g.expected_paths };
+  }
+
+  function pathChip(src) {
+    const c = pathCount(src);
+    if (!c) return null;
+    const text = `${c.usable}/${c.expected} path${c.expected === 1 ? '' : 's'}`;
+    return h('span', {
+      class: `chip paths${c.short ? ' short' : ''}`,
+      title: `${c.usable} of ${c.expected} paths can carry the stream`,
+    }, text);
+  }
+
   function roleScope(role, key) {
     if (key.startsWith('srt.connection.')) return true;
     if (role === 'sender') return key.startsWith('srt.sender.');
@@ -1068,7 +1124,10 @@
     }
 
     function update() {
-      const all = [...state.sources.values()];
+      /* A connection group is one endpoint: its paths follow its row and
+       * are not counted on their own. */
+      const { paths, parent } = groupPaths(state.sources.values());
+      const all = [...state.sources.values()].filter((src) => !parent.has(src.id));
       const counts = { ok: 0, watch: 0, at_risk: 0, failing: 0, unknown: 0 };
       for (const src of all) {
         const v = src.health?.verdict;
@@ -1114,7 +1173,9 @@
         const kb = String(b.role);
         return ka === kb ? a.id - b.id : ka < kb ? -1 : 1;
       });
-      const visible = new Set(shown.map((src) => src.id));
+      const listed = [];
+      for (const src of shown) listed.push(src, ...(paths.get(src.id) || []));
+      const visible = new Set(listed.map((src) => src.id));
       for (const [id, row] of rows) {
         if (!visible.has(id)) {
           row.tr.remove();
@@ -1122,23 +1183,32 @@
         }
       }
       const now = Date.now();
-      for (const src of shown) {
+      for (const src of listed) {
         const { tr, cells } = rowFor(src);
+        const nested = parent.has(src.id);
+        tr.classList.toggle('path-row', nested);
         const row = rows.get(src.id);
         const health = src.health;
         const v = VERDICT_LABEL[health?.verdict] ? health.verdict : 'unknown';
         const age = health && Number.isFinite(health.verdict_age_seconds) ? `for ${fmtAge(health.verdict_age_seconds)}` : '';
         /* A connection-group path: capped at Watch, its own grade shown. */
         const capped = health?.capped && VERDICT_LABEL[health.uncapped_verdict]
-          ? `path ${VERDICT_LABEL[health.uncapped_verdict].toLowerCase()}` : '';
+          ? `own grade: ${VERDICT_LABEL[health.uncapped_verdict].toLowerCase()}` : '';
         cells.status.className = `status v-${v}`;
-        setCell(cells.status, `${v}|${age}|${capped}`, () => [verdictBadge(v),
+        const count = pathCount(src);
+        const countSig = count ? `${count.usable}/${count.expected}` : '';
+        setCell(cells.status, `${v}|${age}|${capped}|${countSig}`, () => [verdictBadge(v),
           age ? h('div', { class: 'faint num', text: age }) : null,
-          capped ? h('div', { class: 'faint', text: capped }) : null]);
+          capped ? h('div', { class: 'faint', text: capped }) : null,
+          count ? h('div', {}, pathChip(src)) : null]);
         const { name, key } = sourceName(src);
         const role = String(src.role);
-        setCell(cells.name, JSON.stringify([name, src.labels]), () => [h('div', { class: 'endpoint-name', text: name }),
-          h('div', { class: 'labels' }, sourceChips(src, key))]);
+        const path = nested ? pathName(src) : null;
+        setCell(cells.name, JSON.stringify([name, path, src.labels]), () => path !== null
+          ? [h('div', { class: 'endpoint-name' }, h('span', { class: 'path-mark', 'aria-hidden': 'true', text: '↳ ' }), path),
+            h('div', { class: 'faint', text: 'path' })]
+          : [h('div', { class: 'endpoint-name', text: name }),
+            h('div', { class: 'labels' }, sourceChips(src, key))]);
         const connection = src.connection && src.connection !== 'connected' && src.connection !== 'unreported' ? String(src.connection) : '';
         setCell(cells.role, `${role}|${connection}`, () => [h('span', { class: 'role', text: role }),
           connection ? h('div', { class: 'faint', text: connection }) : null]);
@@ -1147,7 +1217,9 @@
         setCell(cells.advice, `${a.action}|${a.hint}|${why}`, () => [h('div', { class: 'action', text: a.action }),
           a.hint ? h('div', { class: 'why', text: a.hint }) : null,
           why ? h('div', { class: 'why', text: why }) : null]);
-        tr.setAttribute('aria-label', `${name}, ${role}: ${VERDICT_LABEL[v]}. ${a.action}. Open details.`);
+        const who = path !== null ? `${name}, path ${path}` : name;
+        const usable = count ? `, ${count.usable} of ${count.expected} paths usable` : '';
+        tr.setAttribute('aria-label', `${who}, ${role}: ${VERDICT_LABEL[v]}${usable}. ${a.action}. Open details.`);
         const texts = [
           [cells.bitrate, fmtBitrate(windowStat(src, primaryBitrateKey(src.role), 'rate'))],
           [cells.rtt, fmtDuration(windowStat(src, 'srt.connection.rtt', 'mean', 'last'))],
@@ -1166,11 +1238,11 @@
         }
       }
       /* Reorder only when the order changed, so focus and hover stay. */
-      const nextOrder = shown.map((src) => src.id).join(',');
-      if (nextOrder !== order || tbody.children.length !== shown.length) {
+      const nextOrder = listed.map((src) => src.id).join(',');
+      if (nextOrder !== order || tbody.children.length !== listed.length) {
         order = nextOrder;
         const focused = document.activeElement;
-        for (const src of shown) tbody.append(rows.get(src.id).tr);
+        for (const src of listed) tbody.append(rows.get(src.id).tr);
         if (focused && focused !== document.activeElement && document.contains(focused)) focused.focus();
       }
       table.classList.toggle('hidden', shown.length === 0);
@@ -1650,6 +1722,21 @@
 
   function sourceView(id) {
     const crumbs = h('div', { class: 'crumbs' }, h('a', { href: '#/', text: '← All endpoints' }));
+    /* A connection group's paths, each with its own grade. */
+    const pathsBody = h('tbody');
+    const pathsNote = h('span', { class: 'faint' });
+    const pathsSection = h('section', { class: 'section hidden' },
+      h('div', { class: 'section-head' }, h('h2', { text: 'Paths' }), pathsNote),
+      h('div', { class: 'card' }, h('table', { class: 'paths-table' },
+        h('thead', {}, h('tr', {},
+          h('th', { text: 'Path' }),
+          h('th', { text: 'Own grade' }),
+          h('th', { text: 'Connection' }),
+          h('th', { class: 'r', text: 'Bitrate' }),
+          h('th', { class: 'r', text: 'RTT' }),
+          h('th', { class: 'r', text: 'Loss' }),
+          h('th', { class: 'r', text: 'Dropped' }))),
+        pathsBody)));
     const head = h('div', { class: 'source-head' });
     const hero = h('div', { class: 'card hero' });
     const tiles = h('div', { class: 'tiles' });
@@ -1689,6 +1776,7 @@
     details.addEventListener('toggle', () => render());
     const body = h('div', {},
       hero,
+      pathsSection,
       h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: 'Now' }), h('span', { class: 'faint', id: 'window-note' })), tiles),
       h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: 'Health indicators' })), indicators, missing),
       h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: 'History' }), h('span', { class: 'faint', text: `Times are local (${timeZoneLabel()})` }), rangeGroup), timeline.card, h('div', { class: 'section' }, chartsBox)),
@@ -1723,8 +1811,15 @@
       }
       loadHistory(id);
       const { name, key } = sourceName(src);
-      document.title = `${name} · ${src.role} · SRT Telemetry`;
-      put(head, h('h1', { text: name }), h('span', { class: 'role', text: src.role }),
+      const groups = groupPaths(state.sources.values());
+      const groupId = groups.parent.get(id);
+      const path = groupId !== undefined ? pathName(src) : null;
+      put(crumbs, h('a', { href: '#/', text: '← All endpoints' }),
+        groupId !== undefined ? h('span', { class: 'faint', text: ' · ' }) : null,
+        groupId !== undefined ? h('a', { href: `#/source/${groupId}`, text: `${name}: connection group` }) : null);
+      document.title = `${path !== null ? `${name} · path ${path}` : name} · ${src.role} · SRT Telemetry`;
+      put(head, h('h1', { text: path !== null ? `${name} · path ${path}` : name }), h('span', { class: 'role', text: src.role }),
+        pathChip(src),
         h('span', { class: 'labels' }, sourceChips(src, key)),
         h('span', { class: 'faint', text: `${src.connection || 'unreported'}${src.up ? '' : ' · statistics read failing'}` }));
 
@@ -1750,6 +1845,52 @@
             ? h('div', { class: 'note', text: src.role === 'sender' ? 'Advice from what this sender sees; the receiver may see more.' : 'Advice from what this receiver sees; the sender may see more.' })
             : null));
 
+      const members = groups.paths.get(id) || [];
+      pathsSection.classList.toggle('hidden', !isGroupRow(src));
+      if (isGroupRow(src)) {
+        const count = pathCount(src);
+        pathsNote.textContent = count
+          ? `${count.usable} of ${count.expected} can carry the stream · a path alone never pages; the group does`
+          : 'a path alone never pages; the group does';
+        /* Rebuilt only when what it shows changed, so focus stays. */
+        const rowsData = members.map((m) => {
+          const own = VERDICT_LABEL[m.health?.uncapped_verdict] ? m.health.uncapped_verdict
+            : VERDICT_LABEL[m.health?.verdict] ? m.health.verdict : 'unknown';
+          return {
+            id: m.id,
+            name: pathName(m),
+            own,
+            standby: m.health?.reason === 'standby',
+            connection: `${m.connection || 'unreported'}${m.up ? '' : ' · read failing'}`,
+            values: [fmtBitrate(windowStat(m, primaryBitrateKey(m.role), 'rate')),
+              fmtDuration(windowStat(m, 'srt.connection.rtt', 'mean', 'last')),
+              fmtPercent(lossShare(m)), fmtPacketRate(dropRate(m))],
+          };
+        });
+        const signature = JSON.stringify(rowsData);
+        if (pathsBody.dataset.sig !== signature) {
+          pathsBody.dataset.sig = signature;
+          put(pathsBody, ...(rowsData.length ? rowsData.map((r) => {
+            const open = () => {
+              location.hash = `#/source/${r.id}`;
+            };
+            const tr = h('tr', { tabindex: '0', 'aria-label': `Path ${r.name}: ${r.standby ? 'standby' : VERDICT_LABEL[r.own]}. Open details.` },
+              h('td', { class: 'path-name', text: r.name }),
+              h('td', {}, verdictBadge(r.own, 12), r.standby ? h('span', { class: 'faint', text: ' standby' }) : null),
+              h('td', { class: 'faint', text: r.connection }),
+              ...r.values.map((text) => h('td', { class: 'r num', text })));
+            tr.addEventListener('click', open);
+            tr.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                open();
+              }
+            });
+            return tr;
+          }) : [h('tr', {}, h('td', { colspan: '7', class: 'faint', text: 'No path has connected yet.' }))]));
+        }
+      }
+
       put(tiles, ...tilesFor(src));
       const note = document.getElementById('window-note');
       if (note && src.window) note.textContent = `${fmtClock(src.window.start_unix_ms)}–${fmtClock(src.window.end_unix_ms)}${src.window.quality?.length ? ` · ${src.window.quality.join(', ')}` : ''}`;
@@ -1765,7 +1906,9 @@
       }));
       const missingList = health?.missing_metrics || [];
       missing.classList.toggle('hidden', missingList.length === 0);
-      missing.textContent = missingList.length ? `Not reported by this SRT library: ${missingList.join(', ')}.` : '';
+      missing.textContent = missingList.length
+        ? `${isGroupRow(src) ? 'Not reported for a connection group (its paths have them)' : 'Not reported by this SRT library'}: ${missingList.join(', ')}.`
+        : '';
 
       for (const [seconds, b] of rangeButtons) b.setAttribute('aria-pressed', state.rangeSeconds === seconds ? 'true' : 'false');
       if (chartsRole !== src.role) {

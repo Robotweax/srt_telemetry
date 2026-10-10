@@ -11,9 +11,11 @@ Live checks (with --prometheus URL): every dashboard query, with the
 dashboard variables filled in, returns data from a Prometheus that scrapes
 an exporter (the dashboard demo in CI). The endpoint dashboard is evaluated
 for a sender and a receiver; each of its queries must return data for at
-least one of them.
+least one of them. Its connection-group queries are evaluated for a group
+sender and receiver: with --groups the exporter must have them (the demo
+with --group), otherwise those queries are skipped when it has none.
 
-Usage: check_dashboards.py [--prometheus http://127.0.0.1:9090] [--job srt]
+Usage: check_dashboards.py [--prometheus http://127.0.0.1:9090] [--job srt] [--groups]
 """
 
 import argparse
@@ -123,10 +125,10 @@ def query(prometheus, expr):
     return body["data"]["result"]
 
 
-def source_ids(prometheus, job):
+def source_ids(prometheus, job, family="srt_health_verdict"):
     ids = {}
     for role in ("sender", "receiver"):
-        result = query(prometheus, f'srt_health_verdict{{job="{job}",role="{role}"}}')
+        result = query(prometheus, f'{family}{{job="{job}",role="{role}"}}')
         if result:
             # The worst one exercises the most panels.
             result.sort(key=lambda r: -float(r["value"][1]))
@@ -138,6 +140,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prometheus")
     parser.add_argument("--job", default="srt")
+    parser.add_argument("--groups", action="store_true", help="require connection groups in the job")
     args = parser.parse_args()
     window, other = families()
     if len(window) < 30 or not other:
@@ -164,20 +167,30 @@ def main():
         ids = source_ids(args.prometheus, args.job)
         if set(ids) != {"sender", "receiver"}:
             fail(f"live: need a sender and a receiver in job {args.job}, found {ids}")
+        groups = source_ids(args.prometheus, args.job, "srt_group_usable_paths")
+        if args.groups and set(groups) != {"sender", "receiver"}:
+            fail(f"live: need a group sender and receiver in job {args.job}, found {groups}")
         live = 0
+        skipped = 0
         for name, dashboard in dashboards.items():
             for where, expr in queries(dashboard):
                 if where.startswith("variable"):
                     continue
+                group_query = "srt_group_" in expr or "srt_health_path_verdict" in expr
+                if group_query and not groups:
+                    skipped += 1
+                    continue
                 if "$source" in expr:
-                    results = [query(args.prometheus, fill(expr, args.job, ids.get(role))) for role in ids]
+                    chosen = groups if group_query else ids
+                    results = [query(args.prometheus, fill(expr, args.job, chosen.get(role))) for role in chosen]
                     ok = any(results)
                 else:
                     ok = bool(query(args.prometheus, fill(expr, args.job)))
                 live += 1
                 if not ok:
                     fail(f"live: {name}: {where}: no data for {fill(expr, args.job)}")
-        print(f"live: {live} queries returned data")
+        print(f"live: {live} queries returned data"
+              + (f", {skipped} connection-group queries skipped (no group)" if skipped else ""))
 
     if failures:
         print(f"{len(failures)} dashboard checks failed")

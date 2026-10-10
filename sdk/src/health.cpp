@@ -357,6 +357,9 @@ struct robotweax_srt_telemetry_health_engine
      * a short statistics-read failure holds). */
     Verdict own = UNKNOWN;
     std::uint64_t verdict_since = 0;
+    /* The connection was reported lost: the next connected report is a new
+     * connection (a reconnect that continues the source's row). */
+    bool lost = false;
 };
 
 namespace
@@ -1508,6 +1511,30 @@ robotweax_srt_telemetry_health_engine_set_context(robotweax_srt_telemetry_health
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
+    if (context->connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST)
+    {
+        engine->lost = true;
+    }
+    else if (context->connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED && engine->lost)
+    {
+        /* A new connection (a member reconnecting on its path, or a socket
+         * continuing a lost row) is graded on its own evidence: the old
+         * connection's indicator holds, count window and diagnoses would
+         * otherwise show its last trouble for up to the leave hold. The
+         * verdict bookkeeping and a group's paths stay. */
+        robotweax_srt_telemetry_health_engine fresh;
+        fresh.config = engine->config;
+        fresh.thresholds = engine->thresholds;
+        fresh.role_applies = engine->role_applies;
+        fresh.verdict = engine->verdict;
+        fresh.uncapped = engine->uncapped;
+        fresh.has_group = engine->has_group;
+        fresh.group = engine->group;
+        fresh.redundancy = engine->redundancy;
+        fresh.own = engine->own;
+        fresh.verdict_since = engine->verdict_since;
+        *engine = std::move(fresh);
+    }
     engine->context = *context;
     engine->context.struct_size = sizeof(engine->context);
     return ROBOTWEAX_SRT_TELEMETRY_OK;
@@ -1973,8 +2000,12 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         /* A group member is one path of several: it never pages on its own. */
         auto verdict = graded;
         status->uncapped_verdict = graded;
-        if ((engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER) != 0 &&
-            graded > WATCH)
+        const bool member = (engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER) != 0;
+        if (member)
+        {
+            status->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER;
+        }
+        if (member && graded > WATCH)
         {
             verdict = WATCH;
             status->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED;

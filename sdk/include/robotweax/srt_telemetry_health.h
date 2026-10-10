@@ -230,6 +230,10 @@ extern "C"
  * paths (health_group_v1); group_usable_paths and group_expected_paths are
  * set. */
 #define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP (UINT32_C(1) << 1)
+/* health_status_v1.flags: the endpoint is one path of a connection group
+ * (HEALTH_CONTEXT_GROUP_MEMBER), capped or not; uncapped_verdict is its own
+ * grade. */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER (UINT32_C(1) << 2)
 
     typedef struct robotweax_srt_telemetry_health_status_v1
     {

@@ -7,6 +7,9 @@ the UI in headless Chrome or Chromium and checks the rendered DOM:
 - the fleet view lists every endpoint from the live feed, worst first;
 - the remote-4g stream (RTT above its latency) shows latency advice;
 - a source view shows the verdict, the advice, the tiles and four charts;
+- a connection group (demo --group backup) is one endpoint: its paths follow
+  its row, it shows how many paths are usable, and its view lists the paths
+  (skipped when the SRT library has no groups);
 - with a token, the UI asks for it, and opens with #token=...
 
 Usage: ui_smoke_test.py --demo PATH --browser PATH
@@ -63,6 +66,9 @@ class Demo:
         line = self.process.stdout.readline()
         if "dashboard:" not in line:
             raise RuntimeError(f"demo did not start: {line}{self.process.stdout.read()}")
+        self.group = None
+        if "--group" in args:
+            self.group = self.process.stdout.readline().strip().removeprefix("group: ")
         # Keep reading the demo's output, so SRT logs never block it.
         self.drain = threading.Thread(target=lambda: [None for _ in self.process.stdout], daemon=True)
         self.drain.start()
@@ -87,31 +93,68 @@ def wait_for_advice(port, token=None, timeout=45):
     return snapshot(port, token)
 
 
+def fleet_rows(dom):
+    """(is_path, endpoint name, verdict) of every fleet row, in order."""
+    rows = []
+    for match in re.finditer(r'<tr tabindex="0"([^>]*)>(.*?)</tr>', dom, re.S):
+        attrs, body = match.groups()
+        verdict = re.search(r'<td class="status v-([a-z_]+)"', body)
+        name = re.search(r'<div class="endpoint-name">(.*?)</div>', body, re.S)
+        rows.append(("path-row" in attrs, re.sub(r"<[^>]+>", "", name.group(1)) if name else "",
+                     verdict.group(1) if verdict else ""))
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--demo", required=True)
     parser.add_argument("--browser", required=True)
     args = parser.parse_args()
 
-    demo = Demo(args.demo)
+    demo = Demo(args.demo, "--group", "backup")
     try:
         data = wait_for_advice(demo.port)
+        grouped = demo.group == "backup"
+        if not grouped:
+            print(f"skip group checks: group {demo.group}")
+        # Six plain endpoints; with the group two more (sender and receiver
+        # groups) and their four paths as rows.
+        endpoints = 8 if grouped else 6
+        total = 12 if grouped else 6
         base = f"http://127.0.0.1:{demo.port}/"
         for attempt in range(3):
             dom = dump_dom(args.browser, base)
-            rows = re.findall(r'<tr tabindex="0"', dom)
-            if 'data-state="live"' in dom and len(rows) == 6:
+            rows = fleet_rows(dom)
+            if 'data-state="live"' in dom and len(rows) == total:
                 break
-        check(len(rows) == len(data["sources"]) == 6, f"fleet lists all 6 endpoints (found {len(rows)})")
+        check(len(rows) == len(data["sources"]) == total, f"fleet lists all {total} rows (found {len(rows)})")
         check('data-state="live"' in dom, "fleet follows the live feed")
         check(">null<" not in dom and ">undefined<" not in dom and "NaN" not in dom,
               "no null, undefined or NaN in the page")
         rank = {"failing": 0, "at_risk": 1, "watch": 2, "unknown": 3, "ok": 4}
-        shown = [rank[v] for v in re.findall(r'<td class="status v-([a-z_]+)"', dom)]
-        check(len(shown) == 6 and shown == sorted(shown), f"worst endpoint first (ranks {shown})")
+        shown = [rank.get(v, -1) for is_path, _, v in rows if not is_path]
+        check(len(shown) == endpoints and shown == sorted(shown), f"worst endpoint first (ranks {shown})")
         check("aise the latency to" in dom, "remote-4g shows latency advice (as a change, or as a hint at Watch)")
-        check(re.search(r"<h1>(\d+ of 6 endpoints needs? attention|6 endpoints: no action needed)</h1>", dom)
-              is not None, "headline counts the endpoints needing attention")
+        check(re.search(rf"<h1>(\d+ of {endpoints} endpoints needs? attention|{endpoints} endpoints: no action needed)</h1>",
+                        dom) is not None, f"headline counts {endpoints} endpoints, paths not on their own")
+        if grouped:
+            paths = [i for i, (is_path, _, _) in enumerate(rows) if is_path]
+            check(len(paths) == 4, f"four path rows (found {len(paths)})")
+            follows = all(rows[i - 1][1] == "bonded-1" or rows[i - 1][0] for i in paths)
+            check(follows and sorted(name for is_path, name, _ in rows if is_path) == ["↳ lte", "↳ lte", "↳ sat", "↳ sat"],
+                  f"paths follow their group's row ({[r[:2] for r in rows]})")
+            check(len(re.findall(r'class="chip paths( short)?"[^>]*>[12]/2 paths<', dom)) == 2,
+                  "group rows show their usable paths")
+            group = next(s for s in data["sources"] if s["labels"].get("stream") == "bonded-1"
+                         and s["role"] == "sender" and "path" not in s["labels"])
+            gdom = dump_dom(args.browser, f"{base}#/source/{group['id']}")
+            names = re.findall(r'<td class="path-name">([^<]*)</td>', gdom)
+            check(sorted(names) == ["lte", "sat"], f"group view lists its paths ({names})")
+            check("<h2>Paths</h2>" in gdom and "Own grade" in gdom, "group view: paths section with own grades")
+            path = next(s for s in data["sources"] if s["labels"].get("path") == "sat" and s["role"] == "sender")
+            pdom = dump_dom(args.browser, f"{base}#/source/{path['id']}")
+            check(f'href="#/source/{group["id"]}"' in pdom and "connection group" in pdom
+                  and "bonded-1 · path sat" in pdom, "path view links back to its group")
 
         bad = next(s for s in data["sources"] if s["labels"]["stream"] == "remote-4g" and s["role"] == "receiver")
         dom = dump_dom(args.browser, f"{base}#/source/{bad['id']}")

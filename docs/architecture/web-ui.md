@@ -27,7 +27,11 @@ interrupted streams:
 ```
 
 Options: `--token T`, `--bind ADDRESS`, `--streams N`, `--duration SECONDS`,
-`--frame-ancestors "https://console.example.com"`.
+`--frame-ancestors "https://console.example.com"`, `--group backup` (or
+`broadcast`): a connection group `bonded-1` on both sides with the paths `lte`
+and `sat`, monitored by the embedding layer; `lte` loses its path for 14 s
+every 54 s and reconnects, so the group goes At risk (no backup path left)
+and back.
 
 ## Fleet view (`#/`)
 
@@ -35,6 +39,14 @@ Options: `--token T`, `--bind ADDRESS`, `--streams N`, `--duration SECONDS`,
 - **Headline:** "N of M endpoints need attention" (At risk or Failing), or
   "N of M endpoints cannot be graded" (Unknown), or "M endpoints: no action
   needed". It never reports all clear while an endpoint is ungraded.
+- **Connection groups** are one endpoint each: the group's row carries a
+  chip with its usable and expected paths ("1/2 paths", highlighted when
+  short), and its paths follow it as indented rows, in name order. Paths are
+  not counted in the tallies or the headline, and the filters apply to the
+  group (its paths go with it). A path shows its capped verdict and its own
+  grade ("own grade: failing"). A path whose group row is gone stands on its
+  own. Group and path rows are recognised by their labels: `group=<type>`,
+  and the same labels plus `path=<name>` with the same role.
 - **Table:** one row per source, worst first:
   - verdict, and how long it has held;
   - endpoint name and host labels;
@@ -51,6 +63,10 @@ Options: `--token T`, `--bind ADDRESS`, `--streams N`, `--duration SECONDS`,
 - **Verdict and advice:** the verdict with the reason in operator language and
   how long it has held; next to it, the suggested change with its value. Watch
   never asks for a change: its advice is shown as "If it persists: …".
+- **Paths** (a connection group): each path with its own grade (or standby),
+  connection, bitrate, RTT, loss and drops; a row opens the path. The heading
+  says how many paths can carry the stream. A path's view links back to its
+  group.
 - **Now:** current values for the role, from the latest window.
   - Sender: sending rate, retransmission share, loss reported, drops,
     RTT, the receiver's latency (also as a multiple of RTT), send buffer
@@ -156,6 +172,10 @@ renders without long tasks after the first build.
   - the latency advice for the stream whose RTT outgrew its latency;
   - the source view's verdict, advice, values, indicators, timeline and four
     drawn charts;
+  - with the demo's connection group: eight endpoints counted, the four path
+    rows right after their groups, the groups' path chips, the group view's
+    paths, and the path view's link back (skipped without group support in
+    the SRT library);
   - no `null`, `undefined` or `NaN` on the page;
   - the token gate, and opening with `#token=` without the token staying in
     the page.

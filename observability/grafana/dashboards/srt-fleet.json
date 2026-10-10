@@ -115,13 +115,14 @@
     {
       "type": "stat",
       "title": "Failing",
+      "description": "Endpoints with this verdict; a connection group counts once (its paths are under Connection groups).",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 4) or vector(0)",
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\",path=\"\"} == 4) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "range": false,
@@ -178,13 +179,14 @@
     {
       "type": "stat",
       "title": "At risk",
+      "description": "Endpoints with this verdict; a connection group counts once (its paths are under Connection groups).",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 3) or vector(0)",
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\",path=\"\"} == 3) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "range": false,
@@ -241,13 +243,14 @@
     {
       "type": "stat",
       "title": "Watch",
+      "description": "Endpoints with this verdict; a connection group counts once (its paths are under Connection groups).",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 2) or vector(0)",
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\",path=\"\"} == 2) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "range": false,
@@ -304,13 +307,14 @@
     {
       "type": "stat",
       "title": "OK",
+      "description": "Endpoints with this verdict; a connection group counts once (its paths are under Connection groups).",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 1) or vector(0)",
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\",path=\"\"} == 1) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "range": false,
@@ -367,13 +371,14 @@
     {
       "type": "stat",
       "title": "Unknown",
+      "description": "Endpoints with this verdict; a connection group counts once (its paths are under Connection groups).",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"} == 0) or vector(0)",
+          "expr": "count(srt_health_verdict{job=~\"$job\",instance=~\"$instance\",path=\"\"} == 0) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "range": false,
@@ -454,7 +459,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max without (stat) (label_replace(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\"))",
+          "expr": "max without (stat) (label_replace(srt_health_verdict{job=~\"$job\",instance=~\"$instance\",path=\"\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\"))",
           "legendFormat": "",
           "refId": "verdict",
           "range": false,
@@ -466,7 +471,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max without (stat) (label_join(srt_health_info{job=~\"$job\",instance=~\"$instance\"}, \"advice\", \" \", \"direction\", \"knob\"))",
+          "expr": "max without (stat) (label_join(srt_health_info{job=~\"$job\",instance=~\"$instance\",path=\"\"}, \"advice\", \" \", \"direction\", \"knob\"))",
           "legendFormat": "",
           "refId": "info",
           "range": false,
@@ -478,7 +483,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max without (stat) (srt_health_suggested_value{job=~\"$job\",instance=~\"$instance\"})",
+          "expr": "max without (stat) (srt_health_suggested_value{job=~\"$job\",instance=~\"$instance\",path=\"\"})",
           "legendFormat": "",
           "refId": "suggested",
           "range": false,
@@ -490,7 +495,31 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max without (stat) (srt_sender_unique_sent_bits_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} or srt_receiver_unique_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"})",
+          "expr": "max without (stat) (srt_group_usable_paths{job=~\"$job\",instance=~\"$instance\",path=\"\"})",
+          "legendFormat": "",
+          "refId": "usable",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) (srt_group_expected_paths{job=~\"$job\",instance=~\"$instance\",path=\"\"})",
+          "legendFormat": "",
+          "refId": "expected",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max without (stat) (srt_sender_unique_sent_bits_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"} or srt_receiver_unique_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"})",
           "legendFormat": "",
           "refId": "bitrate",
           "range": false,
@@ -502,7 +531,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max without (stat) (srt_connection_rtt_seconds{job=~\"$job\",instance=~\"$instance\",stat=\"mean\"})",
+          "expr": "max without (stat) (srt_connection_rtt_seconds{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"mean\"})",
           "legendFormat": "",
           "refId": "rtt",
           "range": false,
@@ -514,7 +543,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max without (stat) ((srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} / (srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} + srt_receiver_unique_received_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"})) or (srt_sender_loss_reported_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} / srt_sender_unique_sent_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}))",
+          "expr": "max without (stat) ((srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"} / (srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"} + srt_receiver_unique_received_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"})) or (srt_sender_loss_reported_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"} / srt_sender_unique_sent_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"}))",
           "legendFormat": "",
           "refId": "loss",
           "range": false,
@@ -526,7 +555,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max without (stat) (srt_receiver_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} or srt_sender_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"})",
+          "expr": "max without (stat) (srt_receiver_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"} or srt_sender_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"})",
           "legendFormat": "",
           "refId": "dropped",
           "range": false,
@@ -551,6 +580,8 @@
               "reason": true,
               "advice": true,
               "Value #suggested": true,
+              "Value #usable": true,
+              "Value #expected": true,
               "Value #bitrate": true,
               "Value #rtt": true,
               "Value #loss": true,
@@ -563,12 +594,14 @@
               "reason": 3,
               "advice": 4,
               "Value #suggested": 5,
-              "Value #bitrate": 6,
-              "Value #rtt": 7,
-              "Value #loss": 8,
-              "Value #dropped": 9,
-              "instance": 10,
-              "source_id": 11
+              "Value #usable": 6,
+              "Value #expected": 7,
+              "Value #bitrate": 8,
+              "Value #rtt": 9,
+              "Value #loss": 10,
+              "Value #dropped": 11,
+              "instance": 12,
+              "source_id": 13
             },
             "renameByName": {
               "Value #verdict": "Verdict",
@@ -577,6 +610,8 @@
               "reason": "Reason",
               "advice": "Advice",
               "Value #suggested": "Suggested value",
+              "Value #usable": "Paths usable",
+              "Value #expected": "Paths expected",
               "Value #bitrate": "Bitrate",
               "Value #rtt": "RTT",
               "Value #loss": "Loss",
@@ -960,6 +995,42 @@
                 "value": 70
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Paths usable"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "description",
+                "value": "Connection groups: paths that can carry the stream now."
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Paths expected"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
           }
         ]
       },
@@ -1008,7 +1079,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(srt_health_verdict{job=~\"$job\",instance=~\"$instance\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "expr": "label_replace(srt_health_verdict{job=~\"$job\",instance=~\"$instance\",path=\"\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
           "legendFormat": "{{endpoint}} {{role}} #{{source_id}}",
           "refId": "A",
           "range": true,
@@ -1114,7 +1185,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(srt_sender_unique_sent_bits_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "expr": "label_replace(srt_sender_unique_sent_bits_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
           "legendFormat": "{{endpoint}} sender #{{source_id}}",
           "refId": "A",
           "range": true,
@@ -1125,7 +1196,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(srt_receiver_unique_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "expr": "label_replace(srt_receiver_unique_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
           "legendFormat": "{{endpoint}} receiver #{{source_id}}",
           "refId": "B",
           "range": true,
@@ -1185,7 +1256,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(srt_connection_rtt_seconds{job=~\"$job\",instance=~\"$instance\",stat=\"mean\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "expr": "label_replace(srt_connection_rtt_seconds{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"mean\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
           "legendFormat": "{{endpoint}} {{role}} #{{source_id}}",
           "refId": "A",
           "range": true,
@@ -1245,7 +1316,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(srt_receiver_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "expr": "label_replace(srt_receiver_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
           "legendFormat": "{{endpoint}} receiver #{{source_id}}",
           "refId": "A",
           "range": true,
@@ -1256,7 +1327,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(srt_sender_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "expr": "label_replace(srt_sender_dropped_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
           "legendFormat": "{{endpoint}} sender #{{source_id}}",
           "refId": "B",
           "range": true,
@@ -1316,7 +1387,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} / (srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"} + srt_receiver_unique_received_packets_per_second{job=~\"$job\",instance=~\"$instance\",stat=\"rate\"}), \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "expr": "label_replace(srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"} / (srt_receiver_lost_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"} + srt_receiver_unique_received_packets_per_second{job=~\"$job\",instance=~\"$instance\",path=\"\",stat=\"rate\"}), \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
           "legendFormat": "{{endpoint}} receiver #{{source_id}}",
           "refId": "A",
           "range": true,
@@ -1359,6 +1430,220 @@
         "x": 12,
         "y": 37,
         "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Connection groups",
+      "collapsed": false,
+      "panels": [],
+      "id": 14,
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Usable paths",
+      "description": "Paths of each connection group that can carry the stream, against the paths it is meant to have. One path left is At risk on the group; none is Failing.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_group_usable_paths{job=~\"$job\",instance=~\"$instance\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} {{role}} usable",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_group_expected_paths{job=~\"$job\",instance=~\"$instance\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} {{role}} expected",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* expected"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    6,
+                    4
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 10,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Paths: own grade",
+      "description": "Each path's own grade. A path's verdict is capped at Watch while another path is usable, so a cut path never pages on its own; the group's verdict does.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(srt_health_path_verdict{job=~\"$job\",instance=~\"$instance\"}, \"endpoint\", \"$1\", \"$name_label\", \"(.+)\")",
+          "legendFormat": "{{endpoint}} {{role}} {{path}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unknown",
+                  "color": "#8a8984",
+                  "index": 0
+                },
+                "1": {
+                  "text": "OK",
+                  "color": "#0ca30c",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Watch",
+                  "color": "#fab219",
+                  "index": 2
+                },
+                "3": {
+                  "text": "At risk",
+                  "color": "#ec835a",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Failing",
+                  "color": "#d03b3b",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#8a8984",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              },
+              {
+                "color": "#fab219",
+                "value": 2
+              },
+              {
+                "color": "#ec835a",
+                "value": 3
+              },
+              {
+                "color": "#d03b3b",
+                "value": 4
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 85,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.85,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "id": 16,
+      "gridPos": {
+        "x": 10,
+        "y": 47,
+        "w": 14,
         "h": 9
       },
       "datasource": {

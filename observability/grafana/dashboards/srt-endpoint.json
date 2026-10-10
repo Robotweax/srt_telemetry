@@ -540,13 +540,329 @@
     },
     {
       "type": "row",
-      "title": "Health indicators",
+      "title": "Connection group paths (when the endpoint is a group)",
       "collapsed": false,
       "panels": [],
       "id": 7,
       "gridPos": {
         "x": 0,
         "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Usable paths",
+      "description": "Paths that can carry the stream, of the paths the group is meant to have.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_group_usable_paths{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "usable",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_group_expected_paths{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "expected",
+          "refId": "B",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "noValue": "not a group"
+        },
+        "overrides": []
+      },
+      "options": {
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 4,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Paths: own grade",
+      "description": "Each path's own grade (its verdict is capped at Watch while another path is usable).",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_health_path_verdict{job=~\"$job\",instance=~\"$instance\"} and ignoring (path, source_id) srt_group_usable_paths{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "{{path}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unknown",
+                  "color": "#8a8984",
+                  "index": 0
+                },
+                "1": {
+                  "text": "OK",
+                  "color": "#0ca30c",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Watch",
+                  "color": "#fab219",
+                  "index": 2
+                },
+                "3": {
+                  "text": "At risk",
+                  "color": "#ec835a",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Failing",
+                  "color": "#d03b3b",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#8a8984",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              },
+              {
+                "color": "#fab219",
+                "value": 2
+              },
+              {
+                "color": "#ec835a",
+                "value": 3
+              },
+              {
+                "color": "#d03b3b",
+                "value": 4
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 85,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 4,
+        "y": 10,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Paths: bitrate",
+      "description": "What each path carries: Broadcast sends everything on every path; Main/Backup on the active one.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_sender_unique_sent_bits_per_second{job=~\"$job\",instance=~\"$instance\",path!=\"\",stat=\"rate\"} and ignoring (path, source_id, stat) srt_group_usable_paths{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "{{path}} sent",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_receiver_received_bits_per_second{job=~\"$job\",instance=~\"$instance\",path!=\"\",stat=\"rate\"} and ignoring (path, source_id, stat) srt_group_usable_paths{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "{{path}} received",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 6,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Paths: round-trip time",
+      "description": "A standby path carries only keepalives: SRT does not measure its RTT (it shows the initial estimate) until it takes over.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "srt_connection_rtt_seconds{job=~\"$job\",instance=~\"$instance\",path!=\"\",stat=\"mean\"} and ignoring (path, source_id, stat) srt_group_usable_paths{job=~\"$job\",instance=~\"$instance\",source_id=~\"$source\"}",
+          "legendFormat": "{{path}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "insertNulls": 3000,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 18,
+        "y": 10,
+        "w": 6,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Health indicators",
+      "collapsed": false,
+      "panels": [],
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 19,
         "w": 24,
         "h": 1
       },
@@ -703,10 +1019,10 @@
         "showHeader": true,
         "cellHeight": "sm"
       },
-      "id": 8,
+      "id": 13,
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 20,
         "w": 10,
         "h": 9
       },
@@ -819,10 +1135,10 @@
           "showLegend": false
         }
       },
-      "id": 9,
+      "id": 14,
       "gridPos": {
         "x": 10,
-        "y": 10,
+        "y": 20,
         "w": 14,
         "h": 9
       },
@@ -836,10 +1152,10 @@
       "title": "History",
       "collapsed": false,
       "panels": [],
-      "id": 10,
+      "id": 15,
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 29,
         "w": 24,
         "h": 1
       },
@@ -929,10 +1245,10 @@
           "sort": "desc"
         }
       },
-      "id": 11,
+      "id": 16,
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 30,
         "w": 12,
         "h": 9
       },
@@ -1044,10 +1360,10 @@
           "sort": "desc"
         }
       },
-      "id": 12,
+      "id": 17,
       "gridPos": {
         "x": 12,
-        "y": 20,
+        "y": 30,
         "w": 12,
         "h": 9
       },
@@ -1137,10 +1453,10 @@
           "sort": "desc"
         }
       },
-      "id": 13,
+      "id": 18,
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 39,
         "w": 12,
         "h": 9
       },
@@ -1220,10 +1536,10 @@
           "sort": "desc"
         }
       },
-      "id": 14,
+      "id": 19,
       "gridPos": {
         "x": 12,
-        "y": 29,
+        "y": 39,
         "w": 12,
         "h": 9
       },
@@ -1312,10 +1628,10 @@
           ]
         }
       },
-      "id": 15,
+      "id": 20,
       "gridPos": {
         "x": 0,
-        "y": 38,
+        "y": 48,
         "w": 12,
         "h": 9
       },

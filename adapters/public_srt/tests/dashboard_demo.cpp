@@ -9,11 +9,18 @@
  *   uplink-3     path capped at 3 Mbit/s for a 5.3 Mbit/s feed -> bitrate advice
  *   venue-b      cycles: clean, loss bursts, 6 s outage, clean
  *
+ * With --group backup (or broadcast), also a connection group on both sides:
+ *   bonded-1     paths lte and sat through their own relays; lte cycles:
+ *                clean 40 s, 14 s outage (its member breaks), reconnect
+ * The embedding layer monitors the group (one row per group and per path);
+ * the other streams are plain sampler sources on the embed's sampler.
+ *
  * Usage: dashboard_demo [--port N] [--bind ADDRESS] [--token T]
- *                       [--duration SECONDS] [--streams N]
+ *                       [--duration SECONDS] [--streams N] [--group backup|broadcast]
  *                       [--frame-ancestors "https://console.example.com"]
  *                       [--otlp http://127.0.0.1:4318/v1/metrics] [--otlp-interval MS] */
 
+#include <robotweax/srt_telemetry_embed.h>
 #include <robotweax/srt_telemetry_http.h>
 #include <robotweax/srt_telemetry_otlp.h>
 #include <robotweax/srt_telemetry_public_srt.h>
@@ -307,6 +314,261 @@ void close_stream(robotweax_srt_telemetry_sampler *sampler, Stream &stream)
     }
 }
 
+/* A connection group on loopback: the caller group sends through one relay
+ * per path to a listener group (SRTO_GROUPCONNECT). Path lte (weight 20) has
+ * an outage schedule; the demo reconnects it when the outage ends. */
+struct GroupStream
+{
+    SRT_GROUP_TYPE type = SRT_GTYPE_BACKUP;
+    SRTSOCKET listener = SRT_INVALID_SOCK;
+    SRTSOCKET group = SRT_INVALID_SOCK;
+    std::atomic<SRTSOCKET> accepted{SRT_INVALID_SOCK};
+    bool attached_receiver = false;
+    Relay relays[2]; /* lte, sat */
+    std::vector<SRT_SOCKGROUPCONFIG> endpoints;
+    std::vector<Phase> lte_phases;
+    std::size_t phase = 0;
+    Clock::time_point phase_start;
+    Clock::time_point last_reconnect;
+    std::atomic<bool> running{true};
+    std::thread accept_thread;
+    std::thread send_thread;
+};
+
+constexpr const char *path_names[2] = {"lte", "sat"};
+constexpr std::uint16_t path_weights[2] = {20, 10};
+
+std::uint16_t port_of(const sockaddr_in &address)
+{
+    return ntohs(address.sin_port);
+}
+
+/* Caller side: the weight names the path. */
+int name_caller_path(void *, const robotweax_srt_telemetry_group_member_identity_v1 *member, char *name,
+                     const std::size_t capacity)
+{
+    for (std::size_t i = 0; i < 2; ++i)
+    {
+        if (member->weight == path_weights[i])
+        {
+            std::snprintf(name, capacity, "%s", path_names[i]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Listener side: the peer is the relay's back socket. */
+int name_listener_path(void *user, const robotweax_srt_telemetry_group_member_identity_v1 *member, char *name,
+                       const std::size_t capacity)
+{
+    const auto &stream = *static_cast<const GroupStream *>(user);
+    const char *colon = std::strrchr(member->peer_address, ':');
+    const int port = colon != nullptr ? std::atoi(colon + 1) : -1;
+    for (std::size_t i = 0; i < 2; ++i)
+    {
+        if (port == port_of(stream.relays[i].back_address()))
+        {
+            std::snprintf(name, capacity, "%s", path_names[i]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+bool open_group(robotweax_srt_telemetry_embed *embed, GroupStream &stream)
+{
+    Impairment clean;
+    Impairment outage;
+    outage.blackhole = true;
+    stream.lte_phases = {{clean, 40}, {outage, 14}};
+    stream.listener = srt_create_socket();
+    const int yes = 1;
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t size = sizeof(address);
+    if (srt_setsockflag(stream.listener, SRTO_GROUPCONNECT, &yes, sizeof(yes)) == SRT_ERROR ||
+        !set_int(stream.listener, SRTO_LATENCY, 250) ||
+        srt_bind(stream.listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == SRT_ERROR ||
+        srt_getsockname(stream.listener, reinterpret_cast<sockaddr *>(&address), reinterpret_cast<int *>(&size)) ==
+            SRT_ERROR ||
+        srt_listen(stream.listener, 4) == SRT_ERROR || !stream.relays[0].start(address) ||
+        !stream.relays[1].start(address))
+    {
+        return false;
+    }
+    Impairment satellite;
+    satellite.delay_ms = 40;
+    stream.relays[1].set(satellite);
+    stream.accept_thread = std::thread(
+        [&stream]
+        {
+            sockaddr_storage peer{};
+            int length = sizeof(peer);
+            const SRTSOCKET socket = srt_accept(stream.listener, reinterpret_cast<sockaddr *>(&peer), &length);
+            if (socket == SRT_INVALID_SOCK)
+            {
+                return;
+            }
+            static_cast<void>(set_int(socket, SRTO_RCVTIMEO, 200));
+            stream.accepted = socket;
+            std::array<char, 1500> buffer{};
+            while (stream.running)
+            {
+                SRT_MSGCTRL control = srt_msgctrl_default;
+                if (srt_recvmsg2(socket, buffer.data(), static_cast<int>(buffer.size()), &control) <= 0 &&
+                    srt_getsockstate(socket) != SRTS_CONNECTED)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                }
+            }
+        });
+    stream.group = srt_create_group(stream.type);
+    if (stream.group == SRT_INVALID_SOCK || !set_int(stream.group, SRTO_LATENCY, 250) ||
+        !set_int(stream.group, SRTO_SNDTIMEO, 200))
+    {
+        return false;
+    }
+    for (std::size_t i = 0; i < 2; ++i)
+    {
+        const auto &relay = stream.relays[i].address();
+        stream.endpoints.push_back(
+            srt_prepare_endpoint(nullptr, reinterpret_cast<const sockaddr *>(&relay), sizeof(relay)));
+        stream.endpoints.back().weight = path_weights[i];
+    }
+    if (srt_connect_group(stream.group, stream.endpoints.data(), 2) == SRT_ERROR)
+    {
+        return false;
+    }
+    for (int i = 0; i < 250 && stream.accepted == SRT_INVALID_SOCK; ++i)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (stream.accepted == SRT_INVALID_SOCK)
+    {
+        return false;
+    }
+    const robotweax_srt_telemetry_label_v1 labels[] = {{"stream", "bonded-1"}, {"site", "dresden"}};
+    robotweax_srt_telemetry_embed_group_v1 g;
+    robotweax_srt_telemetry_embed_group_default(&g);
+    g.group = stream.group;
+    g.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    g.group_type = stream.type == SRT_GTYPE_BACKUP ? ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP
+                                                   : ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST;
+    g.expected_paths = 2;
+    g.labels = labels;
+    g.label_count = 2;
+    g.path_name = &name_caller_path;
+    if (robotweax_srt_telemetry_embed_attach_group(embed, &g) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return false;
+    }
+    g.group = stream.accepted;
+    g.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER;
+    g.path_name = &name_listener_path;
+    g.path_name_user_data = &stream;
+    if (robotweax_srt_telemetry_embed_attach_group(embed, &g) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return false;
+    }
+    stream.attached_receiver = true;
+    stream.phase = 0;
+    stream.phase_start = Clock::now();
+    stream.last_reconnect = Clock::now();
+    stream.relays[0].set(stream.lte_phases.front().impairment);
+    stream.send_thread = std::thread(
+        [&stream]
+        {
+            std::array<char, payload_bytes> payload{};
+            payload.fill('x');
+            const auto start = Clock::now();
+            const auto period = std::chrono::nanoseconds(1'000'000'000 / packets_per_second);
+            for (std::int64_t i = 0; stream.running; ++i)
+            {
+                std::this_thread::sleep_until(start + period * i);
+                SRT_MSGCTRL control = srt_msgctrl_default;
+                static_cast<void>(srt_sendmsg2(stream.group, payload.data(), payload_bytes, &control));
+            }
+        });
+    return true;
+}
+
+/* Closes broken members (Robotweax SRT keeps them listed until closed) and,
+ * with the lte path clean again, reconnects it when it has no member. */
+void maintain_group(GroupStream &stream)
+{
+    const auto &phase = stream.lte_phases[stream.phase];
+    if (phase.seconds > 0 &&
+        std::chrono::duration<double>(Clock::now() - stream.phase_start).count() >= phase.seconds)
+    {
+        stream.phase = (stream.phase + 1) % stream.lte_phases.size();
+        stream.phase_start = Clock::now();
+        stream.relays[0].set(stream.lte_phases[stream.phase].impairment);
+    }
+    for (const SRTSOCKET group : {stream.group, stream.accepted.load()})
+    {
+        std::array<SRT_SOCKGROUPDATA, 8> members{};
+        std::size_t count = members.size();
+        if (srt_group_data(group, members.data(), &count) == SRT_ERROR)
+        {
+            continue;
+        }
+        bool lte_listed = false;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            if (members[i].memberstate == SRT_GST_BROKEN || members[i].sockstate > SRTS_CONNECTED)
+            {
+                srt_close(members[i].id);
+            }
+            else if (group == stream.group && members[i].weight == path_weights[0])
+            {
+                lte_listed = true;
+            }
+        }
+        if (group == stream.group && !lte_listed && !stream.lte_phases[stream.phase].impairment.blackhole &&
+            Clock::now() - stream.last_reconnect > std::chrono::seconds(2))
+        {
+            stream.last_reconnect = Clock::now();
+            auto endpoint = stream.endpoints[0];
+            endpoint.id = SRT_INVALID_SOCK;
+            static_cast<void>(srt_connect_group(stream.group, &endpoint, 1));
+        }
+    }
+}
+
+void close_group(robotweax_srt_telemetry_embed *embed, GroupStream &stream)
+{
+    stream.running = false;
+    if (stream.send_thread.joinable())
+    {
+        stream.send_thread.join();
+    }
+    if (stream.group != SRT_INVALID_SOCK)
+    {
+        static_cast<void>(robotweax_srt_telemetry_embed_detach(embed, stream.group));
+    }
+    if (stream.attached_receiver)
+    {
+        static_cast<void>(robotweax_srt_telemetry_embed_detach(embed, stream.accepted));
+    }
+    for (const SRTSOCKET socket : {stream.group, stream.listener})
+    {
+        if (socket != SRT_INVALID_SOCK)
+        {
+            srt_close(socket); /* closing the listener ends a pending accept */
+        }
+    }
+    if (stream.accept_thread.joinable())
+    {
+        stream.accept_thread.join();
+    }
+    if (stream.accepted != SRT_INVALID_SOCK)
+    {
+        srt_close(stream.accepted);
+    }
+}
+
 } // namespace
 
 int main(const int argc, char **argv)
@@ -319,6 +581,7 @@ int main(const int argc, char **argv)
     int otlp_interval_ms = 10'000;
     double duration = 0;
     std::size_t stream_count = 5;
+    std::string group_type;
     for (int i = 1; i + 1 < argc; i += 2)
     {
         const std::string option = argv[i];
@@ -354,6 +617,15 @@ int main(const int argc, char **argv)
         {
             stream_count = static_cast<std::size_t>(std::atoi(argv[i + 1]));
         }
+        else if (option == "--group")
+        {
+            group_type = argv[i + 1];
+            if (group_type != "backup" && group_type != "broadcast")
+            {
+                std::fprintf(stderr, "--group takes backup or broadcast\n");
+                return 2;
+            }
+        }
         else
         {
             std::fprintf(stderr, "unknown option %s\n", option.c_str());
@@ -365,17 +637,21 @@ int main(const int argc, char **argv)
     srt_startup();
     srt_setloglevel(3);
 
-    robotweax_srt_telemetry_sampler_config_v1 config{};
-    robotweax_srt_telemetry_sampler_config_default(&config);
-    robotweax_srt_telemetry_sampler *sampler = nullptr;
-    if (robotweax_srt_telemetry_sampler_create(&config, &sampler) != ROBOTWEAX_SRT_TELEMETRY_OK ||
-        robotweax_srt_telemetry_sampler_enable_health(sampler, 1) != ROBOTWEAX_SRT_TELEMETRY_OK ||
-        robotweax_srt_telemetry_sampler_enable_history(sampler, 3600) != ROBOTWEAX_SRT_TELEMETRY_OK ||
-        robotweax_srt_telemetry_sampler_enable_journal(sampler, 4096) != ROBOTWEAX_SRT_TELEMETRY_OK)
+    /* The embed ticks the sampler (health, 1 h history, 4096 events) and
+     * monitors the group; the demo serves the sampler itself. */
+    robotweax_srt_telemetry_embed_config_v1 embed_config;
+    robotweax_srt_telemetry_embed_config_default(&embed_config);
+    robotweax_srt_telemetry_host_embed_functions(&embed_config);
+    embed_config.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
+    embed_config.history_seconds = 3600;
+    embed_config.journal_capacity = 4096;
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    if (robotweax_srt_telemetry_embed_start(&embed_config, &embed) != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
-        std::fprintf(stderr, "sampler setup failed\n");
+        std::fprintf(stderr, "embed setup failed\n");
         return 1;
     }
+    auto *sampler = robotweax_srt_telemetry_embed_sampler(embed);
 
     auto all = specs();
     std::vector<std::unique_ptr<Stream>> streams;
@@ -395,11 +671,20 @@ int main(const int argc, char **argv)
             break;
         }
     }
-    robotweax_srt_telemetry_http_server *server = nullptr;
-    if (ok)
+    std::unique_ptr<GroupStream> group;
+    if (ok && !group_type.empty())
     {
-        ok = robotweax_srt_telemetry_sampler_start(sampler) == ROBOTWEAX_SRT_TELEMETRY_OK;
+        group = std::make_unique<GroupStream>();
+        group->type = group_type == "backup" ? SRT_GTYPE_BACKUP : SRT_GTYPE_BROADCAST;
+        if (!open_group(embed, *group))
+        {
+            /* Haivision SRT built without ENABLE_BONDING has no groups. */
+            std::fprintf(stderr, "group: unavailable: %s\n", srt_getlasterror_str());
+            close_group(embed, *group);
+            group.reset();
+        }
     }
+    robotweax_srt_telemetry_http_server *server = nullptr;
     if (ok)
     {
         robotweax_srt_telemetry_http_server_config_v1 http{};
@@ -421,6 +706,10 @@ int main(const int argc, char **argv)
                                                                      : bind;
             std::printf("dashboard: http://%s:%u/%s%s\n", host,
                         robotweax_srt_telemetry_http_server_port(server), token[0] ? "#token=" : "", token);
+            if (!group_type.empty())
+            {
+                std::printf("group: %s\n", group ? group_type.c_str() : "unavailable");
+            }
             std::fflush(stdout);
         }
     }
@@ -457,15 +746,23 @@ int main(const int argc, char **argv)
             poll_endpoint(sampler, stream->sender);
             poll_endpoint(sampler, stream->receiver);
         }
+        if (group)
+        {
+            maintain_group(*group);
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     robotweax_srt_telemetry_otlp_exporter_stop(exporter);
     robotweax_srt_telemetry_http_server_stop(server);
+    if (group)
+    {
+        close_group(embed, *group);
+    }
     for (auto &stream : streams)
     {
         close_stream(sampler, *stream);
     }
-    robotweax_srt_telemetry_sampler_destroy(sampler);
+    robotweax_srt_telemetry_embed_stop(embed);
     srt_cleanup();
     return ok ? 0 : 1;
 }

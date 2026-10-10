@@ -573,6 +573,54 @@ std::string robotweax_srt_telemetry_internal::render_prometheus(const ExportView
                            s.health.suggested_value);
                 }
             });
+        /* Connection groups: the group's paths, and each path's own grade
+         * (its verdict is capped at Watch while another path is usable). */
+        bool any_group = false;
+        bool any_member = false;
+        each(
+            [&](const ExportSource &s, const std::string &)
+            {
+                const auto flags = s.has_health ? s.health.flags : 0U;
+                any_group = any_group || (flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0;
+                any_member = any_member || (flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER) != 0;
+            });
+        if (any_group)
+        {
+            family(out, "srt_group_usable_paths", "gauge",
+                   "Paths of a connection group that can carry the stream now.");
+            each(
+                [&](const ExportSource &s, const std::string &l)
+                {
+                    if (s.has_health && (s.health.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0)
+                    {
+                        sample(out, "srt_group_usable_paths", l, "", s.health.group_usable_paths);
+                    }
+                });
+            family(out, "srt_group_expected_paths", "gauge",
+                   "Paths a connection group is meant to have (set by the host, else the most seen usable at once).");
+            each(
+                [&](const ExportSource &s, const std::string &l)
+                {
+                    if (s.has_health && (s.health.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0)
+                    {
+                        sample(out, "srt_group_expected_paths", l, "", s.health.group_expected_paths);
+                    }
+                });
+        }
+        if (any_member)
+        {
+            family(out, "srt_health_path_verdict", "gauge",
+                   "A connection-group path's own grade before the Watch cap: 0 unknown, 1 ok, 2 watch, 3 at risk, "
+                   "4 failing.");
+            each(
+                [&](const ExportSource &s, const std::string &l)
+                {
+                    if (s.has_health && (s.health.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER) != 0)
+                    {
+                        sample(out, "srt_health_path_verdict", l, "", static_cast<double>(s.health.uncapped_verdict));
+                    }
+                });
+        }
         if ((view.flags & ROBOTWEAX_SRT_TELEMETRY_RENDER_NO_INDICATORS) == 0)
         {
             family(out, "srt_health_indicator_state", "gauge",
@@ -839,6 +887,9 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
             /* A group member's verdict is capped at Watch; its own grade. */
             out += ",\"capped\":";
             out += (h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0 ? "true" : "false";
+            /* One path of a connection group (capped or not). */
+            out += ",\"group_member\":";
+            out += (h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER) != 0 ? "true" : "false";
             /* A connection group's own row: its paths. */
             if ((h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0)
             {
@@ -1317,6 +1368,45 @@ std::string robotweax_srt_telemetry_internal::render_otlp_json(const ExportView 
                    {
                        w.point(attributes[i], {{"knob", robotweax_srt_telemetry_health_knob_name(s.health.knob)}}, 0,
                                now, s.health.suggested_value);
+                   }
+               }
+           });
+    const auto group_row = [](const ExportSource &s)
+    { return s.has_health && (s.health.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0; };
+    metric("srt.group.usable_paths", "{path}", "Paths of a connection group that can carry the stream now.", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   if (group_row(view.sources[i]))
+                   {
+                       w.point_int(attributes[i], {}, 0, now, view.sources[i].health.group_usable_paths);
+                   }
+               }
+           });
+    metric("srt.group.expected_paths", "{path}",
+           "Paths a connection group is meant to have (set by the host, else the most seen usable at once).", false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   if (group_row(view.sources[i]))
+                   {
+                       w.point_int(attributes[i], {}, 0, now, view.sources[i].health.group_expected_paths);
+                   }
+               }
+           });
+    metric("srt.health.path_verdict", "{verdict}",
+           "A connection-group path's own grade before the Watch cap: 0 unknown, 1 ok, 2 watch, 3 at risk, 4 failing.",
+           false,
+           [&]
+           {
+               for (std::size_t i = 0; i < view.sources.size(); ++i)
+               {
+                   const auto &s = view.sources[i];
+                   if (s.has_health && (s.health.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER) != 0)
+                   {
+                       w.point_int(attributes[i], {}, 0, now, static_cast<std::uint64_t>(s.health.uncapped_verdict));
                    }
                }
            });

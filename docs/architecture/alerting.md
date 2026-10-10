@@ -90,16 +90,27 @@ do I change?":
 
 - counts of endpoints per verdict;
 - the **Endpoints** table, worst first: verdict, stream name, role, endpoint,
-  reason in words, advice ("decrease bitrate"), suggested value, bitrate, RTT,
-  loss and drops. Each row links to the endpoint dashboard;
+  reason in words, advice ("decrease bitrate"), suggested value, usable and
+  expected paths (connection groups), bitrate, RTT, loss and drops. Each row
+  links to the endpoint dashboard;
 - history: verdicts over time, bitrate, RTT, unrecovered packets and loss
-  before repair per endpoint.
+  before repair per endpoint;
+- **Connection groups:** usable against expected paths per group over time,
+  and each path's own grade over time.
+
+A connection group counts as one endpoint: the counts, the table and the
+history select `path=""`, so a group's paths (label `path`) appear only in
+the Connection groups row and on the endpoint dashboard.
 
 **SRT endpoint** (`srt-endpoint`, plus a **Source** variable) shows one sender
 or receiver:
 
 - verdict, reason, suggested change and value, and whether statistics read;
 - its labels;
+- for a connection group: usable and expected paths, each path's own grade
+  over time, and each path's bitrate and RTT. The paths are found as the
+  series with the group's labels plus `path` (`and ignoring (path,
+  source_id)`); for other endpoints these panels stay empty;
 - the health indicators with state and value, and the verdict and indicator
   states over time;
 - throughput (original and retransmitted), loss and recovery, timing (RTT,

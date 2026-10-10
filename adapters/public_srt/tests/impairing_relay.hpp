@@ -70,7 +70,9 @@ class Relay final
             return false;
         }
         socklen_t size = sizeof(address_);
-        if (::getsockname(front_, reinterpret_cast<sockaddr *>(&address_), &size) != 0)
+        socklen_t back_size = sizeof(back_address_);
+        if (::getsockname(front_, reinterpret_cast<sockaddr *>(&address_), &size) != 0 ||
+            ::getsockname(back_, reinterpret_cast<sockaddr *>(&back_address_), &back_size) != 0)
         {
             return false;
         }
@@ -99,6 +101,12 @@ class Relay final
     [[nodiscard]] const sockaddr_in &address() const noexcept
     {
         return address_;
+    }
+
+    /* The address the listener sees this relay's traffic come from. */
+    [[nodiscard]] const sockaddr_in &back_address() const noexcept
+    {
+        return back_address_;
     }
 
     void set(const Impairment &impairment)
@@ -236,6 +244,7 @@ class Relay final
     int front_ = -1;
     int back_ = -1;
     sockaddr_in address_{};
+    sockaddr_in back_address_{};
     sockaddr_in listener_{};
     sockaddr_in caller_{};
     bool has_caller_ = false;

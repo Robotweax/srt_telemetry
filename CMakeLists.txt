@@ -315,7 +315,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 target_include_directories(robotweax_srt_telemetry_public_srt_dashboard_demo
                     PRIVATE ${ROBOTWEAX_SRT_TELEMETRY_SRT_INCLUDE_DIR})
                 target_link_libraries(robotweax_srt_telemetry_public_srt_dashboard_demo
-                    PRIVATE RobotweaxSRTTelemetry::public_srt_adapter
+                    PRIVATE RobotweaxSRTTelemetry::embed
+                            RobotweaxSRTTelemetry::public_srt_adapter
                             RobotweaxSRTTelemetry::http
                             ${ROBOTWEAX_SRT_TELEMETRY_SRT_LIBRARY}
                             Threads::Threads)

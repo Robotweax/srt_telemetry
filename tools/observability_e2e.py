@@ -9,7 +9,8 @@ the provisioned dashboards, all on loopback in a temporary directory, then
 checks:
 - Prometheus scrapes the demo (job srt) and the collector (job otel);
 - the collector receives the OTLP export (srt_* families from job otel,
-  with the resource attributes the demo sets);
+  with the resource attributes the demo sets), including the connection
+  group's paths (the demo runs with --group backup);
 - SRTStreamFailing fires for remote-4g and uplink-3, with advice in the
   description, and never for studio-a;
 - every dashboard query returns data (tools/check_dashboards.py);
@@ -193,7 +194,8 @@ news_feed_enabled = false
 
         # The demo, scraped and exporting OTLP every 2 s.
         stack.start("demo", [args.demo, "--port", str(ports["demo"]), "--otlp",
-                             f"http://127.0.0.1:{ports['otlp']}/v1/metrics", "--otlp-interval", "2000"])
+                             f"http://127.0.0.1:{ports['otlp']}/v1/metrics", "--otlp-interval", "2000",
+                             "--group", "backup"])
 
         def targets_up():
             stack.check_running()
@@ -216,6 +218,9 @@ news_feed_enabled = false
             'srt_health_verdict{job="otel",service_name="srt-dashboard-demo",service_instance_id="demo-1",'
             'otel_scope_name="robotweax.srt_telemetry"}'), 60)
         check(len(resource) >= 10, f"OTLP verdicts carry the resource attributes ({len(resource)} series)")
+        paths = wait("OTLP connection-group paths", lambda: query(
+            'srt_group_usable_paths{job="otel",stream="bonded-1"}'), 60)
+        check(len(paths) == 2, f"OTLP carries the group's usable paths ({len(paths)} groups)")
 
         expected = {(stream, role) for stream in ("remote-4g", "uplink-3") for role in ("sender", "receiver")}
 
@@ -235,7 +240,7 @@ news_feed_enabled = false
         check(not studio, "no Failing or At risk alert for studio-a")
 
         result = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "check_dashboards.py"),
-                                 "--prometheus", prometheus], capture_output=True, text=True)
+                                 "--prometheus", prometheus, "--groups"], capture_output=True, text=True)
         print(result.stdout, end="")
         check(result.returncode == 0, "every dashboard query returns data")
 
