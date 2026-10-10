@@ -220,3 +220,15 @@ Each adapter/provider version must record:
 - counter relationships under loss, duplicate, reorder, and retransmission;
 - sample-call overhead and close/sample race behavior; and
 - any divergence from this map.
+
+## Optional group path metadata
+
+| Telemetry field | Public source | Side / lifecycle | Availability and meaning |
+| --- | --- | --- | --- |
+| group member `path`, `path_source = PATH_SOURCE_IDENTIFIER` | `robotweax_srt_group_path_data_v1`: `member_id`, `flags`, `identifier_length`, `identifier` | both sides; once negotiated, cached per member socket until removal/session destruction | Exact 1–32 bytes rendered as `pathid-` plus hex; `CAP_GROUP_PATH_IDENTIFIERS_V1` plus explicit getter injection required. Not a counter, timestamp or authenticated identity. |
+| group member `MEMBER_PATH_PENDING` | unavailable, malformed or provisional getter record | connected unnamed member; retried each tick | Unknown metadata stays unknown; counters still sample. A confirmed zero-length/zero-flags record uses the existing fallback. |
+
+Haivision v1.5.7 and published Robotweax v0.2.8 have no such getter; their host,
+token and address naming remains available. Qualification is revision/build
+specific. See [group sessions](public-srt-group.md#path-names) for snapshot races,
+binary encoding, scope, resets and retained BROKEN-member behavior.

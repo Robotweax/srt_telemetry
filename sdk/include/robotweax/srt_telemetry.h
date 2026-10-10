@@ -78,6 +78,7 @@ extern "C"
 #define ROBOTWEAX_SRT_TELEMETRY_CAP_FEC_STATS_V1 (UINT64_C(1) << 1)
 #define ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_MEMBERS_V1 (UINT64_C(1) << 2)
 #define ROBOTWEAX_SRT_TELEMETRY_CAP_ROBOTWEAX_EXTENSIONS_V1 (UINT64_C(1) << 3)
+#define ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_PATH_IDENTIFIERS_V1 (UINT64_C(1) << 4)
 
 /* Raw observation availability. A clear bit means unavailable; it never means
  * that a zero value was observed. Durations use seconds and byte values use

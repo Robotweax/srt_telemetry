@@ -47,6 +47,7 @@
           "stats.common.v1",
           "stats.fec.v1",
           "groups.members.v1",
+          "robotweax.groups.path-identifiers.v1",
           "robotweax.extensions.v1"
         ]
       }

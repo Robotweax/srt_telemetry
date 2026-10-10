@@ -21,6 +21,7 @@ functions the host injects:
 | --- | --- | --- |
 | `srt_getsockstate(group)` | 1 | `group_state` |
 | `srt_group_data(group)` | 1; up to 3 when the group outgrew the session's buffer | member list: socket, `sockstate`, `memberstate`, `result`, `weight`, `token`, peer address |
+| `robotweax_srt_group_path_data_v1(group)` | optional; 1, up to 3 bounded growth attempts | negotiated path labels, joined to the ordinary snapshot by member socket ID |
 | `srt_bistats(group)` | 1 | group counters (the group field masks) |
 | `srt_bistats(member)` | 1 per member | the member's own counters |
 | `srt_getsockname(member)` | on every call until a read succeeds while the member is CONNECTED | local address |
@@ -85,6 +86,7 @@ again; only that tick's deltas are lost.
 | `MEMBER_STATS_NONE` | `srt_bistats` never succeeded for this socket |
 | `MEMBER_USABLE` | socket CONNECTED and member not BROKEN |
 | `MEMBER_PATH_ASSIGNED` | the path name was set in this call |
+| `MEMBER_PATH_PENDING` | an unnamed connected member has missing, failed, malformed or provisional optional metadata; its path is empty and retried, while counters still sample |
 | `GROUP_STATS` | `srt_bistats` on the group succeeded (it fails before the first connection) |
 | `GROUP_FIRST_SAMPLE` | first call that listed the members (a failed listing does not count); no member or active change is reported |
 | `GROUP_MEMBERS_CHANGED` | this result reports a REMOVED entry, or a NEW entry after the first listing (never with `member_capacity` 0) |
@@ -125,23 +127,66 @@ The reported `member_state` is still passed through unchanged for display.
 
 ## Path names
 
-A path is named once, at the first call that sees the member CONNECTED, and
-the name never changes. The sources, in order:
+A path is named once while the member is CONNECTED, and the name never changes.
+The ordinary sources retain their existing behavior. When the host explicitly
+enables the optional path getter, the sources, in order, are:
 
-1. The host's `path_name` callback: 1–159 characters from 0x21–0x7E
-   (printable ASCII without space), NUL-terminated. It is called once per
-   member socket with the token, weight and addresses, and must not throw.
-   An invalid name falls back to the automatic one.
-2. `token-<n>` from the caller's `SRT_SOCKGROUPCONFIG.token`. It stays stable
-   across reconnects only when the host passes the same token again.
-3. `<local>><peer>` addresses, e.g. `10.0.0.9:9000>10.0.2.1:42000` ("?" for
-   an unknown side; a scoped IPv6 address includes `%scope`). The path field
-   holds two of the longest addresses, so automatic names are never cut.
+1. The host's `path_name` callback: 1–159 printable ASCII characters without
+   space, NUL-terminated. A valid host name has priority over peer labels.
+2. A negotiated caller label: `pathid-` followed by lowercase hexadecimal of
+   every byte, with `PATH_SOURCE_IDENTIFIER`. Embedded NUL and non-text bytes
+   are represented without truncation or interpretation. A 32-byte label uses
+   71 characters. Labels do not replace the local token.
+3. `token-<n>` from the caller's `SRT_SOCKGROUPCONFIG.token`.
+4. `<local>><peer>` addresses, with `?` for an unknown side.
 
-On the accepting side SRT reports token −1, so only host names or addresses
-are available. The peer port changes with every reconnect, so a reconnected
-path gets a new name unless the host names it. The handshake does not carry a
-path identity; this is reported as a protocol improvement.
+On older Robotweax and Haivision providers the optional getter is unavailable;
+the host leaves it disabled and naming follows host → token → addresses.
+Robotweax development `main` after protocol PR #298 offers the versioned getter;
+published v0.2.8 artifacts do not. Configure labeled transport in the host,
+explicitly enabling the protocol on both peers. Telemetry does not change socket
+options, negotiate extensions or reconnect a member.
+
+Before creating the group session, qualify
+`CAP_GROUP_PATH_IDENTIFIERS_V1` (`robotweax.groups.path-identifiers.v1`) at the actual
+provider revision and build. Then, before its first sample, inject the selected
+provider's `robotweax_srt_group_path_data_v1` into
+`robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1`. A non-null
+getter without this capability, or on a Haivision session, is rejected. A null
+getter disables the lookup before sampling; configuration changes after the
+first valid sample invocation are rejected. Existing config, result and member
+struct layouts are unchanged. The setter is an additive Telemetry C export.
+
+For interchangeable providers, resolve the optional symbol from the exact
+library that supplied the injected SRT functions and owns the handles. Header
+presence, provider name or version text alone does not establish runtime support.
+Do not resolve it process-wide from another loaded SRT provider. The SDK never
+loads a second provider or links the optional SRT symbol. Its callback type uses
+the public 44-byte v1 record contract independently of the build header, so it
+also builds against older Robotweax and Haivision headers.
+
+The two group snapshots may race with membership changes. Join by socket ID,
+never index. Metadata allocation is bounded to 1024 records and at most three
+reads per tick; oversized groups keep statistics but cannot assign a new label.
+A confirmed unlabeled record (zero length and flags) permits the normal fallback.
+A failed read, missing or duplicate socket ID, inconsistent count, invalid length,
+flags or padding, or uncompleted negotiation keeps the name empty with
+`MEMBER_PATH_PENDING`. It is retried on later ticks. This prevents a transient
+lookup failure from permanently naming a labeled replacement by its new port.
+An invalid host callback may be called again while naming is pending; callbacks
+must not throw. A cached name survives later metadata failures.
+
+A replacement using the same caller bytes gets the same displayed label even
+when its source port changes. Overlapping members remain separate entries by
+socket ID, with independent counters and lifecycle. A retained BROKEN member
+keeps its cached name; removal reports it once, then forgets it. A recreated
+Telemetry session resets its cache. Labels are untrusted caller metadata, scoped
+to the host-authorized group/session; identical labels neither authenticate a
+peer nor prove physical path diversity. They do not add live NAT migration.
+
+No cross-provider enabled-label interoperability or real WAN/outage performance
+is established by the loopback tests. The Network Lab must qualify those
+properties in separately pinned scenarios.
 
 ## Provider behaviour observed
 

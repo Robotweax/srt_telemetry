@@ -21,6 +21,7 @@ extern "C"
 #endif
 
     struct SRT_SocketGroupData_;
+    struct ROBOTWEAX_SRT_GroupPathDataV1_;
     struct sockaddr;
 
     /* srt_group_data and srt_getsockname with plain integer socket types; the
@@ -29,6 +30,10 @@ extern "C"
      * fills them. */
     typedef int (*robotweax_srt_telemetry_public_srt_group_data_fn)(
         int32_t group, struct SRT_SocketGroupData_ *members, size_t *count);
+    /* The selected provider's optional robotweax_srt_group_path_data_v1.
+     * The SDK never resolves or links this symbol itself. */
+    typedef int (*robotweax_srt_telemetry_public_srt_group_path_data_v1_fn)(
+        int32_t group, struct ROBOTWEAX_SRT_GroupPathDataV1_ *members, size_t *count);
     typedef int (*robotweax_srt_telemetry_public_srt_getsockname_fn)(int32_t socket,
                                                                      struct sockaddr *name,
                                                                      int *length);
@@ -74,6 +79,10 @@ extern "C"
 #define ROBOTWEAX_SRT_TELEMETRY_MEMBER_USABLE (UINT32_C(1) << 6)
 /* The path name was set in this call (see path_source). */
 #define ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_ASSIGNED (UINT32_C(1) << 7)
+/* A connected, not-yet-named member has unavailable, malformed or still
+ * provisional path metadata. Its path remains empty and is retried next tick;
+ * counters remain available. A cached name is never discarded. */
+#define ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_PENDING (UINT32_C(1) << 8)
 
 /* Where a member's path name came from. A path is named once, at the first
  * call that sees the member CONNECTED, and never changes afterwards. */
@@ -88,6 +97,9 @@ extern "C"
  * the peer port changes with every reconnect, so a reconnected path gets a new
  * name. */
 #define ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_ADDRESSES 3u
+/* "pathid-" plus lowercase hex of all negotiated opaque label bytes.
+ * Scoped to this host-authorized group/session; untrusted metadata. */
+#define ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_IDENTIFIER 4u
 
 /* Group flags. */
 /* srt_bistats on the group handle succeeded; raw/ext/deltas are filled. It
@@ -273,6 +285,18 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API void
     robotweax_srt_telemetry_public_srt_group_session_destroy(
         robotweax_srt_telemetry_public_srt_group_session *session);
+
+    /* Configure before the first valid sample invocation. A non-null getter
+     * requires a Robotweax provider with CAP_GROUP_PATH_IDENTIFIERS_V1 qualified
+     * at its exact revision/build. Resolve it from the same provider that owns
+     * the group handles. NULL disables the optional lookup. Existing v1 layouts
+     * and naming remain unchanged unless this function enables it. Returns
+     * INVALID_ARGUMENT for a null session, late mutation or missing qualification.
+     * Calls are externally synchronized, as with sample/destroy. */
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(
+        robotweax_srt_telemetry_public_srt_group_session *session,
+        robotweax_srt_telemetry_public_srt_group_path_data_v1_fn getter);
 
     /* One srt_getsockstate and one srt_bistats on the group, srt_group_data
      * (a second or third attempt only when the group outgrew the session's

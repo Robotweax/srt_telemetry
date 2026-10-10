@@ -8,11 +8,14 @@
 #include <srt.h>
 #endif
 
+#include "../src/public_srt_path_data.hpp"
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 
 #include <atomic>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <new>
@@ -1320,6 +1323,191 @@ void test_state_only_session()
           "without qualified fields: states and paths only, no carrying");
 }
 
+std::vector<ROBOTWEAX_SRT_GroupPathDataV1_> path_records;
+int path_calls = 0;
+bool path_failure = false;
+std::size_t path_growth = 0;
+bool path_bad_count = false;
+
+int fake_path_data(const std::int32_t group, ROBOTWEAX_SRT_GroupPathDataV1_ *output,
+                   std::size_t *count)
+{
+    ++path_calls;
+    check(group == group_id, "path getter receives the owning group");
+    const auto capacity = *count;
+    *count = path_growth != 0 ? path_growth : path_records.size();
+    if (path_failure || path_growth != 0 || *count > capacity)
+    {
+        return -1;
+    }
+    std::copy(path_records.begin(), path_records.end(), output);
+    return path_bad_count ? static_cast<int>(*count + 1) : static_cast<int>(*count);
+}
+
+ROBOTWEAX_SRT_GroupPathDataV1_ label_record(const std::int32_t socket,
+                                            const std::vector<std::uint8_t> &bytes,
+                                            const std::uint32_t flags = 2)
+{
+    ROBOTWEAX_SRT_GroupPathDataV1_ record{};
+    record.member_id = socket;
+    record.flags = bytes.empty() ? 0 : flags;
+    record.identifier_length = static_cast<std::uint32_t>(bytes.size());
+    std::copy(bytes.begin(), bytes.end(), record.identifier);
+    return record;
+}
+
+void test_path_identifiers()
+{
+    reset_fake();
+    add_member(8100, -1, 1, "10.0.1.2", 40001, "10.0.1.1", 9000);
+    add_member(8101, 17, 1, "10.0.2.2", 40002, "10.0.2.1", 9000);
+    auto config = config_for(ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST);
+    auto unqualified = make_session(config);
+    check(robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(
+              unqualified.get(), fake_path_data) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "getter needs exact capability qualification");
+    check(robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(nullptr, nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "null session rejected");
+    config.capabilities |= ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_PATH_IDENTIFIERS_V1;
+    config.provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_HAIVISION_SRT;
+    auto other = make_session(config);
+    check(robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(
+              other.get(), fake_path_data) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "Haivision does not implement this private extension");
+    config.provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT;
+    auto session = make_session(config);
+    check(robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(
+              session.get(), fake_path_data) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "qualified getter enabled");
+    path_records = {label_record(8101, {'b'}), label_record(8100, {0, 0xff, 'a'})};
+    path_calls = 0;
+    path_failure = true;
+    path_growth = 0;
+    path_bad_count = false;
+    auto result = fresh_result();
+    Ticker ticker;
+    check(ticker.sample(session.get(), *result) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "missing path metadata does not fail statistics");
+    const auto *m = entry_for(*result, 8100);
+    check(m != nullptr && m->path[0] == '\0' &&
+              has(m->flags, ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_PENDING) &&
+              !has(m->flags, ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_ASSIGNED),
+          "temporary failure does not freeze an address fallback");
+    path_failure = false;
+    ticker.sample(session.get(), *result);
+    m = entry_for(*result, 8100);
+    check(m != nullptr && std::string(m->path) == "pathid-00ff61" &&
+              m->path_source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_IDENTIFIER && m->token == -1 &&
+              has(m->flags, ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_ASSIGNED) &&
+              !has(m->flags, ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_PENDING),
+          "binary receiver label is escaped, joined by socket ID and token stays local");
+    check(std::string(entry_for(*result, 8101)->path) == "pathid-62" && path_calls == 2,
+          "one snapshot per tick, not per member; negotiated label precedes token fallback");
+    check(robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(session.get(), nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "late getter mutation rejected");
+    add_member(8102, -1, 1, "10.0.1.2", 41001, "10.0.1.1", 9000);
+    path_records.push_back(label_record(8102, {0, 0xff, 'a'}));
+    path_records[1] = label_record(8100, {'x'});
+    ticker.sample(session.get(), *result);
+    check(std::string(entry_for(*result, 8100)->path) == "pathid-00ff61" &&
+              std::string(entry_for(*result, 8102)->path) == "pathid-00ff61" &&
+              entry_for(*result, 8100)->socket != entry_for(*result, 8102)->socket,
+          "same-label replacement overlap preserves distinct sockets and cached names");
+    find(8100)->data.sockstate = SRTS_BROKEN;
+    find(8100)->data.memberstate = SRT_GST_BROKEN;
+    path_failure = true;
+    ticker.sample(session.get(), *result);
+    check(std::string(entry_for(*result, 8100)->path) == "pathid-00ff61",
+          "broken member retains cached label despite getter failure");
+    remove_member(8100);
+    ticker.sample(session.get(), *result);
+    check(has(entry_for(*result, 8100)->flags, ROBOTWEAX_SRT_TELEMETRY_MEMBER_REMOVED) &&
+              std::string(entry_for(*result, 8100)->path) == "pathid-00ff61",
+          "removal reports the final cached identity");
+    path_failure = false;
+    ticker.sample(session.get(), *result);
+    check(entry_for(*result, 8100) == nullptr, "no permanent removed-label history");
+
+    /* Each invalid state must remain unknown, then recover without recreating
+     * the session. Exercise absence, provisional offer and malformed metadata. */
+    for (int malformed = 0; malformed < 8; ++malformed)
+    {
+        reset_fake();
+        add_member(8200, -1, 1, "10.0.1.2", 40001, "10.0.1.1", 9000);
+        auto retry = make_session(config);
+        robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(retry.get(), fake_path_data);
+        path_records = {label_record(8200, {'a'})};
+        path_growth = 0;
+        path_bad_count = false;
+        switch (malformed)
+        {
+        case 0: path_records.clear(); break;
+        case 1: path_records[0].flags = 1; break;
+        case 2: path_records[0].identifier_length = 33; break;
+        case 3: path_records[0].identifier[31] = 1; break;
+        case 4: path_records[0].flags = 4; break;
+        case 5: path_records.push_back(path_records[0]); break;
+        case 6: path_growth = 1025; break;
+        case 7: path_bad_count = true; break;
+        }
+        ticker.sample(retry.get(), *result);
+        check(has(entry_for(*result, 8200)->flags, ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_PENDING),
+              "invalid or missing record is not a fallback name");
+        path_growth = 0;
+        path_bad_count = false;
+        path_records = {label_record(8200, std::vector<std::uint8_t>(32, 0xff))};
+        ticker.sample(retry.get(), *result);
+        check(std::string(entry_for(*result, 8200)->path) == "pathid-" + std::string(64, 'f'),
+              "retry accepts all 32 opaque bytes without truncation");
+    }
+    reset_fake();
+    add_member(8300, 22, 1, "10.0.1.2", 40001, "10.0.1.1", 9000);
+    auto unlabeled = make_session(config);
+    robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(unlabeled.get(), fake_path_data);
+    path_records = {label_record(8300, {})};
+    ticker.sample(unlabeled.get(), *result);
+    check(std::string(entry_for(*result, 8300)->path) == "token-22",
+          "observed absence of a label keeps the existing token fallback");
+    /* Growth within the budget is retried, including reordered unrelated IDs. */
+    auto growing = make_session(config);
+    robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(growing.get(), fake_path_data);
+    path_records.assign(20, label_record(9999, {}));
+    path_records[19] = label_record(8300, {'z'});
+    path_calls = 0;
+    ticker.sample(growing.get(), *result);
+    check(path_calls == 2 && std::string(entry_for(*result, 8300)->path) == "pathid-7a",
+          "bounded capacity growth recovers the requested record");
+    int mode = 2;
+    config.path_name = filling_path_name;
+    config.path_name_user_data = &mode;
+    auto custom = make_session(config);
+    robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(custom.get(), fake_path_data);
+    path_failure = true;
+    ticker.sample(custom.get(), *result);
+    check(entry_for(*result, 8300)->path_source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_HOST &&
+              !has(entry_for(*result, 8300)->flags, ROBOTWEAX_SRT_TELEMETRY_MEMBER_PATH_PENDING),
+          "valid host override precedes unavailable peer metadata");
+    path_failure = false;
+    auto group_only = make_session(config);
+    robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(group_only.get(), fake_path_data);
+    auto zero = fresh_result(0);
+    path_calls = 0;
+    ticker.sample(group_only.get(), *zero);
+    check(path_calls == 0, "group-only sampling does not read member path metadata");
+    auto allocation = make_session(config);
+    allocations_until_failure = 1;
+    const auto error = robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(
+        allocation.get(), fake_path_data);
+    allocations_until_failure = 0;
+    check(error == ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE,
+          "setter allocation failure is contained at the C boundary");
+    path_calls = 0;
+    ticker.sample(allocation.get(), *result);
+    check(path_calls == 0, "failed setter preserves disabled lookup");
+}
+
 } // namespace
 
 int main()
@@ -1345,6 +1533,7 @@ int main()
     test_unknown_type_and_removed_active();
     test_carrying_per_direction();
     test_state_only_session();
+    test_path_identifiers();
     if (failures != 0)
     {
         std::cerr << failures << " failure(s)\n";
