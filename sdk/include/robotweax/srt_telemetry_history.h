@@ -135,7 +135,10 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_STATE_CHANGED = 17,
         /* On the group's source; previous/current: member sockets (-1: none);
          * detail: "path=<previous> -> <current>". */
-        ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED = 18
+        ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED = 18,
+        /* Observed local sender selection/revision change, including initial
+         * selection and clear. Polling gaps do not reconstruct transitions. */
+        ROBOTWEAX_SRT_TELEMETRY_EVENT_SEND_AUTHORITY_CHANGED = 19
     } robotweax_srt_telemetry_event_kind;
 
     typedef enum robotweax_srt_telemetry_event_severity ROBOTWEAX_SRT_TELEMETRY_ENUM_INT

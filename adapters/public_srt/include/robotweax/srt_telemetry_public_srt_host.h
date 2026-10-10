@@ -131,6 +131,16 @@ static inline void robotweax_srt_telemetry_host_embed_path_data(robotweax_srt_te
 }
 #endif
 
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+/* Explicit opt-in after qualifying the selected provider build. */
+static inline robotweax_srt_telemetry_error
+robotweax_srt_telemetry_host_embed_group_send_state(robotweax_srt_telemetry_embed *embed)
+{
+    return robotweax_srt_telemetry_embed_set_group_send_state_v1(embed,
+                                                                 robotweax_srt_group_send_state_v1);
+}
+#endif
+
 #if defined(ROBOTWEAX_SRT_RTTDATA_VERSION) && ROBOTWEAX_SRT_RTTDATA_VERSION == 1
 static inline int robotweax_srt_telemetry_host_rtt_data(int32_t socket,
                                                         struct ROBOTWEAX_SRT_RttDataV1_ *output,

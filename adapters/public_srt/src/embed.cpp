@@ -169,6 +169,8 @@ struct GroupLink
 {
     robotweax_srt_telemetry_public_srt_group_session *session = nullptr;
     std::uint32_t type = 0;
+    bool authority_seen = false;
+    robotweax_srt_telemetry_group_send_metadata_v1 authority{};
     std::vector<robotweax_srt_telemetry_group_member_v1> entries;
     robotweax_srt_telemetry_public_srt_group_result_v1 result{};
     /* result holds this tick's sample (taken with the tick's timestamps). */
@@ -382,6 +384,7 @@ struct robotweax_srt_telemetry_embed
     robotweax_srt_telemetry_embed_config_v1 config{};
     Labels labels;
     robotweax_srt_telemetry_public_srt_rtt_data_v1_fn rtt_getter = nullptr;
+    robotweax_srt_telemetry_public_srt_group_send_state_v1_fn authority_getter = nullptr;
     std::string service_name;
     robotweax_srt_telemetry_sampler *sampler = nullptr;
     robotweax_srt_telemetry_http_server *server = nullptr;
@@ -1241,6 +1244,50 @@ void poll_group(Embed &embed, Endpoint &group, const std::uint64_t wall, const s
     }
 }
 
+void poll_authority(Embed &embed, Endpoint &endpoint, std::uint64_t wall, std::uint64_t mono)
+{
+    if (!endpoint.group)
+        return;
+    auto &link = *endpoint.group;
+    robotweax_srt_telemetry_group_send_metadata_v1 state{};
+    state.struct_size = sizeof(state);
+    state.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    state.active_member = state.probe_member = -1;
+    state.active_age_microseconds = state.probe_age_microseconds = UINT64_MAX;
+    if (!endpoint.retired && endpoint.socket >= 0 &&
+        link.type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP)
+        static_cast<void>(robotweax_srt_telemetry_public_srt_read_group_send_metadata_v1(
+            endpoint.socket, embed.authority_getter, mono, &state));
+    if (state.availability == 2)
+    {
+        if (state.active_member >= 0)
+            std::snprintf(state.active_path, sizeof(state.active_path), "%s",
+                          path_of(link, state.active_member).c_str());
+        if (state.probe_member >= 0)
+            std::snprintf(state.probe_path, sizeof(state.probe_path), "%s",
+                          path_of(link, state.probe_member).c_str());
+        const bool same_group =
+            link.authority_seen && state.group_generation == link.authority.group_generation;
+        if (!same_group || state.authority_revision != link.authority.authority_revision)
+        {
+            const auto changes = state.authority_revision - link.authority.authority_revision;
+            std::string detail =
+                "observed; local_sender; revision=" + std::to_string(state.authority_revision) +
+                "; changes=" + (same_group ? std::to_string(changes) : "baseline") +
+                "; generation=" + std::to_string(state.active_generation) +
+                "; path=" + std::string(state.active_path);
+            journal(embed, endpoint.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_SEND_AUTHORITY_CHANGED,
+                    ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO,
+                    same_group ? link.authority.active_member : -1, state.active_member, 0, detail,
+                    wall, mono);
+        }
+        link.authority_seen = true;
+        link.authority = state;
+    }
+    static_cast<void>(robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(
+        embed.sampler, endpoint.source_id, &state));
+}
+
 void poll_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
 {
     if (endpoint.kind == EndpointKind::group)
@@ -1277,6 +1324,7 @@ void run(Embed &embed)
             if (endpoint->kind == EndpointKind::group)
             {
                 poll_group(embed, *endpoint, wall, mono);
+                poll_authority(embed, *endpoint, wall, mono);
                 for (auto &[path, member] : endpoint->group->members)
                     poll_rtt(embed, *member, mono);
             }
@@ -1291,6 +1339,7 @@ void run(Embed &embed)
             else
             {
                 poll_rtt(embed, **it, mono);
+                poll_authority(embed, **it, wall, mono);
                 ++it;
             }
         }
@@ -2214,5 +2263,29 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_rtt_d
                 static_cast<void>(robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
                     embed->sampler, member->source_id, nullptr));
     }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_group_send_state_v1(
+    robotweax_srt_telemetry_embed *embed,
+    robotweax_srt_telemetry_public_srt_group_send_state_v1_fn getter)
+{
+    if (embed == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(embed->mutex);
+    embed->authority_getter = getter;
+    const auto clear = [&](Endpoint &endpoint)
+    {
+        if (!endpoint.group)
+            return;
+        endpoint.group->authority_seen = false;
+        endpoint.group->authority = {};
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(
+            embed->sampler, endpoint.source_id, nullptr));
+    };
+    for (auto &[socket, endpoint] : embed->active)
+        clear(*endpoint);
+    for (auto &endpoint : embed->retired)
+        clear(*endpoint);
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

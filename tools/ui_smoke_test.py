@@ -21,6 +21,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -33,11 +34,14 @@ def free_port():
 
 
 def dump_dom(browser, url, budget_ms=6000):
-    result = subprocess.run(
-        [browser, "--headless=new", "--no-sandbox", "--disable-gpu", "--no-first-run",
-         "--disable-dev-shm-usage", f"--virtual-time-budget={budget_ms}", "--dump-dom", url],
-        capture_output=True, text=True, timeout=90)
-    return result.stdout
+    # Isolated test profile: never read or reuse an operator's browser profile.
+    with tempfile.TemporaryDirectory(prefix="srt-telemetry-ui-") as profile:
+        result = subprocess.run(
+            [browser, "--headless=new", "--no-sandbox", "--disable-gpu", "--no-first-run",
+             "--disable-background-networking", "--disable-extensions", f"--user-data-dir={profile}",
+             "--disable-dev-shm-usage", f"--virtual-time-budget={budget_ms}", "--dump-dom", url],
+            capture_output=True, text=True, timeout=90)
+        return result.stdout
 
 
 def snapshot(port, token=None):
@@ -160,8 +164,15 @@ def main():
             names = re.findall(r'<td class="path-name">([^<]*)</td>', gdom)
             check(sorted(names) == ["lte", "sat"], f"group view lists its paths ({names})")
             check("<h2>Paths</h2>" in gdom and "Own grade" in gdom, "group view: paths section with own grades")
-            check("Data activity: packet-counter inference. Send authority: unavailable." in gdom,
-                  "group view distinguishes observed activity from send authority")
+            check("DATA activity: packet-counter inference." in gdom,
+                  "group view labels DATA activity as inferred")
+            if group.get("send_authority", {}).get("availability") == "available":
+                check(re.search(r"Local sender authority: (lte|sat|socket [0-9]+|none)\. Probe:", gdom)
+                      is not None and "Snapshot " in gdom and "revision " in gdom,
+                      "qualified actual sender snapshot and probe rendered separately")
+            else:
+                check("Local sender authority: unavailable." in gdom,
+                      "unqualified provider preserves actual-authority absence")
             path = next(s for s in data["sources"] if s["labels"].get("path") == "sat" and s["role"] == "sender")
             pdom = dump_dom(args.browser, f"{base}#/source/{path['id']}")
             check(f'href="#/source/{group["id"]}"' in pdom and "connection group" in pdom

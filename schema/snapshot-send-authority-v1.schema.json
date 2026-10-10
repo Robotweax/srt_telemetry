@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Optional local Backup sender authority observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "availability"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "availability": {
+      "enum": [
+        "available",
+        "read_failed",
+        "unavailable"
+      ]
+    },
+    "scope": {
+      "const": "local_sender"
+    },
+    "state": {
+      "enum": [
+        "selected",
+        "unselected"
+      ]
+    },
+    "group_generation": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "authority_revision": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$"
+    },
+    "active": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "socket",
+        "generation",
+        "path",
+        "age_seconds"
+      ],
+      "properties": {
+        "socket": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generation": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 63
+        },
+        "age_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "probe": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "socket",
+        "generation",
+        "path",
+        "age_seconds"
+      ],
+      "properties": {
+        "socket": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generation": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 63
+        },
+        "age_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "capture_age_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "sampled_monotonic_nano": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "scope",
+          "state",
+          "group_generation",
+          "authority_revision",
+          "active",
+          "probe",
+          "capture_age_seconds",
+          "sampled_monotonic_nano"
+        ]
+      },
+      "else": {
+        "maxProperties": 2
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "const": "unselected"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "active": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "const": "selected"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "active": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
+}

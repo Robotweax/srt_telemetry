@@ -207,7 +207,8 @@ robotweax_srt_telemetry_event_journal_push(robotweax_srt_telemetry_event_journal
     /* Compare as integers: an out-of-range enum value is valid in C. */
     const auto kind = static_cast<std::int64_t>(event->kind);
     const auto severity = static_cast<std::int64_t>(event->severity);
-    if (kind < ROBOTWEAX_SRT_TELEMETRY_EVENT_HOST || kind > ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED ||
+    if (kind < ROBOTWEAX_SRT_TELEMETRY_EVENT_HOST ||
+        kind > ROBOTWEAX_SRT_TELEMETRY_EVENT_SEND_AUTHORITY_CHANGED ||
         severity < ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO ||
         severity > ROBOTWEAX_SRT_TELEMETRY_SEVERITY_ERROR)
     {
@@ -357,6 +358,8 @@ robotweax_srt_telemetry_event_kind_name(const robotweax_srt_telemetry_event_kind
         return "member_removed";
     case ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_STATE_CHANGED:
         return "member_state_changed";
+    case ROBOTWEAX_SRT_TELEMETRY_EVENT_SEND_AUTHORITY_CHANGED:
+        return "send_authority_changed";
     case ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED:
         return "active_member_changed";
     }

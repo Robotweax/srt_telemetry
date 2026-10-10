@@ -800,6 +800,54 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
         }
         out += '}';
 
+        const auto &sender = s.group_send_metadata;
+        out += ",\"send_authority\":{\"version\":1,\"availability\":";
+        json_string(out, sender.availability == 2   ? "available"
+                         : sender.availability == 1 ? "read_failed"
+                                                    : "unavailable");
+        if (sender.availability == 2)
+        {
+            out += ",\"scope\":\"local_sender\",\"state\":";
+            json_string(out, sender.state == 1 ? "selected" : "unselected");
+            const auto exact = [&](const char *key, std::uint64_t value)
+            {
+                out += ",\"";
+                out += key;
+                out += "\":";
+                json_string(out, std::to_string(value));
+            };
+            exact("group_generation", sender.group_generation);
+            exact("authority_revision", sender.authority_revision);
+            exact("sampled_monotonic_nano", sender.sampled_monotonic_nano);
+            const auto member = [&](const char *key, std::int32_t id, std::uint64_t generation,
+                                    std::uint64_t age, const char *path)
+            {
+                out += ",\"";
+                out += key;
+                out += "\":";
+                if (id < 0)
+                {
+                    out += "null";
+                    return;
+                }
+                out += "{\"socket\":";
+                integer(out, id);
+                out += ",\"generation\":";
+                json_string(out, std::to_string(generation));
+                out += ",\"path\":";
+                json_string(out, path);
+                out += ",\"age_seconds\":";
+                json_number(out, static_cast<double>(age) / 1e6);
+                out += '}';
+            };
+            member("active", sender.active_member, sender.active_generation,
+                   sender.active_age_microseconds, sender.active_path);
+            member("probe", sender.probe_member, sender.probe_generation,
+                   sender.probe_age_microseconds, sender.probe_path);
+            out += ",\"capture_age_seconds\":";
+            json_number(out, s.group_send_capture_age_seconds);
+        }
+        out += '}';
         if (window_usable(s))
         {
             out += ",\"window\":{\"start_unix_nano\":";
