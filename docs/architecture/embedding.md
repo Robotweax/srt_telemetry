@@ -189,7 +189,10 @@ A labelled path is named `pathid-<hex of the label>` (`pathid-6c7465` for
 `lte`) on both sides, unless the host's `path_name` gives a name. The helper
 exists only when `srt.h` declares the getter (`ROBOTWEAX_SRT_PATHID_NEGOTIATED`).
 `group_path_data` with any provider other than Robotweax SRT is refused at
-`embed_start`. See [path names](public-srt-group.md#path-names) for the order
+`embed_start`. Passing the getter is the host's qualification of
+`CAP_GROUP_PATH_IDENTIFIERS_V1`: take it from the library that owns the
+sockets, at a revision with the protocol; the group sessions then carry the
+capability. See [path names](public-srt-group.md#path-names) for the order
 and the pending state while a label is not negotiated yet.
 
 **Health.**

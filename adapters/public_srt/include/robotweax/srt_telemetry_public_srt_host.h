@@ -109,7 +109,16 @@ static inline void robotweax_srt_telemetry_host_embed_functions(robotweax_srt_te
     config->getsockname = robotweax_srt_telemetry_host_getsockname;
 }
 
+/* ROBOTWEAX_SRT_PATHID_NEGOTIATED (a record flag) comes with the getter in
+ * Robotweax SRT's srt.h: it marks a header that declares it. */
 #if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+static inline int robotweax_srt_telemetry_host_group_path_data(int32_t group,
+                                                               struct ROBOTWEAX_SRT_GroupPathDataV1_ *members,
+                                                               size_t *count)
+{
+    return robotweax_srt_group_path_data_v1((SRTSOCKET)group, members, count);
+}
+
 /* Robotweax SRT with negotiated path labels (protocol PR #298): names group
  * paths from the caller's label on both sides (embed_config_v1.
  * group_path_data). Call it after robotweax_srt_telemetry_host_embed_functions;
@@ -118,7 +127,7 @@ static inline void robotweax_srt_telemetry_host_embed_functions(robotweax_srt_te
  * for an srt.h without them. */
 static inline void robotweax_srt_telemetry_host_embed_path_data(robotweax_srt_telemetry_embed_config_v1 *config)
 {
-    config->group_path_data = robotweax_srt_group_path_data_v1;
+    config->group_path_data = robotweax_srt_telemetry_host_group_path_data;
 }
 #endif
 
