@@ -88,3 +88,11 @@ new structures instead: `ext_sample_v1` and `ext_delta_v1` supplement
 `session_create_v2` and `session_sample_ext`, and every v1 entry point keeps its
 behaviour. Existing fields are never reinterpreted. Incompatible changes require
 a new ABI version.
+
+Every public enum is int-sized. In C++ it has `int` as its fixed underlying
+type (`ROBOTWEAX_SRT_TELEMETRY_ENUM_INT`), so any value a C host passes in an
+enum field or parameter is well defined; the library rejects unknown values
+(`INVALID_ARGUMENT`, or an "invalid" name). A C host compiled with short enums
+fails to compile against the headers. The test
+`robotweax_srt_telemetry_enum_declaration_check` fails when a public enum is
+declared without the macro.

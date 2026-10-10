@@ -37,7 +37,7 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_API const char *
     robotweax_srt_telemetry_metric_scope(robotweax_srt_telemetry_metric metric);
 
-    typedef enum robotweax_srt_telemetry_render_format
+    typedef enum robotweax_srt_telemetry_render_format ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         /* Prometheus text exposition format 0.0.4. */
         ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS = 1,

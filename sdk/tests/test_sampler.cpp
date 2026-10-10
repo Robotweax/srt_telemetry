@@ -12,10 +12,26 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 namespace
 {
+
+/* Every API enum has a fixed int type in C++, so any int a C host passes is a
+ * valid value the library can reject without undefined behaviour. */
+template <typename... Enums> constexpr bool all_int_based()
+{
+    return (std::is_same_v<std::underlying_type_t<Enums>, int> && ...);
+}
+static_assert(all_int_based<
+              robotweax_srt_telemetry_error, robotweax_srt_telemetry_provider,
+              robotweax_srt_telemetry_endpoint_role, robotweax_srt_telemetry_render_format,
+              robotweax_srt_telemetry_health_verdict, robotweax_srt_telemetry_health_indicator,
+              robotweax_srt_telemetry_health_reason, robotweax_srt_telemetry_health_knob,
+              robotweax_srt_telemetry_knob_direction, robotweax_srt_telemetry_connection_condition,
+              robotweax_srt_telemetry_event_kind, robotweax_srt_telemetry_event_severity,
+              robotweax_srt_telemetry_metric, robotweax_srt_telemetry_metric_kind>());
 
 int failures = 0;
 

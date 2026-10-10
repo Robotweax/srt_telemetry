@@ -27,7 +27,7 @@ extern "C"
 
     /* Ordered by severity, so verdicts compare numerically, except that
      * UNKNOWN (0) means "no grade", not "better than OK". */
-    typedef enum robotweax_srt_telemetry_health_verdict
+    typedef enum robotweax_srt_telemetry_health_verdict ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN = 0,
         ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK = 1,
@@ -36,7 +36,7 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING = 4
     } robotweax_srt_telemetry_health_verdict;
 
-    typedef enum robotweax_srt_telemetry_health_indicator
+    typedef enum robotweax_srt_telemetry_health_indicator ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         /* Receiver: receive buffer span / latency, minimum over the gauge
          * window. Time left to repair a gap before it becomes a skip. */
@@ -69,7 +69,7 @@ extern "C"
 /* Indicator slots in v1 structures; indicators added later use free slots. */
 #define ROBOTWEAX_SRT_TELEMETRY_INDICATOR_SLOTS_V1 16u
 
-    typedef enum robotweax_srt_telemetry_health_reason
+    typedef enum robotweax_srt_telemetry_health_reason ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_REASON_NONE = 0,
         /* No packets in the window (stream idle or not started). */
@@ -106,7 +106,7 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_CONGESTED = 29
     } robotweax_srt_telemetry_health_reason;
 
-    typedef enum robotweax_srt_telemetry_health_knob
+    typedef enum robotweax_srt_telemetry_health_knob ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE = 0,
         /* SRTO_LATENCY (receiver) or SRTO_PEERLATENCY (sender); seconds. */
@@ -123,7 +123,7 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION = 6
     } robotweax_srt_telemetry_health_knob;
 
-    typedef enum robotweax_srt_telemetry_knob_direction
+    typedef enum robotweax_srt_telemetry_knob_direction ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE = 0,
         ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE = 1,
@@ -132,7 +132,7 @@ extern "C"
         ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK = 3
     } robotweax_srt_telemetry_knob_direction;
 
-    typedef enum robotweax_srt_telemetry_connection_condition
+    typedef enum robotweax_srt_telemetry_connection_condition ROBOTWEAX_SRT_TELEMETRY_ENUM_INT
     {
         /* The host does not report connection state; indicators decide. */
         ROBOTWEAX_SRT_TELEMETRY_CONNECTION_UNREPORTED = 0,

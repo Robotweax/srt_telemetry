@@ -17,7 +17,6 @@
 #include <memory>
 #include <new>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -188,20 +187,10 @@ stats_config(const robotweax_srt_telemetry_public_srt_group_config_v1 &config, c
     return stats;
 }
 
-/* A C host may pass any integer in an enum field; loading an out-of-range
- * value as the C++ enum type is undefined, so the bytes are read instead. */
-bool known_provider_value(const robotweax_srt_telemetry_provider &provider)
-{
-    std::underlying_type_t<robotweax_srt_telemetry_provider> value{};
-    static_assert(sizeof(value) == sizeof(provider));
-    std::memcpy(&value, &provider, sizeof(value));
-    return value == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_HAIVISION_SRT ||
-           value == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT;
-}
-
 bool valid_config(const robotweax_srt_telemetry_public_srt_group_config_v1 &config)
 {
-    const auto known_provider = known_provider_value(config.provider);
+    const auto known_provider = config.provider == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_HAIVISION_SRT ||
+                                config.provider == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT;
     const auto known_type = config.group_type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_UNKNOWN ||
                             config.group_type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST ||
                             config.group_type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
