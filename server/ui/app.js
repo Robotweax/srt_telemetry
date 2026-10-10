@@ -26,6 +26,7 @@
     connecting: 'The connection is being set up.',
     connection_lost: 'The connection is lost.',
     role_unknown: 'The endpoint is neither a known sender nor a known receiver.',
+    standby: 'A connected backup path waiting to take over; it carries no stream until the active path fails.',
     recovery_headroom_low: 'Lost packets are repaired with little time to spare: the receive buffer runs low against the latency.',
     latency_low_for_rtt: 'The latency is too short for this round-trip time to repair losses reliably.',
     unrecovered_loss: 'Packets are lost for good: the viewer sees errors.',
@@ -51,6 +52,7 @@
     connecting: 'connecting',
     connection_lost: 'connection lost',
     role_unknown: 'role unknown',
+    standby: 'standby',
     recovery_headroom_low: 'little recovery headroom',
     latency_low_for_rtt: 'latency short for the RTT',
     unrecovered_loss: 'unrecovered loss',
@@ -114,6 +116,10 @@
     source_added: 'Source added',
     source_removed: 'Source removed',
     verdict_changed: 'Verdict changed',
+    member_added: 'Path added',
+    member_removed: 'Path removed',
+    member_state_changed: 'Path state changed',
+    active_member_changed: 'Active path changed',
   };
 
   // ------------------------------------------------------------ formatting
@@ -1118,8 +1124,13 @@
         const health = src.health;
         const v = VERDICT_LABEL[health?.verdict] ? health.verdict : 'unknown';
         const age = health && Number.isFinite(health.verdict_age_seconds) ? `for ${fmtAge(health.verdict_age_seconds)}` : '';
+        /* A connection-group path: capped at Watch, its own grade shown. */
+        const capped = health?.capped && VERDICT_LABEL[health.uncapped_verdict]
+          ? `path ${VERDICT_LABEL[health.uncapped_verdict].toLowerCase()}` : '';
         cells.status.className = `status v-${v}`;
-        setCell(cells.status, `${v}|${age}`, () => [verdictBadge(v), age ? h('div', { class: 'faint num', text: age }) : null]);
+        setCell(cells.status, `${v}|${age}|${capped}`, () => [verdictBadge(v),
+          age ? h('div', { class: 'faint num', text: age }) : null,
+          capped ? h('div', { class: 'faint', text: capped }) : null]);
         const { name, key } = sourceName(src);
         const role = String(src.role);
         setCell(cells.name, JSON.stringify([name, src.labels]), () => [h('div', { class: 'endpoint-name', text: name }),
@@ -1724,7 +1735,9 @@
           h('div', { class: 'meta num' },
             health && Number.isFinite(health.verdict_age_seconds) ? `Held for ${fmtAge(health.verdict_age_seconds)}` : '',
             health?.primary_indicator && health.primary_indicator !== 'none' && v !== 'ok'
-              ? ` · from the indicator ${INDICATORS[health.primary_indicator]?.name || health.primary_indicator}` : '')),
+              ? ` · from the indicator ${INDICATORS[health.primary_indicator]?.name || health.primary_indicator}` : '',
+            health?.capped && VERDICT_LABEL[health.uncapped_verdict]
+              ? ` · one path of a connection group: capped at Watch, on its own ${VERDICT_LABEL[health.uncapped_verdict]}` : '')),
         h('div', { class: 'act' },
           h('div', { class: 'label', text: v === 'ok' || v === 'watch' || v === 'unknown' ? 'Action' : 'Suggested change' }),
           h('div', { class: 'do', text: a.action }),

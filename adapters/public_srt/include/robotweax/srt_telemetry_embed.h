@@ -33,6 +33,7 @@
 
 #include <robotweax/srt_telemetry_public_srt.h>
 #include <robotweax/srt_telemetry_public_srt_connection.h>
+#include <robotweax/srt_telemetry_public_srt_group.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -61,8 +62,8 @@ extern "C"
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_TEXT_CAPACITY 256u
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_SHORT_TEXT_CAPACITY 64u
 /* Host labels (embed config and attach together); the embed adds stream
- * (from name), provider and, when captured, stream_id, within the sampler's
- * 8 labels. */
+ * (from name), provider and, when captured, stream_id, and for connection
+ * groups group and path, within the sampler's 10 labels. */
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_MAX_HOST_LABELS 5u
 
 /* embed_config_v1.flags */
@@ -135,6 +136,10 @@ extern "C"
          * and its source revision, e.g. a commit. Empty: "unknown". */
         char provider_version[ROBOTWEAX_SRT_TELEMETRY_EMBED_SHORT_TEXT_CAPACITY];
         char provider_revision[ROBOTWEAX_SRT_TELEMETRY_EMBED_SHORT_TEXT_CAPACITY];
+        /* Needed only for connection groups (embed_attach_group);
+         * robotweax_srt_telemetry_host_embed_functions fills them. */
+        robotweax_srt_telemetry_public_srt_group_data_fn group_data;
+        robotweax_srt_telemetry_public_srt_getsockname_fn getsockname;
     } robotweax_srt_telemetry_embed_config_v1;
 
     /* Defaults as above; the SRT functions are left NULL. */
@@ -178,6 +183,46 @@ extern "C"
     robotweax_srt_telemetry_embed_attach(robotweax_srt_telemetry_embed *embed, int32_t socket,
                                          robotweax_srt_telemetry_endpoint_role role,
                                          const robotweax_srt_telemetry_label_v1 *labels, size_t label_count);
+
+    /* A connection group (Broadcast or Main/Backup) to monitor; see
+     * docs/architecture/embedding.md#connection-groups. */
+    typedef struct robotweax_srt_telemetry_embed_group_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        /* The group handle (srt_create_group, or srt_accept with
+         * SRTO_GROUPCONNECT). */
+        int32_t group;
+        robotweax_srt_telemetry_endpoint_role role;
+        /* GROUP_TYPE_BROADCAST or GROUP_TYPE_BACKUP. */
+        uint32_t group_type;
+        /* Must be zero. */
+        uint32_t reserved;
+        /* As for embed_attach; copied. */
+        const robotweax_srt_telemetry_label_v1 *labels;
+        size_t label_count;
+        /* Optional path names, as for the group session: called on the
+         * embed's thread under its lock, so it must not call the embed. */
+        robotweax_srt_telemetry_public_srt_path_name_fn path_name;
+        void *path_name_user_data;
+    } robotweax_srt_telemetry_embed_group_v1;
+
+    /* Zeroes group and sets the sizes. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API void
+    robotweax_srt_telemetry_embed_group_default(robotweax_srt_telemetry_embed_group_v1 *group);
+
+    /* Monitors a connection group and its members from now on: one source
+     * for the group (labels + group=<type>) and one per member path (also
+     * path=<name>), sampled together in every tick. A member's verdict is
+     * capped at Watch; a member that reconnects on the same path continues
+     * that path's row. Group events: member_added, member_removed and
+     * active_member_changed on the group's source, member_state_changed on
+     * the member's. Detach the group with embed_detach (its members go with
+     * it) before closing it. INVALID_STATE when the handle is attached or
+     * the embed has no group_data/getsockname. Thread-safe; NULL embed: OK. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
+                                               const robotweax_srt_telemetry_embed_group_v1 *group);
 
     /* Stops reading the socket; call it before srt_close. After it returns
      * the embed makes no further SRT calls on the socket, which stays on

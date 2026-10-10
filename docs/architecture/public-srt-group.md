@@ -5,10 +5,12 @@ together with all of its member sockets. One call per sampling tick reads the
 group and every member, so they are linked and timestamped alike. Header:
 `adapters/public_srt/include/robotweax/srt_telemetry_public_srt_group.h`.
 
-This is part A of group support: the adapter. Sampler sources, labels,
-journal events and history for groups (part B), the member health profile and
-group verdict (part C), and the Network Lab's multi-path qualification
-(part D) build on it.
+This is part A of group support: the adapter. Part B builds on it in the
+embedding layer (sources, labels `group`/`path`, journal events, member paths
+capped at Watch, standby paths OK; see
+[connection groups](embedding.md#connection-groups)). The group verdict from
+its paths and the group panels (part C) and the Network Lab's multi-path
+qualification (part D) follow.
 
 ## What one call reads
 

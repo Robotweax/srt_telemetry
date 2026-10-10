@@ -281,7 +281,7 @@ void test_validation()
           "duplicate label keys rejected");
     const robotweax_srt_telemetry_label_v1 many[ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS + 1] = {
         {"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}, {"e", "5"},
-        {"f", "6"}, {"g", "7"}, {"h", "8"}, {"i", "9"}};
+        {"f", "6"}, {"g", "7"}, {"h", "8"}, {"i", "9"}, {"j", "10"}, {"k", "11"}};
     auto too_many = source_config(source, many, ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS + 1);
     check(robotweax_srt_telemetry_sampler_add_source(sampler, &too_many, &id) ==
               ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,

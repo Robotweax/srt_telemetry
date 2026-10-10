@@ -105,6 +105,8 @@ static inline void robotweax_srt_telemetry_host_embed_functions(robotweax_srt_te
     config->getsockstate = robotweax_srt_telemetry_host_getsockstate;
     config->getrejectreason = robotweax_srt_telemetry_host_getrejectreason;
     config->getsockflag = robotweax_srt_telemetry_host_getsockflag;
+    config->group_data = robotweax_srt_telemetry_host_group_data;
+    config->getsockname = robotweax_srt_telemetry_host_getsockname;
 }
 
 /* Starts an embed from a command-line style spec (see

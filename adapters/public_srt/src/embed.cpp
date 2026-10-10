@@ -5,6 +5,7 @@
 #include <robotweax/srt_telemetry_sampler.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <atomic>
 #include <cerrno>
 #include <charconv>
@@ -160,8 +161,45 @@ std::string label_value(const char *text)
 
 using Labels = std::vector<std::pair<std::string, std::string>>;
 
+struct Endpoint;
+
+/* A connection group's shared state, owned by the group's endpoint. One group
+ * session sample per tick feeds the group's source and every member's. */
+struct GroupLink
+{
+    robotweax_srt_telemetry_public_srt_group_session *session = nullptr;
+    std::uint32_t type = 0;
+    std::vector<robotweax_srt_telemetry_group_member_v1> entries;
+    robotweax_srt_telemetry_public_srt_group_result_v1 result{};
+    /* result holds this tick's sample (taken with the tick's timestamps). */
+    bool result_ok = false;
+    std::uint64_t result_mono = 0;
+    std::uint64_t result_wall = 0;
+    robotweax_srt_telemetry_provider provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_UNKNOWN;
+    /* Member sockets' paths, kept after they leave (event details). */
+    std::map<std::int32_t, std::string> path_by_socket;
+    /* Members on the dashboard, by path. */
+    std::map<std::string, std::unique_ptr<Endpoint>> members;
+
+    GroupLink() = default;
+    GroupLink(const GroupLink &) = delete;
+    GroupLink &operator=(const GroupLink &) = delete;
+    ~GroupLink();
+};
+
+/* What an endpoint's source reads: one socket's own session, a group (its
+ * group session), or one member of a group (its slice of the group's
+ * sample). */
+enum class EndpointKind
+{
+    socket,
+    group,
+    member
+};
+
 struct Endpoint
 {
+    EndpointKind kind = EndpointKind::socket;
     std::int32_t socket = -1;
     robotweax_srt_telemetry_endpoint_role role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN;
     /* The source's labels: a reconnection with the same role and labels
@@ -183,6 +221,18 @@ struct Endpoint
     bool retired = false;
     SteadyClock::time_point expires;
 
+    /* Group endpoints. */
+    std::unique_ptr<GroupLink> group;
+    /* Member endpoints: the path, the member's latest state and this tick's
+     * sample (served when cached_mono is the tick's). */
+    std::string path;
+    std::int32_t member_state = -1;
+    std::int32_t member_socket_state = 0;
+    robotweax_srt_telemetry_source_output_v1 cached{};
+    bool cached_ok = false;
+    std::int32_t cached_native = 0;
+    std::uint64_t cached_mono = 0;
+
     ~Endpoint()
     {
         if (monitor != nullptr)
@@ -195,6 +245,24 @@ struct Endpoint
         }
     }
 };
+
+/* Unreleased v1 layouts (they may still grow until the first release). */
+static_assert(sizeof(robotweax_srt_telemetry_embed_group_v1) == 24 + 4 * sizeof(void *) &&
+                  offsetof(robotweax_srt_telemetry_embed_group_v1, labels) == 24 &&
+                  offsetof(robotweax_srt_telemetry_embed_group_v1, path_name) == 24 + 2 * sizeof(void *),
+              "embed group layout is part of the ABI");
+static_assert(offsetof(robotweax_srt_telemetry_embed_config_v1, group_data) ==
+                  sizeof(robotweax_srt_telemetry_embed_config_v1) - 2 * sizeof(void *),
+              "the group functions end the embed config");
+
+GroupLink::~GroupLink()
+{
+    members.clear();
+    if (session != nullptr)
+    {
+        robotweax_srt_telemetry_public_srt_group_session_destroy(session);
+    }
+}
 
 /* One source's recording: a bounded ring of its samples and the header
  * metadata, written as one JSONL file by the writer thread. Shared so a write
@@ -229,7 +297,9 @@ std::string file_part(const std::string_view text)
     return out.empty() || out.front() == '.' ? "_" + out : out;
 }
 
-/* Sampler source: reads the socket's statistics unless it was detached. */
+/* Sampler source: reads the socket's statistics unless it was detached. A
+ * group or member serves the group sample its poll took for this tick (same
+ * timestamps); without one, the tick counts as a source error. */
 robotweax_srt_telemetry_error endpoint_sample(void *data, const std::uint64_t observed_at_unix_nano,
                                               const std::uint64_t sample_monotonic_nano,
                                               robotweax_srt_telemetry_source_output_v1 *output)
@@ -238,6 +308,50 @@ robotweax_srt_telemetry_error endpoint_sample(void *data, const std::uint64_t ob
     if (endpoint.retired)
     {
         return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    }
+    if (endpoint.kind == EndpointKind::group)
+    {
+        const auto &link = *endpoint.group;
+        if (!link.result_ok || link.result_mono != sample_monotonic_nano)
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+        }
+        output->native_result = link.result.group_native_result;
+        if ((link.result.flags & ROBOTWEAX_SRT_TELEMETRY_GROUP_STATS) == 0)
+        {
+            if (link.result.group_state == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_STATE_CONNECTED)
+            {
+                return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+            }
+            /* A group has no statistics before its first connection (and
+             * after it breaks): an empty sample, not a failed read; the
+             * connection monitor says connecting or lost. */
+            output->raw.provider = link.provider;
+            output->raw.observed_at_unix_nano = link.result_wall;
+            output->raw.sample_monotonic_nano = sample_monotonic_nano;
+            output->native_result = 0;
+            return ROBOTWEAX_SRT_TELEMETRY_OK;
+        }
+        output->raw = link.result.raw;
+        output->delta = link.result.delta;
+        output->ext = link.result.ext;
+        output->ext_delta = link.result.ext_delta;
+        output->has_ext = 1;
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    if (endpoint.kind == EndpointKind::member)
+    {
+        output->native_result = endpoint.cached_native;
+        if (!endpoint.cached_ok || endpoint.cached_mono != sample_monotonic_nano)
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+        }
+        output->raw = endpoint.cached.raw;
+        output->delta = endpoint.cached.delta;
+        output->ext = endpoint.cached.ext;
+        output->ext_delta = endpoint.cached.ext_delta;
+        output->has_ext = 1;
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
     }
     return robotweax_srt_telemetry_public_srt_source_sample(endpoint.session, observed_at_unix_nano,
                                                             sample_monotonic_nano, output);
@@ -525,6 +639,10 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
         {
             recording->flow_id = recording->stream_id;
         }
+        if (endpoint.kind == EndpointKind::member)
+        {
+            recording->flow_id += "/" + endpoint.path;
+        }
         /* Sorted by start, then stream and role; the random part makes it
          * unique. */
         const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -537,7 +655,8 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
         recording->path = recording->directory + "/srt-telemetry-" + started + "-" + file_part(recording->stream_id) +
                           "-" +
                           (endpoint.role == ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER ? "sender" : "receiver") +
-                          "-" + nonce() + ".jsonl";
+                          (endpoint.kind == EndpointKind::member ? "-" + file_part(endpoint.path) : "") + "-" +
+                          nonce() + ".jsonl";
         embed.recordings.emplace(endpoint.source_id, std::move(recording));
     }
     catch (const std::exception &)
@@ -644,6 +763,347 @@ void remove(Embed &embed, Endpoint &endpoint)
         endpoint.added = false;
         queue_recording(embed, endpoint.source_id, true);
     }
+    if (endpoint.group)
+    {
+        for (auto &[path, member] : endpoint.group->members)
+        {
+            remove(embed, *member);
+        }
+    }
+}
+
+/* Detached, or a member gone from its group: no further SRT calls, shown as
+ * lost for linger_seconds (or removed at once without a linger). Lock held. */
+void retire(Embed &embed, std::unique_ptr<Endpoint> endpoint)
+{
+    if (embed.config.linger_seconds == 0)
+    {
+        remove(embed, *endpoint);
+        return;
+    }
+    /* Its recording so far is written now (by the writer thread): a host may
+     * exit soon after detaching and stop. */
+    queue_recording(embed, endpoint->source_id, false);
+    endpoint->retired = true;
+    endpoint->context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+    apply_context(embed, *endpoint);
+    endpoint->expires = SteadyClock::now() + std::chrono::seconds(embed.config.linger_seconds);
+    try
+    {
+        embed.retired.push_back(std::move(endpoint));
+    }
+    catch (const std::bad_alloc &)
+    {
+        remove(embed, *endpoint);
+    }
+}
+
+/* ------------------------------------------------------------ groups */
+
+const char *group_type_name(const std::uint32_t type)
+{
+    return type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP ? "backup" : "broadcast";
+}
+
+void journal(Embed &embed, const std::uint64_t source_id, const robotweax_srt_telemetry_event_kind kind,
+             const robotweax_srt_telemetry_event_severity severity, const std::int64_t previous,
+             const std::int64_t current, const std::int64_t code, const std::string &detail,
+             const std::uint64_t wall, const std::uint64_t mono)
+{
+    robotweax_srt_telemetry_event_v1 event{};
+    event.struct_size = sizeof(event);
+    event.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    event.observed_at_unix_nano = wall;
+    event.sample_monotonic_nano = mono;
+    event.source_id = source_id;
+    event.kind = kind;
+    event.severity = severity;
+    event.previous_value = previous;
+    event.current_value = current;
+    event.code = code;
+    const auto length = std::min(detail.size(), sizeof(event.detail) - 1);
+    std::memcpy(event.detail, detail.data(), length);
+    static_cast<void>(robotweax_srt_telemetry_sampler_record_event(embed.sampler, &event));
+}
+
+/* A member socket's path, also after the member left (for event details). */
+std::string path_of(const GroupLink &link, const std::int32_t socket)
+{
+    if (socket < 0)
+    {
+        return "none";
+    }
+    const auto found = link.path_by_socket.find(socket);
+    return found != link.path_by_socket.end() ? found->second : "?";
+}
+
+/* Whether socket is listed and usable in this tick's group sample. A broken
+ * member can stay listed for long (Robotweax SRT keeps it until closed). */
+bool listed_usable(const GroupLink &link, const std::int32_t socket)
+{
+    for (std::uint32_t i = 0; i < link.result.member_count; ++i)
+    {
+        const auto &entry = link.entries[i];
+        if (entry.socket == socket && (entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_USABLE) != 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The member endpoint for a newly named path: a lingering one with the same
+ * role and labels continues (one row per path across reconnects), else a new
+ * source. The path's slot in link.members is made first, so no throw can
+ * leave a registered source without an owner. Lock held; nullptr on failure
+ * (std::bad_alloc propagates with nothing changed). */
+Endpoint *member_endpoint(Embed &embed, Endpoint &group, const std::string &path)
+{
+    auto &link = *group.group;
+    Labels labels = group.labels;
+    labels.emplace_back("path", path);
+    auto &slot = link.members[path]; /* empty; filled below or erased */
+    for (auto it = embed.retired.rbegin(); it != embed.retired.rend(); ++it)
+    {
+        auto &lingering = **it;
+        if (lingering.kind != EndpointKind::member || lingering.role != group.role || lingering.labels != labels)
+        {
+            continue;
+        }
+        slot = std::move(*it);
+        embed.retired.erase(std::next(it).base());
+        slot->retired = false;
+        slot->cached_ok = false;
+        return slot.get();
+    }
+    try
+    {
+        auto member = std::make_unique<Endpoint>();
+        member->kind = EndpointKind::member;
+        member->role = group.role;
+        member->labels = std::move(labels);
+        member->path = path;
+        robotweax_srt_telemetry_health_context_init(&member->context);
+        member->context.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER;
+        std::vector<robotweax_srt_telemetry_label_v1> view;
+        for (const auto &[key, value] : member->labels)
+        {
+            view.push_back({key.c_str(), value.c_str()});
+        }
+        robotweax_srt_telemetry_source_config_v1 source{};
+        source.struct_size = sizeof(source);
+        source.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        source.sample = &endpoint_sample;
+        source.source_data = member.get();
+        source.role = member->role;
+        source.labels = view.data();
+        source.label_count = static_cast<std::uint32_t>(view.size());
+        /* Owned before it is registered: from here on nothing throws. */
+        slot = std::move(member);
+        if (robotweax_srt_telemetry_sampler_add_source(embed.sampler, &source, &slot->source_id) !=
+            ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            link.members.erase(path);
+            return nullptr;
+        }
+        slot->added = true;
+        if (start_recording(embed, *slot) != ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            remove(embed, *slot);
+            link.members.erase(path);
+            return nullptr;
+        }
+        return slot.get();
+    }
+    catch (const std::bad_alloc &)
+    {
+        if (slot && slot->added)
+        {
+            remove(embed, *slot);
+        }
+        link.members.erase(path);
+        throw;
+    }
+}
+
+const char *member_state_name(const std::int32_t state)
+{
+    switch (state)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_MEMBER_STATE_PENDING:
+        return "pending";
+    case ROBOTWEAX_SRT_TELEMETRY_MEMBER_STATE_IDLE:
+        return "idle";
+    case ROBOTWEAX_SRT_TELEMETRY_MEMBER_STATE_RUNNING:
+        return "running";
+    case ROBOTWEAX_SRT_TELEMETRY_MEMBER_STATE_BROKEN:
+        return "broken";
+    default:
+        return "unknown";
+    }
+}
+
+/* One member entry of this tick's group sample. Lock held. */
+void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_group_member_v1 &entry,
+                  const std::uint64_t wall, const std::uint64_t mono)
+{
+    auto &link = *group.group;
+    const std::string path = entry.path;
+    if ((entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_REMOVED) != 0)
+    {
+        /* Only the member currently shown for the path: a replacement on the
+         * same path may already have taken the row. */
+        const auto found = link.members.find(path);
+        if (path.empty() || found == link.members.end() || found->second->socket != entry.socket)
+        {
+            return;
+        }
+        const auto detail = "path=" + path; /* before ownership moves */
+        auto member = std::move(found->second);
+        link.members.erase(found);
+        retire(embed, std::move(member));
+        journal(embed, group.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_REMOVED,
+                ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING, 0, 0, entry.socket, detail, wall, mono);
+        return;
+    }
+    if (path.empty())
+    {
+        return; /* not connected yet: no row */
+    }
+    if (link.path_by_socket.size() > 256)
+    {
+        link.path_by_socket.clear(); /* a bound; only event details use it */
+    }
+    link.path_by_socket[entry.socket] = path;
+    Endpoint *member = nullptr;
+    const auto found = link.members.find(path);
+    if (found != link.members.end())
+    {
+        member = found->second.get();
+        /* A second socket on the same path (a reconnect with the same name
+         * before the old member leaves, or duplicate host names): the row
+         * keeps its socket while that one is usable, or while the new one is
+         * not usable yet; otherwise the new socket takes the row. */
+        if (member->socket != entry.socket &&
+            (listed_usable(link, member->socket) || (entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_USABLE) == 0))
+        {
+            return;
+        }
+    }
+    else if ((member = member_endpoint(embed, group, path)) == nullptr)
+    {
+        return;
+    }
+    if (member->socket != entry.socket)
+    {
+        member->socket = entry.socket;
+        journal(embed, group.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED,
+                ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, 0, 0, entry.socket, "path=" + path, wall, mono);
+    }
+    else if (member->member_state != entry.member_state || member->member_socket_state != entry.socket_state)
+    {
+        const bool broken = entry.member_state == ROBOTWEAX_SRT_TELEMETRY_MEMBER_STATE_BROKEN ||
+                            entry.socket_state != ROBOTWEAX_SRT_TELEMETRY_CONNECTION_STATE_CONNECTED;
+        journal(embed, member->source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_STATE_CHANGED,
+                broken ? ROBOTWEAX_SRT_TELEMETRY_SEVERITY_WARNING : ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO,
+                member->member_state, entry.member_state, entry.socket,
+                std::string(member_state_name(member->member_state)) + " -> " +
+                    member_state_name(entry.member_state) + ", socket state " +
+                    std::to_string(member->member_socket_state) + " -> " + std::to_string(entry.socket_state),
+                wall, mono);
+    }
+    member->member_state = entry.member_state;
+    member->member_socket_state = entry.socket_state;
+    member->cached.raw = entry.raw;
+    member->cached.delta = entry.delta;
+    member->cached.ext = entry.ext;
+    member->cached.ext_delta = entry.ext_delta;
+    member->cached_native = entry.native_result;
+    member->cached_ok = (entry.flags & (ROBOTWEAX_SRT_TELEMETRY_MEMBER_STATS_STALE |
+                                        ROBOTWEAX_SRT_TELEMETRY_MEMBER_STATS_NONE)) == 0;
+    member->cached_mono = mono;
+    const bool usable = (entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_USABLE) != 0;
+    member->context.connection =
+        usable ? ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED : ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+    /* Capped while the group has another usable path; the last usable path
+     * carries the stream alone and is graded on its own. */
+    const bool last_path = usable && link.result.usable_member_count <= 1;
+    /* A Main/Backup member other than the active one, carrying nothing, waits
+     * as standby. */
+    const bool standby = link.type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP && usable && !last_path &&
+                         link.result.active_member >= 0 && link.result.active_member != entry.socket &&
+                         (entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_CARRYING) == 0;
+    member->context.flags = last_path ? 0u
+                                      : ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                                            (standby ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY : 0u);
+    apply_context(embed, *member);
+}
+
+/* Samples a group and all its members with this tick's timestamps; the
+ * group's and members' sources serve the result in the tick. Lock held. */
+void poll_group(Embed &embed, Endpoint &group, const std::uint64_t wall, const std::uint64_t mono)
+{
+    auto &link = *group.group;
+    link.result_ok = false;
+    auto &result = link.result;
+    std::memset(&result, 0, sizeof(result));
+    result.struct_size = sizeof(result);
+    result.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    result.members = link.entries.data();
+    result.member_capacity = static_cast<std::uint32_t>(link.entries.size());
+    result.member_entry_size = sizeof(robotweax_srt_telemetry_group_member_v1);
+    const auto error = robotweax_srt_telemetry_public_srt_group_session_sample(link.session, wall, mono, &result);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK && error != ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL)
+    {
+        return; /* closed group: the monitor reports the state */
+    }
+    link.result_ok = true;
+    link.result_mono = mono;
+    link.result_wall = wall;
+    try
+    {
+        for (std::uint32_t i = 0; i < result.member_count; ++i)
+        {
+            group_member(embed, group, link.entries[i], wall, mono);
+        }
+        if ((result.flags & ROBOTWEAX_SRT_TELEMETRY_GROUP_ACTIVE_CHANGED) != 0)
+        {
+            std::string detail;
+            std::int64_t previous = result.previous_active_member;
+            std::int64_t current = result.active_member;
+            if (link.type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP)
+            {
+                detail = "path=" + path_of(link, result.previous_active_member) + " -> " +
+                         path_of(link, result.active_member);
+            }
+            else
+            {
+                /* Broadcast: current_value is the number of carrying paths. */
+                previous = -1;
+                current = 0;
+                detail = "carrying=";
+                for (std::uint32_t i = 0; i < result.member_count; ++i)
+                {
+                    if ((link.entries[i].flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_CARRYING) != 0)
+                    {
+                        ++current;
+                        detail += (detail.back() == '=' ? "" : ",") + std::string(link.entries[i].path);
+                    }
+                }
+            }
+            journal(embed, group.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED,
+                    ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, previous, current, 0, detail, wall, mono);
+        }
+        if (error == ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL)
+        {
+            /* Members that did not fit carry over to the next tick. */
+            link.entries.resize(result.required_member_count + 4);
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        /* A member row could not be made; the next tick tries again. */
+    }
 }
 
 void run(Embed &embed)
@@ -664,6 +1124,10 @@ void run(Embed &embed)
         for (auto &[socket, endpoint] : embed.active)
         {
             poll(embed, *endpoint, wall, mono);
+            if (endpoint->kind == EndpointKind::group)
+            {
+                poll_group(embed, *endpoint, wall, mono);
+            }
         }
         for (auto it = embed.retired.begin(); it != embed.retired.end();)
         {
@@ -733,6 +1197,20 @@ bool valid_labels(const robotweax_srt_telemetry_label_v1 *labels, const std::siz
         }
     }
     return true;
+}
+
+/* group and path are set by the embed for connection groups. */
+bool has_reserved_key(const robotweax_srt_telemetry_label_v1 *labels, const std::size_t count)
+{
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const std::string_view key = labels[i].key != nullptr ? labels[i].key : "";
+        if (key == "group" || key == "path")
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool has_key(const Labels &labels, const std::string_view key)
@@ -951,7 +1429,7 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
         !terminated(config->provider_revision, sizeof(config->provider_revision)) ||
         !printable(config->provider_revision) ||
         config->label_count > ROBOTWEAX_SRT_TELEMETRY_EMBED_MAX_HOST_LABELS ||
-        !valid_labels(config->labels, config->label_count) ||
+        !valid_labels(config->labels, config->label_count) || has_reserved_key(config->labels, config->label_count) ||
         (config->flags & ~(ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP | ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_UI |
                            ROBOTWEAX_SRT_TELEMETRY_EMBED_STREAM_ID_LABEL)) != 0)
     {
@@ -1088,8 +1566,8 @@ robotweax_srt_telemetry_embed_attach(robotweax_srt_telemetry_embed *embed, const
         return ROBOTWEAX_SRT_TELEMETRY_OK;
     }
     if ((role != ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER && role != ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER) ||
-        !valid_labels(labels, label_count, embed->labels) ||
-        embed->labels.size() + label_count > ROBOTWEAX_SRT_TELEMETRY_EMBED_MAX_HOST_LABELS)
+        embed->labels.size() + label_count > ROBOTWEAX_SRT_TELEMETRY_EMBED_MAX_HOST_LABELS ||
+        !valid_labels(labels, label_count, embed->labels) || has_reserved_key(labels, label_count))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
@@ -1182,7 +1660,7 @@ robotweax_srt_telemetry_embed_attach(robotweax_srt_telemetry_embed *embed, const
     for (auto it = embed->retired.rbegin(); it != embed->retired.rend(); ++it)
     {
         auto &lingering = **it;
-        if (lingering.role != role || lingering.labels != endpoint->labels)
+        if (lingering.kind != EndpointKind::socket || lingering.role != role || lingering.labels != endpoint->labels)
         {
             continue;
         }
@@ -1260,6 +1738,230 @@ robotweax_srt_telemetry_embed_attach(robotweax_srt_telemetry_embed *embed, const
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
+extern "C" void robotweax_srt_telemetry_embed_group_default(robotweax_srt_telemetry_embed_group_v1 *group)
+{
+    if (group != nullptr)
+    {
+        std::memset(group, 0, sizeof(*group));
+        group->struct_size = sizeof(*group);
+        group->abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    }
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
+                                           const robotweax_srt_telemetry_embed_group_v1 *group)
+{
+    if (embed == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    if (group == nullptr || group->struct_size < sizeof(*group))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (group->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    const auto role = group->role;
+    if ((role != ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER && role != ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER) ||
+        (group->group_type != ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST &&
+         group->group_type != ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP) ||
+        group->reserved != 0 ||
+        embed->labels.size() + group->label_count > ROBOTWEAX_SRT_TELEMETRY_EMBED_MAX_HOST_LABELS ||
+        !valid_labels(group->labels, group->label_count, embed->labels) ||
+        has_reserved_key(group->labels, group->label_count))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    const auto &config = embed->config;
+    if (config.group_data == nullptr || config.getsockname == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    std::lock_guard lock(embed->mutex);
+    if (embed->active.count(group->group) != 0)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    std::unique_ptr<Endpoint> endpoint;
+    Labels all;
+    try
+    {
+        endpoint = std::make_unique<Endpoint>();
+        endpoint->group = std::make_unique<GroupLink>();
+        endpoint->group->entries.resize(8);
+        all = embed->labels;
+        for (std::size_t i = 0; i < group->label_count; ++i)
+        {
+            all.emplace_back(group->labels[i].key, group->labels[i].value);
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    endpoint->kind = EndpointKind::group;
+    endpoint->socket = group->group;
+    auto &link = *endpoint->group;
+    link.type = group->group_type;
+    link.provider = config.provider;
+
+    robotweax_srt_telemetry_public_srt_group_config_v1 session{};
+    session.struct_size = sizeof(session);
+    session.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    session.group = group->group;
+    session.provider = config.provider;
+    session.capabilities = ROBOTWEAX_SRT_TELEMETRY_CAP_COMMON_STATS_V1 | ROBOTWEAX_SRT_TELEMETRY_CAP_FEC_STATS_V1 |
+                           ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_MEMBERS_V1;
+    session.group_qualified_fields = ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_GROUP_CANDIDATE_FIELDS;
+    session.group_qualified_ext_fields = ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_GROUP_EXT_CANDIDATE_FIELDS;
+    session.member_qualified_fields = ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_V1_5_5_CANDIDATE_FIELDS;
+    session.member_qualified_ext_fields = config.provider == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT
+                                              ? ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_ROBOTWEAX_EXT_CANDIDATE_FIELDS
+                                              : ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_HAIVISION_V1_5_5_EXT_CANDIDATE_FIELDS;
+    session.bistats = config.bistats;
+    session.group_data = config.group_data;
+    session.getsockname = config.getsockname;
+    session.getsockstate = config.getsockstate;
+    session.group_type = group->group_type;
+    session.path_name = group->path_name;
+    session.path_name_user_data = group->path_name_user_data;
+    auto error = robotweax_srt_telemetry_public_srt_group_session_create(&session, &link.session);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    robotweax_srt_telemetry_public_srt_connection_config_v1 monitor{};
+    monitor.struct_size = sizeof(monitor);
+    monitor.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    monitor.socket = group->group;
+    monitor.provider = config.provider;
+    monitor.getsockstate = config.getsockstate;
+    monitor.getrejectreason = config.getrejectreason;
+    monitor.getsockflag = config.getsockflag;
+    monitor.capture_stream_id = (config.flags & ROBOTWEAX_SRT_TELEMETRY_EMBED_STREAM_ID_LABEL) != 0 ? 1 : 0;
+    error = robotweax_srt_telemetry_public_srt_connection_monitor_create(&monitor, &endpoint->monitor);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    robotweax_srt_telemetry_health_context_init(&endpoint->context);
+
+    robotweax_srt_telemetry_public_srt_connection_result_v1 first{};
+    poll(*embed, *endpoint, unix_nano(), monotonic_nano(), &first);
+    try
+    {
+        if (config.name[0] != '\0' && !has_key(all, "stream"))
+        {
+            all.emplace_back("stream", config.name);
+        }
+        if (!has_key(all, "provider"))
+        {
+            all.emplace_back("provider", provider_name(config.provider));
+        }
+        if ((first.snapshot.available_fields & ROBOTWEAX_SRT_TELEMETRY_CONN_FIELD_STREAM_ID) != 0 &&
+            first.snapshot.stream_id[0] != '\0' && !has_key(all, "stream_id"))
+        {
+            all.emplace_back("stream_id", label_value(first.snapshot.stream_id));
+        }
+        all.emplace_back("group", group_type_name(group->group_type));
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    endpoint->role = role;
+    endpoint->labels = std::move(all);
+
+    /* A reconnected group with the same role and labels continues the
+     * lingering group row; its members continue by path as they connect. */
+    for (auto it = embed->retired.rbegin(); it != embed->retired.rend(); ++it)
+    {
+        auto &lingering = **it;
+        if (lingering.kind != EndpointKind::group || lingering.role != role ||
+            lingering.labels != endpoint->labels || lingering.group->type != link.type)
+        {
+            continue;
+        }
+        std::swap(lingering.group->session, link.session);
+        std::swap(lingering.monitor, endpoint->monitor);
+        lingering.group->result_ok = false;
+        lingering.socket = group->group;
+        lingering.context = endpoint->context;
+        /* As for a socket: lost until the new group connects. */
+        lingering.reconnecting = endpoint->context.connection != ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        if (lingering.reconnecting)
+        {
+            lingering.context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+        }
+        lingering.socket_connected = false;
+        lingering.retired = false;
+        try
+        {
+            embed->active.emplace(group->group, std::move(*it));
+        }
+        catch (const std::bad_alloc &)
+        {
+            remove(*embed, lingering);
+            embed->retired.erase(std::next(it).base());
+            return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+        }
+        embed->retired.erase(std::next(it).base());
+        auto &continued = *embed->active.at(group->group);
+        record(*embed, continued, first);
+        apply_context(*embed, continued);
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+
+    std::vector<robotweax_srt_telemetry_label_v1> view;
+    try
+    {
+        for (const auto &[key, value] : endpoint->labels)
+        {
+            view.push_back({key.c_str(), value.c_str()});
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    robotweax_srt_telemetry_source_config_v1 source{};
+    source.struct_size = sizeof(source);
+    source.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    source.sample = &endpoint_sample;
+    source.source_data = endpoint.get();
+    source.role = role;
+    source.labels = view.data();
+    source.label_count = static_cast<std::uint32_t>(view.size());
+    error = robotweax_srt_telemetry_sampler_add_source(embed->sampler, &source, &endpoint->source_id);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    endpoint->added = true;
+    error = start_recording(*embed, *endpoint);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        remove(*embed, *endpoint);
+        return error;
+    }
+    record(*embed, *endpoint, first);
+    apply_context(*embed, *endpoint);
+    try
+    {
+        embed->active.emplace(group->group, std::move(endpoint));
+    }
+    catch (const std::bad_alloc &)
+    {
+        embed->recordings.erase(endpoint->source_id);
+        remove(*embed, *endpoint);
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
 extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_detach(robotweax_srt_telemetry_embed *embed,
                                                                              const std::int32_t socket)
 {
@@ -1279,29 +1981,17 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_detach(ro
         /* A last look while the socket still exists: a break or rejection the
          * ticks have not seen yet gets its event. */
         poll(*embed, *endpoint, unix_nano(), monotonic_nano());
-        if (embed->config.linger_seconds == 0)
+        if (endpoint->group)
         {
-            remove(*embed, *endpoint);
-        }
-        else
-        {
-            /* Shown as lost until the linger ends; the socket is not read
-             * again. Its recording so far is written now (by the writer
-             * thread): a host may exit soon after detaching and stop. */
-            queue_recording(*embed, endpoint->source_id, false);
-            endpoint->retired = true;
-            endpoint->context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
-            apply_context(*embed, *endpoint);
-            endpoint->expires = SteadyClock::now() + std::chrono::seconds(embed->config.linger_seconds);
-            try
+            /* The members go with the group, each kept as its own lost row. */
+            auto members = std::move(endpoint->group->members);
+            endpoint->group->members.clear();
+            for (auto &[path, member] : members)
             {
-                embed->retired.push_back(std::move(endpoint));
-            }
-            catch (const std::bad_alloc &)
-            {
-                remove(*embed, *endpoint);
+                retire(*embed, std::move(member));
             }
         }
+        retire(*embed, std::move(endpoint));
     }
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

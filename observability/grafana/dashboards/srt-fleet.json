@@ -821,61 +821,65 @@
                         "text": "role unknown",
                         "index": 7
                       },
+                      "standby": {
+                        "text": "standby",
+                        "index": 8
+                      },
                       "recovery_headroom_low": {
                         "text": "little recovery headroom",
-                        "index": 8
+                        "index": 9
                       },
                       "latency_low_for_rtt": {
                         "text": "latency short for the RTT",
-                        "index": 9
+                        "index": 10
                       },
                       "unrecovered_loss": {
                         "text": "unrecovered loss",
-                        "index": 10
+                        "index": 11
                       },
                       "undecryptable": {
                         "text": "undecryptable packets",
-                        "index": 11
+                        "index": 12
                       },
                       "late_repairs": {
                         "text": "repairs arrive late",
-                        "index": 12
+                        "index": 13
                       },
                       "recovery_inefficient": {
                         "text": "repairs failing",
-                        "index": 13
+                        "index": 14
                       },
                       "overhead_budget_high": {
                         "text": "recovery bandwidth used up",
-                        "index": 14
+                        "index": 15
                       },
                       "path_capacity_exceeded": {
                         "text": "above path capacity",
-                        "index": 15
+                        "index": 16
                       },
                       "sender_backlog": {
                         "text": "send buffer backlog",
-                        "index": 16
+                        "index": 17
                       },
                       "sender_drops": {
                         "text": "sender drops",
-                        "index": 17
+                        "index": 18
                       },
                       "peer_read_stall": {
                         "text": "receiver not reading",
-                        "index": 18
+                        "index": 19
                       },
                       "application_read_stall": {
                         "text": "application not reading",
-                        "index": 19
+                        "index": 20
                       },
                       "acknowledgements_stalled": {
                         "text": "no acknowledgements",
-                        "index": 20
+                        "index": 21
                       },
                       "path_congested": {
                         "text": "path congested",
-                        "index": 21
+                        "index": 22
                       }
                     }
                   }
