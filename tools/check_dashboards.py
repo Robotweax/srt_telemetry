@@ -125,10 +125,12 @@ def query(prometheus, expr):
     return body["data"]["result"]
 
 
-def source_ids(prometheus, job, family="srt_health_verdict"):
+def source_ids(prometheus, job, family="srt_health_verdict", extra=',path="",group=""'):
+    """A source per role: by default a plain endpoint (no connection group or
+    path, whose panels differ); with family srt_group_usable_paths a group."""
     ids = {}
     for role in ("sender", "receiver"):
-        result = query(prometheus, f'{family}{{job="{job}",role="{role}"}}')
+        result = query(prometheus, f'{family}{{job="{job}",role="{role}"{extra}}}')
         if result:
             # The worst one exercises the most panels.
             result.sort(key=lambda r: -float(r["value"][1]))
@@ -167,7 +169,7 @@ def main():
         ids = source_ids(args.prometheus, args.job)
         if set(ids) != {"sender", "receiver"}:
             fail(f"live: need a sender and a receiver in job {args.job}, found {ids}")
-        groups = source_ids(args.prometheus, args.job, "srt_group_usable_paths")
+        groups = source_ids(args.prometheus, args.job, "srt_group_usable_paths", "")
         if args.groups and set(groups) != {"sender", "receiver"}:
             fail(f"live: need a group sender and receiver in job {args.job}, found {groups}")
         live = 0

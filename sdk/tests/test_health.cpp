@@ -1056,6 +1056,29 @@ void test_group_member_cap()
               (run.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0 &&
               run.status.uncapped_verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
           "a lost member is Watch with the reason, capped from Failing");
+    {
+        /* The only usable path carries the stream alone: not capped, still
+         * a group path (its own grade is exported as the path's). */
+        Run sole(RECEIVER);
+        auto only = context;
+        only.flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH;
+        check(robotweax_srt_telemetry_health_engine_set_context(sole.engine, &only) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "sole path flag accepted");
+        check(sole.feed(Condition{}, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  sole.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST &&
+                  sole.status.flags == ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER,
+              "the sole path is not capped and stays a group path");
+        only.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH;
+        check(robotweax_srt_telemetry_health_engine_set_context(sole.engine, &only) ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "sole path without group member rejected");
+        only.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                     ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH |
+                     ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY;
+        check(robotweax_srt_telemetry_health_engine_set_context(sole.engine, &only) ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "a sole path cannot be a standby");
+    }
 
     /* A short source error keeps the uncapped grade. */
     run.now += period;

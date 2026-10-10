@@ -45,8 +45,11 @@ and back.
   not counted in the tallies or the headline, and the filters apply to the
   group (its paths go with it). A path shows its capped verdict and its own
   grade ("own grade: failing"). A path whose group row is gone stands on its
-  own. Group and path rows are recognised by their labels: `group=<type>`,
-  and the same labels plus `path=<name>` with the same role.
+  own. Group and path rows are recognised by their health (`health.group`,
+  `health.group_member`; by their labels only before they have one), and a
+  path is matched to its group by the same role and labels plus
+  `path=<name>`. Two groups with identical labels (a group attached again
+  while the old one lingers) share their paths until the old row goes.
 - **Table:** one row per source, worst first:
   - verdict, and how long it has held;
   - endpoint name and host labels;

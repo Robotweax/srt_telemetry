@@ -94,14 +94,15 @@ def wait_for_advice(port, token=None, timeout=45):
 
 
 def fleet_rows(dom):
-    """(is_path, endpoint name, verdict) of every fleet row, in order."""
+    """(is_path, endpoint name, verdict, role) of every fleet row, in order."""
     rows = []
     for match in re.finditer(r'<tr tabindex="0"([^>]*)>(.*?)</tr>', dom, re.S):
         attrs, body = match.groups()
         verdict = re.search(r'<td class="status v-([a-z_]+)"', body)
         name = re.search(r'<div class="endpoint-name">(.*?)</div>', body, re.S)
+        role = re.search(r'<span class="role">([a-z]+)</span>', body)
         rows.append(("path-row" in attrs, re.sub(r"<[^>]+>", "", name.group(1)) if name else "",
-                     verdict.group(1) if verdict else ""))
+                     verdict.group(1) if verdict else "", role.group(1) if role else ""))
     return rows
 
 
@@ -132,17 +133,25 @@ def main():
         check(">null<" not in dom and ">undefined<" not in dom and "NaN" not in dom,
               "no null, undefined or NaN in the page")
         rank = {"failing": 0, "at_risk": 1, "watch": 2, "unknown": 3, "ok": 4}
-        shown = [rank.get(v, -1) for is_path, _, v in rows if not is_path]
+        shown = [rank.get(v, -1) for is_path, _, v, _ in rows if not is_path]
         check(len(shown) == endpoints and shown == sorted(shown), f"worst endpoint first (ranks {shown})")
         check("aise the latency to" in dom, "remote-4g shows latency advice (as a change, or as a hint at Watch)")
         check(re.search(rf"<h1>(\d+ of {endpoints} endpoints needs? attention|{endpoints} endpoints: no action needed)</h1>",
                         dom) is not None, f"headline counts {endpoints} endpoints, paths not on their own")
         if grouped:
-            paths = [i for i, (is_path, _, _) in enumerate(rows) if is_path]
+            paths = [i for i, row in enumerate(rows) if row[0]]
             check(len(paths) == 4, f"four path rows (found {len(paths)})")
-            follows = all(rows[i - 1][1] == "bonded-1" or rows[i - 1][0] for i in paths)
-            check(follows and sorted(name for is_path, name, _ in rows if is_path) == ["↳ lte", "↳ lte", "↳ sat", "↳ sat"],
-                  f"paths follow their group's row ({[r[:2] for r in rows]})")
+            # Each group row is followed by exactly its own paths: lte, sat,
+            # with the group's role.
+            under = {}
+            owner = None
+            for is_path, name, _, role in rows:
+                if not is_path:
+                    owner = (name, role)
+                    continue
+                under.setdefault(owner, []).append((name, role))
+            expected_under = {("bonded-1", r): [("↳ lte", r), ("↳ sat", r)] for r in ("sender", "receiver")}
+            check(under == expected_under, f"each group's own paths follow its row ({under})")
             check(len(re.findall(r'class="chip paths( short)?"[^>]*>[12]/2 paths<', dom)) == 2,
                   "group rows show their usable paths")
             group = next(s for s in data["sources"] if s["labels"].get("stream") == "bonded-1"

@@ -225,9 +225,13 @@ Two flags describe a member of an SRT connection group:
   protocol findings on RTT measurement for standby links).
 
 The embed sets both from the group session; see
-[connection groups](embedding.md#connection-groups). A member's status always
-carries `HEALTH_STATUS_GROUP_MEMBER`, capped or not, so outputs can tell a
-path from a single socket (`srt_health_path_verdict` exports its own grade).
+[connection groups](embedding.md#connection-groups). The group's only usable
+path carries the stream alone: the embed adds `HEALTH_CONTEXT_GROUP_SOLE_PATH`
+(only with GROUP_MEMBER, never with GROUP_STANDBY), and it is graded without
+the cap. A member's status always carries `HEALTH_STATUS_GROUP_MEMBER`, capped
+or not, so outputs can tell a path from a single socket
+(`srt_health_path_verdict` exports its own grade, also while it is the last
+path).
 
 **A new connection is graded on its own evidence.** A context that reports
 the connection lost and later connected again belongs to a new connection: a

@@ -347,12 +347,13 @@ void backup_scenario()
      * its standby period left no latched grade, so it settles to OK. */
     check(wait_for(
               [&] {
-                  const auto backup_row = find_source(sources(embed), {"\"stream\":\"cam-tx\"", "\"path\":",
-                                                                       "\"verdict\":\"ok\"", "\"capped\":false"});
+                  const auto backup_row =
+                      find_source(sources(embed), {"\"stream\":\"cam-tx\"", "\"path\":", "\"verdict\":\"ok\"",
+                                                   "\"capped\":false", "\"group_member\":true"});
                   return !backup_row.empty();
               },
               6000),
-          "the last usable path is graded on its own (not capped) and OK");
+          "the last usable path is graded on its own (not capped), still a group path, and OK");
     check(count_with(sources(embed), {"\"stream\":\"cam-tx\"", "\"path\":", "\"verdict\":\"failing\""}) == 0,
           "no path of the working group is Failing");
 
@@ -612,7 +613,9 @@ void broadcast_scenario()
           "no linger: the cut path's row is removed");
     journal.read(embed);
     check(journal.count(ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_REMOVED, "path=lte") == 1, "member_removed for lte");
-    check(has(find_source(all, {"\"path\":\"sat\""}), "\"capped\":false"), "the last path is not capped");
+    check(has(find_source(all, {"\"path\":\"sat\""}), "\"capped\":false") &&
+              has(find_source(all, {"\"path\":\"sat\""}), "\"group_member\":true"),
+          "the last path is not capped and stays a group path");
     check(wait_for(
               [&] {
                   const auto row = group_row(sources(embed), "bc");

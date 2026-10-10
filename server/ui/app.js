@@ -454,13 +454,17 @@
   /* Connection groups (docs/architecture/embedding.md#connection-groups):
    * the group's row carries group=<type>, each path's row the same labels
    * and role plus path=<name>. */
+  /* The health says what a row is (a host may use a group label of its
+   * own); the labels decide only while a row has no health yet. */
   function pathName(src) {
     const l = src.labels || {};
-    return typeof l.path === 'string' && typeof l.group === 'string' ? clean(l.path) : null;
+    if (typeof l.path !== 'string' || typeof l.group !== 'string') return null;
+    return !src.health || src.health.group_member === true ? clean(l.path) : null;
   }
 
   function isGroupRow(src) {
     const l = src.labels || {};
+    if (src.health) return Boolean(src.health.group);
     return typeof l.group === 'string' && typeof l.path !== 'string';
   }
 
@@ -1724,6 +1728,7 @@
     const crumbs = h('div', { class: 'crumbs' }, h('a', { href: '#/', text: '← All endpoints' }));
     /* A connection group's paths, each with its own grade. */
     const pathsBody = h('tbody');
+    const pathRows = new Map();
     const pathsNote = h('span', { class: 'faint' });
     const pathsSection = h('section', { class: 'section hidden' },
       h('div', { class: 'section-head' }, h('h2', { text: 'Paths' }), pathsNote),
@@ -1814,9 +1819,14 @@
       const groups = groupPaths(state.sources.values());
       const groupId = groups.parent.get(id);
       const path = groupId !== undefined ? pathName(src) : null;
-      put(crumbs, h('a', { href: '#/', text: '← All endpoints' }),
-        groupId !== undefined ? h('span', { class: 'faint', text: ' · ' }) : null,
-        groupId !== undefined ? h('a', { href: `#/source/${groupId}`, text: `${name}: connection group` }) : null);
+      /* Rebuilt only when the group changes, so focus stays. */
+      const crumbSig = groupId === undefined ? '' : JSON.stringify([groupId, name]);
+      if (crumbs.dataset.sig !== crumbSig) {
+        crumbs.dataset.sig = crumbSig;
+        put(crumbs, h('a', { href: '#/', text: '← All endpoints' }),
+          groupId !== undefined ? h('span', { class: 'faint', text: ' · ' }) : null,
+          groupId !== undefined ? h('a', { href: `#/source/${groupId}`, text: `${name}: connection group` }) : null);
+      }
       document.title = `${path !== null ? `${name} · path ${path}` : name} · ${src.role} · SRT Telemetry`;
       put(head, h('h1', { text: path !== null ? `${name} · path ${path}` : name }), h('span', { class: 'role', text: src.role }),
         pathChip(src),
@@ -1852,33 +1862,24 @@
         pathsNote.textContent = count
           ? `${count.usable} of ${count.expected} can carry the stream · a path alone never pages; the group does`
           : 'a path alone never pages; the group does';
-        /* Rebuilt only when what it shows changed, so focus stays. */
-        const rowsData = members.map((m) => {
-          const own = VERDICT_LABEL[m.health?.uncapped_verdict] ? m.health.uncapped_verdict
-            : VERDICT_LABEL[m.health?.verdict] ? m.health.verdict : 'unknown';
-          return {
-            id: m.id,
-            name: pathName(m),
-            own,
-            standby: m.health?.reason === 'standby',
-            connection: `${m.connection || 'unreported'}${m.up ? '' : ' · read failing'}`,
-            values: [fmtBitrate(windowStat(m, primaryBitrateKey(m.role), 'rate')),
-              fmtDuration(windowStat(m, 'srt.connection.rtt', 'mean', 'last')),
-              fmtPercent(lossShare(m)), fmtPacketRate(dropRate(m))],
-          };
-        });
-        const signature = JSON.stringify(rowsData);
-        if (pathsBody.dataset.sig !== signature) {
-          pathsBody.dataset.sig = signature;
-          put(pathsBody, ...(rowsData.length ? rowsData.map((r) => {
+        /* Rows are kept per path and updated in place, so focus and hover
+         * stay; a cell is rebuilt only when what it shows changed. */
+        const keep = new Set(members.map((m) => m.id));
+        for (const [pid, row] of pathRows) {
+          if (!keep.has(pid)) {
+            row.tr.remove();
+            pathRows.delete(pid);
+          }
+        }
+        for (const m of members) {
+          let row = pathRows.get(m.id);
+          if (!row) {
+            const cells = [h('td', { class: 'path-name' }), h('td'), h('td', { class: 'faint' }),
+              h('td', { class: 'r num' }), h('td', { class: 'r num' }), h('td', { class: 'r num' }), h('td', { class: 'r num' })];
+            const tr = h('tr', { tabindex: '0' }, cells);
             const open = () => {
-              location.hash = `#/source/${r.id}`;
+              location.hash = `#/source/${m.id}`;
             };
-            const tr = h('tr', { tabindex: '0', 'aria-label': `Path ${r.name}: ${r.standby ? 'standby' : VERDICT_LABEL[r.own]}. Open details.` },
-              h('td', { class: 'path-name', text: r.name }),
-              h('td', {}, verdictBadge(r.own, 12), r.standby ? h('span', { class: 'faint', text: ' standby' }) : null),
-              h('td', { class: 'faint', text: r.connection }),
-              ...r.values.map((text) => h('td', { class: 'r num', text })));
             tr.addEventListener('click', open);
             tr.addEventListener('keydown', (e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -1886,8 +1887,34 @@
                 open();
               }
             });
-            return tr;
-          }) : [h('tr', {}, h('td', { colspan: '7', class: 'faint', text: 'No path has connected yet.' }))]));
+            row = { tr, cells };
+            pathRows.set(m.id, row);
+          }
+          const own = VERDICT_LABEL[m.health?.uncapped_verdict] ? m.health.uncapped_verdict
+            : VERDICT_LABEL[m.health?.verdict] ? m.health.verdict : 'unknown';
+          const standby = m.health?.reason === 'standby';
+          const label = `Path ${pathName(m)}: ${standby ? 'standby' : VERDICT_LABEL[own]}. Open details.`;
+          if (row.tr.getAttribute('aria-label') !== label) row.tr.setAttribute('aria-label', label);
+          const texts = [pathName(m), null, `${m.connection || 'unreported'}${m.up ? '' : ' · read failing'}`,
+            fmtBitrate(windowStat(m, primaryBitrateKey(m.role), 'rate')),
+            fmtDuration(windowStat(m, 'srt.connection.rtt', 'mean', 'last')),
+            fmtPercent(lossShare(m)), fmtPacketRate(dropRate(m))];
+          texts.forEach((text, k) => {
+            if (text !== null && row.cells[k].textContent !== text) row.cells[k].textContent = text;
+          });
+          const gradeSig = `${own}|${standby}`;
+          if (row.cells[1].dataset.sig !== gradeSig) {
+            row.cells[1].dataset.sig = gradeSig;
+            put(row.cells[1], verdictBadge(own, 12), standby ? h('span', { class: 'faint', text: ' standby' }) : null);
+          }
+        }
+        const pathOrder = members.map((m) => m.id).join(',');
+        if (pathsBody.dataset.order !== pathOrder || pathsBody.children.length !== Math.max(members.length, 1)) {
+          pathsBody.dataset.order = pathOrder;
+          const focused = document.activeElement;
+          if (members.length) put(pathsBody, ...members.map((m) => pathRows.get(m.id).tr));
+          else put(pathsBody, h('tr', {}, h('td', { colspan: '7', class: 'faint', text: 'No path has connected yet.' })));
+          if (focused && focused !== document.activeElement && document.contains(focused)) focused.focus();
         }
       }
 

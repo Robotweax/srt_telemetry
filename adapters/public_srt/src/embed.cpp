@@ -1042,9 +1042,9 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
     const bool standby = link.type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP && usable && !last_path &&
                          link.result.active_member >= 0 && link.result.active_member != entry.socket &&
                          (entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_CARRYING) == 0;
-    member->context.flags = last_path ? 0u
-                                      : ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
-                                            (standby ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY : 0u);
+    member->context.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                            (last_path ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH : 0u) |
+                            (standby ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY : 0u);
     apply_context(embed, *member);
 }
 

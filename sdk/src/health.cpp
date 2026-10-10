@@ -1505,9 +1505,13 @@ robotweax_srt_telemetry_health_engine_set_context(robotweax_srt_telemetry_health
         connection > ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST ||
         (context->flags & ~(ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS |
                             ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
-                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY)) != 0 ||
+                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY |
+                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH)) != 0 ||
+        ((context->flags & (ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY |
+                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH)) != 0 &&
+         (context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER) == 0) ||
         ((context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
-         (context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER) == 0))
+         (context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH) != 0))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
@@ -2005,7 +2009,8 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         {
             status->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER;
         }
-        if (member && graded > WATCH)
+        const bool sole = (engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH) != 0;
+        if (member && !sole && graded > WATCH)
         {
             verdict = WATCH;
             status->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED;

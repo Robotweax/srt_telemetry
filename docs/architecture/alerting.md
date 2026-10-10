@@ -110,7 +110,9 @@ or receiver:
 - for a connection group: usable and expected paths, each path's own grade
   over time, and each path's bitrate and RTT. The paths are found as the
   series with the group's labels plus `path` (`and ignoring (path,
-  source_id)`); for other endpoints these panels stay empty;
+  source_id)`); for other endpoints these panels stay empty. Two groups
+  with identical labels (one attached again while the old lingers) show each
+  other's paths until the old one goes;
 - the health indicators with state and value, and the verdict and indicator
   states over time;
 - throughput (original and retransmitted), loss and recovery, timing (RTT,
