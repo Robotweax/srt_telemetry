@@ -328,3 +328,7 @@ and frees the embed. Call it before `srt_cleanup`.
 - `robotweax_srt_telemetry_embed_package_consumer`: a C program builds and
   links against the installed package.
 - `tools/srt_live_transmit_e2e.py`: the reference integration end to end.
+
+Group `active_member_changed` details begin with `inferred; authority=unavailable; `;
+packet-counter inference does not prove a sender promotion. The UI labels these
+events **Observed data path changed**. No event identifier or binary layout changes.

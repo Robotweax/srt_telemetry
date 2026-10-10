@@ -299,7 +299,15 @@ void backup_scenario()
     journal.read(embed);
     check(journal.count(ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED) == 4, "member_added for every member");
     check(journal.count(ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED, "path=none -> " + primary_path) >= 1,
-          "caller: the primary becomes active");
+          "caller: the primary carries the most observed packets");
+    for (const auto &e : journal.events)
+    {
+        if (e.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED)
+        {
+            check(std::string_view(e.detail).starts_with("inferred; authority=unavailable; "),
+                  "data-path changes disclose inference before potentially truncated names");
+        }
+    }
     for (const auto &e : journal.events)
     {
         if (e.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED)

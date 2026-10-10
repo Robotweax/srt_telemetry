@@ -26,7 +26,7 @@
     connecting: 'The connection is being set up.',
     connection_lost: 'The connection is lost.',
     role_unknown: 'The endpoint is neither a known sender nor a known receiver.',
-    standby: 'A connected backup path waiting to take over; it carries no stream until the active path fails.',
+    standby: 'A connected backup path with no observed stream-packet advance in this tick. Probing or replay can also carry data; send authority is unavailable.',
     path_lost: 'A path of this connection group is down; the other paths still carry the stream.',
     redundancy_lost: 'Only one path of this connection group still works: the stream has no backup left.',
     recovery_headroom_low: 'Lost packets are repaired with little time to spare: the receive buffer runs low against the latency.',
@@ -123,7 +123,7 @@
     member_added: 'Path added',
     member_removed: 'Path removed',
     member_state_changed: 'Path state changed',
-    active_member_changed: 'Active path changed',
+    active_member_changed: 'Observed data path changed',
   };
 
   // ------------------------------------------------------------ formatting
@@ -1862,6 +1862,7 @@
         pathsNote.textContent = count
           ? `${count.usable} of ${count.expected} can carry the stream · a path alone never pages; the group does`
           : 'a path alone never pages; the group does';
+        pathsNote.textContent += ' · Data activity: packet-counter inference. Send authority: unavailable.';
         /* Rows are kept per path and updated in place, so focus and hover
          * stay; a cell is rebuilt only when what it shows changed. */
         const keep = new Set(members.map((m) => m.id));

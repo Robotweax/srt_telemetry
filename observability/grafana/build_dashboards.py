@@ -408,11 +408,13 @@ def endpoint():
                "{{path}} sent", "A"),
         target(f'srt_receiver_received_bits_per_second{{{SEL},path!="",stat="rate"}} {OF_GROUP_STAT}',
                "{{path}} received", "B")], "bps",
-        "What each path carries: Broadcast sends everything on every path; Main/Backup on the active one."), 6, 9)
+        "Observed packet-counter activity per path. Main/Backup may carry data on multiple paths "
+        "during probing or replay; this does not identify send authority."), 6, 9)
     l.add(timeseries("Paths: round-trip time", [
         target(f'srt_connection_rtt_seconds{{{SEL},path!="",stat="mean"}} {OF_GROUP_STAT}', "{{path}}")], "s",
-        "A standby path carries only keepalives: SRT does not measure its RTT (it shows the initial "
-        "estimate) until it takes over."), 6, 9)
+        "Provider-reported smoothed estimate. The statistics API supplies no validity, provenance "
+        "or sample age; a quiet path may retain an initial or older value. "
+        "Keepalive activity alone does not establish a fresh RTT sample."), 6, 9)
 
     l.row("Health indicators")
     l.add({"type": "table", "title": "Indicators",

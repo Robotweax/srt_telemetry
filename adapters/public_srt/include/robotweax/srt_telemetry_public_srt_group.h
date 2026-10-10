@@ -241,7 +241,9 @@ extern "C"
         /* Main/Backup: the member that carried the most stream packets in the
          * latest tick in which any member carried data; -1 before that and
          * for other group types. It keeps naming a member that has since
-         * been removed until another member carries. */
+         * been removed until another member carries. This is packet-counter
+         * inference, not the sender's authority. Probing/replay may change
+         * this value without an authority transition. */
         int32_t active_member;
         /* Value of active_member before this call. */
         int32_t previous_active_member;

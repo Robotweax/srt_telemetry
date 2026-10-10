@@ -726,7 +726,7 @@
     {
       "type": "timeseries",
       "title": "Paths: bitrate",
-      "description": "What each path carries: Broadcast sends everything on every path; Main/Backup on the active one.",
+      "description": "Observed packet-counter activity per path. Main/Backup may carry data on multiple paths during probing or replay; this does not identify send authority.",
       "targets": [
         {
           "datasource": {
@@ -797,7 +797,7 @@
     {
       "type": "timeseries",
       "title": "Paths: round-trip time",
-      "description": "A standby path carries only keepalives: SRT does not measure its RTT (it shows the initial estimate) until it takes over.",
+      "description": "Provider-reported smoothed estimate. The statistics API supplies no validity, provenance or sample age; a quiet path may retain an initial or older value. Keepalive activity alone does not establish a fresh RTT sample.",
       "targets": [
         {
           "datasource": {

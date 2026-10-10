@@ -247,3 +247,22 @@ drops equalled sent.
   multi-path setups (part D).
 - Interop groups (Robotweax ↔ Haivision).
 - IPv6 groups and encrypted groups.
+
+## Data activity and send authority
+
+Operator question: did observed data move to another path, or did the sender
+actually promote a member? `active_member` and `GROUP_ACTIVE_CHANGED` answer
+the first question only. Their public source is each member’s qualified unique
+stream-packet counter (plain counter fallback), per sampling tick, on the
+observed sender or receiver. Ties keep the previous inference; an idle tick
+retains it, even after removal. A new group session starts without an inference.
+Probing and replay can change this selection while actual authority stays fixed.
+Neither provider’s injected public API supplies send authority. The UI reports
+that absence explicitly, regardless of provider name, RUNNING state or weight.
+Existing fields, flags, selection rules and ABI layouts remain unchanged.
+
+The embedding event retains `active_member_changed` for compatibility. Its
+visible label is **Observed data path changed**, and its bounded detail starts
+with `inferred; authority=unavailable; ` before the existing path/carrying detail.
+This applies to Broadcast’s carrying-set changes too. It is not a failover or
+flapping event. Long names can truncate only the following path detail.
