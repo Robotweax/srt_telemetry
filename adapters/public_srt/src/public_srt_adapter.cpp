@@ -11,6 +11,20 @@
 #include <cstring>
 #include <new>
 
+/* Layout of the explicitly selected Robotweax extension contract, not of
+ * SRT_TRACEBSTATS or an inferred provider feature. Old public headers can
+ * compile the reader without importing or linking the optional symbol. */
+#ifndef ROBOTWEAX_SRT_RTTDATA_VERSION
+struct ROBOTWEAX_SRT_RttDataV1_
+{
+    std::uint32_t struct_size, abi_version, flags, last_update_source;
+    std::uint32_t smoothed_microseconds, variation_microseconds;
+    std::uint64_t local_ackack_age_microseconds, peer_estimate_age_microseconds;
+    std::uint32_t reserved[2];
+};
+#endif
+static_assert(sizeof(ROBOTWEAX_SRT_RttDataV1_) == 48);
+
 struct robotweax_srt_telemetry_public_srt_session
 {
     robotweax_srt_telemetry_public_srt_config_v2 config{};
@@ -574,4 +588,43 @@ extern "C" void robotweax_srt_telemetry_public_srt_source_config(
     config->role = role;
     config->labels = labels;
     config->label_count = label_count;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_read_rtt_metadata_v1(
+    const std::int32_t socket, robotweax_srt_telemetry_public_srt_rtt_data_v1_fn getter,
+    const std::uint64_t mono, robotweax_srt_telemetry_rtt_metadata_v1 *output)
+{
+    if (output == nullptr || output->struct_size < sizeof(*output) ||
+        output->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION || socket < 0)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    *output = {};
+    output->struct_size = sizeof(*output);
+    output->abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    output->sampled_monotonic_nano = mono;
+    output->local_ackack_age_microseconds = UINT64_MAX;
+    output->peer_estimate_age_microseconds = UINT64_MAX;
+    if (getter == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    ROBOTWEAX_SRT_RttDataV1_ data{};
+    data.struct_size = sizeof(data);
+    data.abi_version = 1;
+    output->availability = 1;
+    output->native_result = getter(socket, &data, sizeof(data));
+    if (output->native_result != 0 || data.struct_size != sizeof(data) || data.abi_version != 1 ||
+        data.flags > 7 || data.last_update_source > 2 || data.reserved[0] || data.reserved[1] ||
+        ((data.flags & 1) == 0 && (data.flags != 0 || data.last_update_source != 0)) ||
+        ((data.flags & 1) != 0 && data.last_update_source == 0) ||
+        (((data.flags & 2) != 0) != (data.local_ackack_age_microseconds != UINT64_MAX)) ||
+        (((data.flags & 4) != 0) != (data.peer_estimate_age_microseconds != UINT64_MAX)) ||
+        (data.last_update_source == 1 && (data.flags & 2) == 0) ||
+        (data.last_update_source == 2 && (data.flags & 4) == 0))
+        return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    output->availability = 2;
+    output->flags = data.flags;
+    output->last_update_source = data.last_update_source;
+    output->smoothed_microseconds = data.smoothed_microseconds;
+    output->variation_microseconds = data.variation_microseconds;
+    output->local_ackack_age_microseconds = data.local_ackack_age_microseconds;
+    output->peer_estimate_age_microseconds = data.peer_estimate_age_microseconds;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

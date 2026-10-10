@@ -232,3 +232,33 @@ Haivision v1.5.7 and published Robotweax v0.2.8 have no such getter; their host,
 token and address naming remains available. Qualification is revision/build
 specific. See [group sessions](public-srt-group.md#path-names) for snapshot races,
 binary encoding, scope, resets and retained BROKEN-member behavior.
+
+## Optional RTT observation history (V1)
+
+Operator question: is the shown estimate initial, locally observed, or peer
+advertised, and when was each observation accepted? The optional
+`robotweax_srt_rtt_data_v1` extension answers this separately from `msRTT`.
+Hosts explicitly inject a getter qualified against the selected build. The
+adapter validates its 48-byte V1 contract; it does not resolve symbols, select a
+provider by name, or guess an extended statistics layout. The helper is compiled
+only where the public header declares V1. Old Robotweax and Haivision builds use
+NULL and report unavailable. A failed/malformed read clears current metadata.
+
+| Source | Unit and meaning | Reset / availability |
+| --- | --- | --- |
+| smoothed / variation | microseconds in getter, seconds in JSON; current instantaneous estimator values | readable connected or retained BROKEN member; separate from windowed RTT |
+| observation flag | accepted estimator observation has existed; not accuracy or freshness | initially false; numeric 100 ms does not decide it |
+| local ACKACK age | local monotonic elapsed age of a valid tracked ACKACK | null when absent; keepalive/clear do not refresh |
+| peer estimate age | local acceptance age of a peer Full/Small ACK estimate | null when absent; peer measurement age is unknown |
+| last source | latest accepted update kind; both histories can remain | none initially; new socket resets |
+| capture age | sampler steady time since metadata was stored | lets UI distinguish capture staleness from observation age |
+
+`embed_set_rtt_data_v1` opts in without extending existing configuration structs.
+Each socket/member is read every tick. A retained BROKEN member remains readable;
+removed/closed/detached members report absence/failure rather than cached freshness.
+A continued named path reads the new socket's fresh history after reconnect.
+Groups have no RTT history of their own. Runtime snapshots carry `rtt_metadata`
+with availability available/read_failed/unavailable; this is not recorded in old
+JSONL sample/history formats or exported as a new Prometheus/OTLP metric. The new
+property's standalone schema is `schema/snapshot-rtt-metadata-v1.schema.json`.
+No existing field, capability, event or health decision changes meaning.

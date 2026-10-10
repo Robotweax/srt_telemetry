@@ -164,6 +164,11 @@ void backup_scenario()
     config.linger_seconds = 30;
     robotweax_srt_telemetry_embed *embed = nullptr;
     check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "embed start");
+#if defined(ROBOTWEAX_SRT_RTTDATA_VERSION) && ROBOTWEAX_SRT_RTTDATA_VERSION == 1
+    check(robotweax_srt_telemetry_host_embed_rtt_data(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "explicitly enable qualified RTT getter");
+#endif
+
     if (embed == nullptr)
     {
         return;
@@ -295,6 +300,11 @@ void backup_scenario()
           "the sending group is graded through its paths: OK, 2 of 2 paths");
     check(has(group_row(all, "cam-rx"), "\"verdict\":\"ok\""), "the receiving group is graded OK");
 
+#if defined(ROBOTWEAX_SRT_RTTDATA_VERSION) && ROBOTWEAX_SRT_RTTDATA_VERSION == 1
+    check(has(find_source(all, {"\"stream\":\"cam-tx\"", "\"path\":\"" + primary_path + "\""}),
+              "\"rtt_metadata\":{\"version\":1,\"availability\":\"available\""),
+          "connected group member has RTT metadata");
+#endif
     Journal journal;
     journal.read(embed);
     check(journal.count(ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED) == 4, "member_added for every member");

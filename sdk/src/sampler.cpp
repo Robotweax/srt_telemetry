@@ -71,6 +71,8 @@ struct Source
     std::string prometheus_labels;
     bool has_latest_metrics = false;
     robotweax_srt_telemetry_metric_sample_v1 latest_metrics{};
+    robotweax_srt_telemetry_rtt_metadata_v1 rtt_metadata{};
+    std::uint64_t rtt_updated_steady = 0;
     bool has_latest_raw = false;
     robotweax_srt_telemetry_raw_sample_v1 latest_raw{};
     /* When the lifetime counters started (OTLP cumulative start time): the
@@ -1739,6 +1741,9 @@ robotweax_srt_telemetry_error render_impl(robotweax_srt_telemetry_sampler *sampl
                 out.metrics = source.latest_metrics;
                 out.has_raw = source.has_latest_raw;
                 out.raw = source.latest_raw;
+                out.rtt_metadata = source.rtt_metadata;
+                out.rtt_capture_age_seconds =
+                    static_cast<double>(now_steady - source.rtt_updated_steady) / 1e9;
                 out.has_ext = source.has_latest_ext;
                 out.ext = source.latest_ext;
                 out.has_health = source.health != nullptr && source.has_health_status;
@@ -1920,5 +1925,42 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render(
         return ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL;
     }
     buffer[writer.length] = '\0';
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+    const robotweax_srt_telemetry_rtt_metadata_v1 *metadata)
+{
+    if (sampler == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    if (in_callback_of(sampler))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    if (metadata != nullptr &&
+        (metadata->struct_size < sizeof(*metadata) ||
+         metadata->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION ||
+         metadata->availability > 2 || metadata->flags > 7 || metadata->last_update_source > 2 ||
+         metadata->reserved[0] != 0 || metadata->reserved[1] != 0 ||
+         (metadata->availability != 2 &&
+          (metadata->flags != 0 || metadata->last_update_source != 0)) ||
+         (metadata->availability == 2 &&
+          (metadata->native_result != 0 ||
+           ((metadata->flags & 1) == 0 &&
+            (metadata->flags != 0 || metadata->last_update_source != 0)) ||
+           ((metadata->flags & 1) != 0 && metadata->last_update_source == 0) ||
+           (((metadata->flags & 2) != 0) !=
+            (metadata->local_ackack_age_microseconds != UINT64_MAX)) ||
+           (((metadata->flags & 4) != 0) !=
+            (metadata->peer_estimate_age_microseconds != UINT64_MAX)) ||
+           (metadata->last_update_source == 1 && (metadata->flags & 2) == 0) ||
+           (metadata->last_update_source == 2 && (metadata->flags & 4) == 0)))))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    found->second->rtt_metadata =
+        metadata == nullptr ? robotweax_srt_telemetry_rtt_metadata_v1{} : *metadata;
+    found->second->rtt_updated_steady = steady_nano();
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

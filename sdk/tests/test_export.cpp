@@ -519,7 +519,35 @@ void test_render()
               any_line_contains(one_second, "srt_window_seconds", "} 1"),
           "explicit 1 s window");
 
+    robotweax_srt_telemetry_rtt_metadata_v1 rtt{};
+    rtt.struct_size = sizeof(rtt);
+    rtt.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    rtt.availability = 2;
+    rtt.flags = 7;
+    rtt.last_update_source = 2;
+    rtt.smoothed_microseconds = 100'000;
+    rtt.local_ackack_age_microseconds = 123'000;
+    rtt.peer_estimate_age_microseconds = 456'000;
+    check(robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(sampler, sender_id, &rtt) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "set RTT history");
     const auto json = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON);
+    check(json.find("\"last_update_source\":\"peer_estimate\"") != std::string::npos &&
+              json.find("\"local_ackack_age_seconds\":0.123") != std::string::npos &&
+              json.find("\"peer_estimate_age_seconds\":0.456") != std::string::npos,
+          "JSON retains both RTT sources and units");
+    rtt.flags = 3;
+    rtt.peer_estimate_age_microseconds = 1;
+    check(robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(sampler, sender_id, &rtt) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "inconsistent history rejected");
+    check(robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(sampler, sender_id, nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "RTT metadata reset");
+    check(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON)
+                  .find("\"availability\":\"unavailable\"") != std::string::npos,
+          "reset exposes absence");
+
     check(valid_json(json), "snapshot is valid JSON");
     check(json.find("\"generated_unix_ms\":1800000012400") != std::string::npos &&
               json.find("\"suggested_value\":null") != std::string::npos &&

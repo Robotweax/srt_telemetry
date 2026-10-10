@@ -651,6 +651,10 @@ int main(const int argc, char **argv)
         std::fprintf(stderr, "embed setup failed\n");
         return 1;
     }
+#if defined(ROBOTWEAX_SRT_RTTDATA_VERSION) && ROBOTWEAX_SRT_RTTDATA_VERSION == 1
+    /* Demo's explicit candidate-build opt-in; old providers retain absence. */
+    static_cast<void>(robotweax_srt_telemetry_host_embed_rtt_data(embed));
+#endif
     auto *sampler = robotweax_srt_telemetry_embed_sampler(embed);
 
     auto all = specs();
