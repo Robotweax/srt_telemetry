@@ -27,6 +27,14 @@ extern "C"
 {
 #endif
 
+    struct ROBOTWEAX_SRT_GroupSendStateV1_;
+    typedef int (*robotweax_srt_telemetry_public_srt_group_send_state_v1_fn)(
+        int32_t group, struct ROBOTWEAX_SRT_GroupSendStateV1_ *output, size_t output_size);
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_public_srt_read_group_send_metadata_v1(
+        int32_t group, robotweax_srt_telemetry_public_srt_group_send_state_v1_fn getter,
+        uint64_t sampled_monotonic_nano, robotweax_srt_telemetry_group_send_metadata_v1 *output);
+
     struct CBytePerfMon;
     struct ROBOTWEAX_SRT_RttDataV1_;
     /* Explicitly injected, qualified optional extension from the selected

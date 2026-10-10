@@ -412,6 +412,80 @@ void test_group_candidates_are_a_subset()
     robotweax_srt_telemetry_public_srt_session_destroy(session);
 }
 
+/* Independently authored synthetic group snapshot; no provider qualification. */
+struct GroupSendWire
+{
+    std::uint32_t size = 80, version = 1, state = 0, reserved0 = 0;
+    std::int32_t active = -1, probe = -1;
+    std::uint64_t group = 9, active_generation = 0, probe_generation = 0, revision = 0;
+    std::uint64_t active_age = UINT64_MAX, probe_age = UINT64_MAX;
+    std::uint32_t reserved[2] = {};
+};
+static_assert(sizeof(GroupSendWire) == 80);
+GroupSendWire send_wire;
+int send_result = 0;
+int fake_send_state(std::int32_t, ROBOTWEAX_SRT_GroupSendStateV1_ *output, std::size_t size)
+{
+    check(size == 80, "group getter buffer is exactly V1");
+    std::memcpy(output, &send_wire, sizeof(send_wire));
+    return send_result;
+}
+void test_optional_send_authority()
+{
+    robotweax_srt_telemetry_group_send_metadata_v1 out{};
+    out.struct_size = sizeof(out);
+    out.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    const auto read = [&]
+    {
+        return robotweax_srt_telemetry_public_srt_read_group_send_metadata_v1(42, fake_send_state,
+                                                                              123, &out);
+    };
+    check(robotweax_srt_telemetry_public_srt_read_group_send_metadata_v1(42, nullptr, 123, &out) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              out.availability == 0,
+          "no getter means no authority capability");
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.availability == 2 && out.state == 0 &&
+              out.active_member == -1,
+          "available unselected group differs from unavailable");
+    send_wire.state = 1;
+    send_wire.active = 12;
+    send_wire.active_generation = 8;
+    send_wire.active_age = 500;
+    send_wire.revision = UINT64_MAX;
+    send_wire.probe = 13;
+    send_wire.probe_generation = 10;
+    send_wire.probe_age = 200;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.authority_revision == UINT64_MAX &&
+              out.probe_member == 13,
+          "exact identity and full-width revision survive mapping");
+    send_wire.active_generation = 0;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE && out.availability == 1 &&
+              out.active_member == -1 && out.group_generation == 0,
+          "contradictory identity clears stale authority");
+    send_wire = {};
+    send_wire.version = 2;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE,
+          "unknown group observation ABI rejected");
+    send_wire = {};
+    send_wire.reserved[0] = 1;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE,
+          "reserved group observation bits rejected");
+    send_wire = {};
+    send_result = -1;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE && out.native_result == -1 &&
+              out.availability == 1,
+          "native group error remains explicit");
+    send_result = 0;
+    send_wire = {};
+    send_wire.group = 10;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.authority_revision == 0 &&
+              out.group_generation == 10,
+          "new group has new observation history");
+    out.struct_size = 1;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "short group metadata result rejected");
+}
+
 /* Synthetic optional-extension contract fixture, not provider qualification. */
 struct RttWire
 {
@@ -480,6 +554,7 @@ void test_optional_rtt_metadata()
 
 int main()
 {
+    test_optional_send_authority();
     test_optional_rtt_metadata();
     test_non_destructive_mapping_and_delta();
     test_provider_failure_is_explicit();

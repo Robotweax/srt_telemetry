@@ -519,6 +519,66 @@ void test_render()
               any_line_contains(one_second, "srt_window_seconds", "} 1"),
           "explicit 1 s window");
 
+    robotweax_srt_telemetry_group_send_metadata_v1 authority{};
+    authority.struct_size = sizeof(authority);
+    authority.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    authority.availability = 2;
+    authority.state = 1;
+    authority.group_generation = 7;
+    authority.active_member = 42;
+    authority.probe_member = -1;
+    authority.active_generation = 8;
+    authority.authority_revision = UINT64_MAX;
+    authority.sampled_monotonic_nano = 9007199254740993ULL;
+    authority.active_age_microseconds = 123000;
+    authority.probe_age_microseconds = UINT64_MAX;
+    std::memcpy(authority.active_path, "primary", 8);
+    check(robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(
+              sampler, sender_id, &authority) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "set separate group authority observation");
+    auto authority_json = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON);
+    check(valid_json(authority_json) &&
+              authority_json.find("\"authority_revision\":\"18446744073709551615\"") !=
+                  std::string::npos &&
+              authority_json.find("\"generation\":\"8\"") != std::string::npos &&
+              authority_json.find("\"scope\":\"local_sender\"") != std::string::npos &&
+              authority_json.find("\"probe\":null") != std::string::npos,
+          "JSON retains exact 64-bit authority identity and null probe");
+    authority.active_generation = 0;
+    check(robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(
+              sampler, sender_id, &authority) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "invalid selected generation rejected");
+    authority.active_generation = 8;
+    authority.state = 0;
+    authority.active_member = -1;
+    authority.active_generation = 0;
+    authority.active_age_microseconds = UINT64_MAX;
+    check(robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(
+              sampler, sender_id, &authority) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "selected clear remains available unselected snapshot");
+    check(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON).find("\"state\":\"unselected\"") !=
+              std::string::npos,
+          "unselected distinct from missing capability");
+    authority.availability = 1;
+    authority.group_generation = 0;
+    authority.authority_revision = 0;
+    authority.active_path[0] = 0;
+    authority.native_result = -1;
+    check(robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(
+              sampler, sender_id, &authority) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "read failure explicitly clears previous selection");
+    check(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON)
+                  .find("\"send_authority\":{\"version\":1,\"availability\":\"read_failed\"}") !=
+              std::string::npos,
+          "failed read exports no stale authority fields");
+    check(robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(sampler, sender_id, nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "disable authority metadata");
+    check(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON)
+                  .find("\"send_authority\":{\"version\":1,\"availability\":\"unavailable\"}") !=
+              std::string::npos,
+          "disabled getter exports unavailable");
+
     robotweax_srt_telemetry_rtt_metadata_v1 rtt{};
     rtt.struct_size = sizeof(rtt);
     rtt.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;

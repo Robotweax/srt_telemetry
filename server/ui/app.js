@@ -26,7 +26,7 @@
     connecting: 'The connection is being set up.',
     connection_lost: 'The connection is lost.',
     role_unknown: 'The endpoint is neither a known sender nor a known receiver.',
-    standby: 'A connected backup path with no observed stream-packet advance in this tick. Probing or replay can also carry data; send authority is unavailable.',
+    standby: 'A connected backup path with no observed stream-packet advance in this tick. Probing or replay can also carry data. A separate local sender-authority snapshot may be available.',
     path_lost: 'A path of this connection group is down; the other paths still carry the stream.',
     redundancy_lost: 'Only one path of this connection group still works: the stream has no backup left.',
     recovery_headroom_low: 'Lost packets are repaired with little time to spare: the receive buffer runs low against the latency.',
@@ -124,6 +124,7 @@
     member_removed: 'Path removed',
     member_state_changed: 'Path state changed',
     active_member_changed: 'Observed data path changed',
+    send_authority_changed: 'Local sender authority observation changed',
   };
 
   // ------------------------------------------------------------ formatting
@@ -1877,7 +1878,16 @@
         pathsNote.textContent = count
           ? `${count.usable} of ${count.expected} can carry the stream · a path alone never pages; the group does`
           : 'a path alone never pages; the group does';
-        pathsNote.textContent += ' · Data activity: packet-counter inference. Send authority: unavailable.';
+        const authority = src.send_authority;
+        pathsNote.textContent += ' · DATA activity: packet-counter inference.';
+        if (authority?.availability === 'available') {
+          const who = (member) => member ? (member.path || `socket ${member.socket}`) : 'none';
+          pathsNote.textContent += ` Local sender authority: ${who(authority.active)}. Probe: ${who(authority.probe)}.`;
+          pathsNote.textContent += ` Snapshot ${fmtAge(authority.capture_age_seconds)} ago; revision ${authority.authority_revision}.`;
+        } else {
+          pathsNote.textContent += authority?.availability === 'read_failed'
+            ? ' Local sender authority: read failed.' : ' Local sender authority: unavailable.';
+        }
         /* Rows are kept per path and updated in place, so focus and hover
          * stay; a cell is rebuilt only when what it shows changed. */
         const keep = new Set(members.map((m) => m.id));

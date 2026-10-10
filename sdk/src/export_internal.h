@@ -30,6 +30,8 @@ struct ExportSource
     robotweax_srt_telemetry_metric_sample_v1 metrics{};
     robotweax_srt_telemetry_rtt_metadata_v1 rtt_metadata{};
     double rtt_capture_age_seconds = 0;
+    robotweax_srt_telemetry_group_send_metadata_v1 group_send_metadata{};
+    double group_send_capture_age_seconds = 0;
     bool has_raw = false;
     robotweax_srt_telemetry_raw_sample_v1 raw{};
     bool has_ext = false;

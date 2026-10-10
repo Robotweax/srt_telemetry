@@ -370,6 +370,21 @@ void test_sampler_history_and_events()
                   ROBOTWEAX_SRT_TELEMETRY_OK &&
               read_count == 1 && after[0].sequence == last_sequence + 2 && overwritten == 0,
           "sequences continue across journal replacement");
+    auto authority = host;
+    authority.kind = ROBOTWEAX_SRT_TELEMETRY_EVENT_SEND_AUTHORITY_CHANGED;
+    std::snprintf(authority.detail, sizeof(authority.detail),
+                  "observed; local_sender; revision=3; changes=2");
+    check(robotweax_srt_telemetry_sampler_record_event(sampler, &authority) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "observed authority event accepted independently of host/activity kinds");
+    check(std::string_view(robotweax_srt_telemetry_event_kind_name(authority.kind)) ==
+              "send_authority_changed",
+          "authority journal kind exports a distinct name");
+    const auto observed_authority = all_events(sampler);
+    check(observed_authority.back().kind == authority.kind &&
+              std::string_view(observed_authority.back().detail).find("changes=2") !=
+                  std::string_view::npos,
+          "revision-gap disclosure retained rather than inventing intermediate transitions");
     robotweax_srt_telemetry_sampler_destroy(sampler);
     robotweax_srt_telemetry_delta_engine_destroy(source.engine);
 }

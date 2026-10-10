@@ -77,7 +77,9 @@ int count_with(const std::vector<std::string> &all, const std::vector<std::strin
         bool every = true;
         for (const auto &part : parts)
         {
-            every = every && has(source, part);
+            /* A path label belongs to labels, not the nested authority snapshot. */
+            const auto label_prefix = source.substr(0, source.find("},\"up\":"));
+            every = every && has(part.starts_with("\"path\":") ? label_prefix : source, part);
         }
         count += every ? 1 : 0;
     }
@@ -91,7 +93,9 @@ std::string find_source(const std::vector<std::string> &all, const std::vector<s
         bool every = true;
         for (const auto &part : parts)
         {
-            every = every && has(source, part);
+            /* A path label belongs to labels, not the nested authority snapshot. */
+            const auto label_prefix = source.substr(0, source.find("},\"up\":"));
+            every = every && has(part.starts_with("\"path\":") ? label_prefix : source, part);
         }
         if (every)
         {
@@ -107,7 +111,7 @@ std::string group_row(const std::vector<std::string> &all, const std::string &st
     for (const auto &source : all)
     {
         if (has(source, "\"stream\":\"" + stream + "\"") && has(source, "\"group\":") &&
-            !has(source, "\"path\":"))
+            !has(source.substr(0, source.find("},\"up\":")), "\"path\":"))
         {
             return source;
         }
@@ -164,6 +168,10 @@ void backup_scenario()
     config.linger_seconds = 30;
     robotweax_srt_telemetry_embed *embed = nullptr;
     check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "embed start");
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+    check(robotweax_srt_telemetry_host_embed_group_send_state(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "explicitly enable qualified group sender observation");
+#endif
 #if defined(ROBOTWEAX_SRT_RTTDATA_VERSION) && ROBOTWEAX_SRT_RTTDATA_VERSION == 1
     check(robotweax_srt_telemetry_host_embed_rtt_data(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
           "explicitly enable qualified RTT getter");
@@ -305,6 +313,15 @@ void backup_scenario()
               "\"rtt_metadata\":{\"version\":1,\"availability\":\"available\""),
           "connected group member has RTT metadata");
 #endif
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+    check(has(group_row(all, "cam-tx"),
+              "\"send_authority\":{\"version\":1,\"availability\":\"available\""),
+          "sending group exposes public sender observation");
+    check(has(group_row(all, "cam-tx"), "\"state\":\"selected\""),
+          "sending group has selected authority");
+    check(has(group_row(all, "cam-rx"), "\"state\":\"unselected\""),
+          "receiver does not inherit remote sender authority");
+#endif
     Journal journal;
     journal.read(embed);
     check(journal.count(ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED) == 4, "member_added for every member");
@@ -411,6 +428,24 @@ void backup_scenario()
     const auto back = find_source(all, {"\"stream\":\"cam-tx\"", "\"path\":\"" + primary_path + "\""});
     check(!has(back, "\"reason\":\"connection_lost\""), "the reconnected path is no longer lost");
 
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+    check(robotweax_srt_telemetry_embed_set_group_send_state_v1(embed, nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "disable public sender observations");
+    check(has(group_row(sources(embed), "cam-tx"),
+              "\"send_authority\":{\"version\":1,\"availability\":\"unavailable\"}"),
+          "disable immediately clears stale sender authority");
+    check(robotweax_srt_telemetry_host_embed_group_send_state(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "re-enable starts a fresh comparison baseline");
+    check(wait_for(
+              [&]
+              {
+                  return has(group_row(sources(embed), "cam-tx"),
+                             "\"send_authority\":{\"version\":1,\"availability\":\"available\"");
+              },
+              1000),
+          "re-enabled getter resumes observations without resetting SRT");
+#endif
     /* Detach: every row stays as lost for the linger. */
     check(robotweax_srt_telemetry_embed_detach(embed, caller_group) == ROBOTWEAX_SRT_TELEMETRY_OK, "detach caller");
     check(robotweax_srt_telemetry_embed_detach(embed, accepted) == ROBOTWEAX_SRT_TELEMETRY_OK, "detach listener");

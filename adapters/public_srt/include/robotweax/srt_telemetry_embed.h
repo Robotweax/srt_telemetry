@@ -270,6 +270,15 @@ extern "C"
      * NULL: nothing done. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API void robotweax_srt_telemetry_embed_stop(robotweax_srt_telemetry_embed *embed);
 
+    /* Qualify and bind the optional local Backup sender getter. NULL disables
+     * and clears observations; resets the comparison baseline, not SRT state.
+     * Thread-safe, forbidden from embed/sampler callbacks. Library must remain
+     * loaded. No existing configuration ABI or counter-activity meaning changes. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_embed_set_group_send_state_v1(
+        robotweax_srt_telemetry_embed *embed,
+        robotweax_srt_telemetry_public_srt_group_send_state_v1_fn getter);
+
     /* Enable only after qualifying this optional getter in the selected SRT
      * build. Serializes with sampling; NULL disables and clears metadata.
      * Existing config/sample ABI layouts are unchanged. Do not call from

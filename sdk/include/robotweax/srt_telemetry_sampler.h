@@ -49,6 +49,24 @@ extern "C"
         uint32_t reserved[2];
     } robotweax_srt_telemetry_rtt_metadata_v1;
 
+    /* Optional local Backup sender snapshot, independent of counter activity.
+     * availability: 0 disabled/unsupported, 1 read failed, 2 available.
+     * state: 0 unselected, 1 selected. IDs plus generations identify members.
+     * Revision counts selection/replacement/clear, not probe changes; modulo
+     * 2^64, comparable only within a group generation. Ages: UINT64_MAX absent.
+     * Path aliases are best-effort host labels, never connection identities.
+     * Instantaneous metadata only; no health, alert or metric-window input. */
+    typedef struct robotweax_srt_telemetry_group_send_metadata_v1
+    {
+        uint32_t struct_size, abi_version, availability, state;
+        int32_t native_result, active_member, probe_member;
+        uint32_t reserved;
+        uint64_t group_generation, active_generation, probe_generation;
+        uint64_t authority_revision, active_age_microseconds, probe_age_microseconds;
+        uint64_t sampled_monotonic_nano;
+        char active_path[64], probe_path[64];
+    } robotweax_srt_telemetry_group_send_metadata_v1;
+
     /* Host label such as {"site", "studio-2"}. Keys: [A-Za-z_][A-Za-z0-9_]*,
      * at most 63 bytes. Values: printable ASCII, at most 255 bytes. Labels are
      * copied when the source is added. */
@@ -333,6 +351,13 @@ extern "C"
     robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
         robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
         const robotweax_srt_telemetry_rtt_metadata_v1 *metadata);
+
+    /* Copies the latest optional group observation; NULL clears. Thread-safe,
+     * forbidden from sampler callbacks. Existing source/sample ABI unchanged. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
+        const robotweax_srt_telemetry_group_send_metadata_v1 *metadata);
 
 #ifdef __cplusplus
 }

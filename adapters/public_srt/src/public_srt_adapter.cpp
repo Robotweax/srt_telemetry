@@ -24,6 +24,17 @@ struct ROBOTWEAX_SRT_RttDataV1_
 };
 #endif
 static_assert(sizeof(ROBOTWEAX_SRT_RttDataV1_) == 48);
+#ifndef ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION
+struct ROBOTWEAX_SRT_GroupSendStateV1_
+{
+    std::uint32_t struct_size, abi_version, state, reserved0;
+    std::int32_t active_member, probe_member;
+    std::uint64_t group_generation, active_generation, probe_generation;
+    std::uint64_t authority_revision, active_age_microseconds, probe_age_microseconds;
+    std::uint32_t reserved[2];
+};
+#endif
+static_assert(sizeof(ROBOTWEAX_SRT_GroupSendStateV1_) == 80);
 
 struct robotweax_srt_telemetry_public_srt_session
 {
@@ -626,5 +637,48 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_read
     output->variation_microseconds = data.variation_microseconds;
     output->local_ackack_age_microseconds = data.local_ackack_age_microseconds;
     output->peer_estimate_age_microseconds = data.peer_estimate_age_microseconds;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_public_srt_read_group_send_metadata_v1(
+    const std::int32_t group, robotweax_srt_telemetry_public_srt_group_send_state_v1_fn getter,
+    const std::uint64_t mono, robotweax_srt_telemetry_group_send_metadata_v1 *output)
+{
+    if (output == nullptr || output->struct_size < sizeof(*output) ||
+        output->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION || group < 0)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    *output = {};
+    output->struct_size = sizeof(*output);
+    output->abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    output->sampled_monotonic_nano = mono;
+    output->active_member = output->probe_member = -1;
+    output->active_age_microseconds = output->probe_age_microseconds = UINT64_MAX;
+    if (getter == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    ROBOTWEAX_SRT_GroupSendStateV1_ data{};
+    data.struct_size = sizeof(data);
+    data.abi_version = 1;
+    output->availability = 1;
+    output->native_result = getter(group, &data, sizeof(data));
+    if (output->native_result != 0 || data.struct_size != sizeof(data) || data.abi_version != 1 ||
+        data.reserved0 || data.reserved[0] || data.reserved[1] || data.state > 1 ||
+        data.group_generation == 0 || data.active_member < -1 || data.probe_member < -1 ||
+        (data.state == 1) != (data.active_member >= 0) ||
+        (data.active_member >= 0) != (data.active_generation != 0) ||
+        (data.probe_member >= 0) != (data.probe_generation != 0) ||
+        (data.active_member >= 0) != (data.active_age_microseconds != UINT64_MAX) ||
+        (data.probe_member >= 0) != (data.probe_age_microseconds != UINT64_MAX))
+        return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    output->availability = 2;
+    output->state = data.state;
+    output->group_generation = data.group_generation;
+    output->active_member = data.active_member;
+    output->active_generation = data.active_generation;
+    output->probe_member = data.probe_member;
+    output->probe_generation = data.probe_generation;
+    output->authority_revision = data.authority_revision;
+    output->active_age_microseconds = data.active_age_microseconds;
+    output->probe_age_microseconds = data.probe_age_microseconds;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

@@ -262,3 +262,39 @@ with availability available/read_failed/unavailable; this is not recorded in old
 JSONL sample/history formats or exported as a new Prometheus/OTLP metric. The new
 property's standalone schema is `schema/snapshot-rtt-metadata-v1.schema.json`.
 No existing field, capability, event or health decision changes meaning.
+
+## Optional local Backup sender authority
+
+Operator question: did the local sender coordinator actually select another
+member, or did a parallel probe/replay merely advance that path's DATA counters?
+The separately qualified Robotweax `robotweax_srt_group_send_state_v1` V1 getter
+is explicitly injected through `embed_set_group_send_state_v1`; null disables
+and clears observations. Haivision/older/unqualified builds remain unavailable.
+Getter failure is `read_failed`, with no stale selected member exported.
+
+`send_authority` is instantaneous metadata with local-sender scope, never a
+health input, RTT window, peer election or guarantee of current reachability.
+Socket plus connection generation identifies each active/probe member. Path
+aliases are best-effort host labels, not identity proof. Group generation and
+revision reset with a new group; revision counts selection/replacement/clear
+including initial selection, modulo 2^64. Probe start/cancel does not change it.
+A hard fallback can clear then select (two changes). Snapshot polling can miss
+intermediate states; revision gaps expose their count, not their identity or
+exact time. `send_authority_changed` (event19) records observed differences,
+including an initial comparison baseline, separately from existing inferred
+`active_member_changed` DATA activity. Existing event meanings stay unchanged.
+The `authority=unavailable` prefix on the latter refers to that event's own
+counter source; a separate authority snapshot may be available.
+
+Ages use local monotonic elapsed seconds; absent active/probe is JSON null.
+Capture age reports elapsed time since metadata ingestion; state ages remain
+those of the captured instant. Getter reads/statistics clears do not reset SRT
+revision history. Disable/re-enable resets SDK comparison baseline. UInt64
+generations/revision are decimal strings for exact browser representation.
+`sampled_monotonic_nano` is the local poll-start timestamp (nanoseconds, decimal
+string), a lower bound on the getter read instant; capture age is measured
+since ingestion after that read. Together they bound the observation interval
+for independent trace comparison, without inventing an exact transition time.
+The JSON contract is `schema/snapshot-send-authority-v1.schema.json`; existing
+C sample/config layouts, counter windows and Prometheus metric semantics remain
+unchanged. The SDK adds a separate metadata structure/setter and event value.
