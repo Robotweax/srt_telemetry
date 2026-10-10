@@ -133,8 +133,9 @@ the thresholds.
    from its paths and redundancy (#33), are merged. Part C2 adds the group
    panels in the UI and Grafana, the path gauges in the exports, a group in
    the dashboard demo (`--group backup`), and grades a reconnected
-   connection on its own evidence. Next: the embed option for the
-   path-identifier getter; part D, the Lab's multi-path qualification. Member paths are capped at Watch (maintainer decision);
+   connection on its own evidence (#34). The embed takes the
+   path-identifier getter (`group_path_data`). Next: part D, the Lab's
+   multi-path qualification. Member paths are capped at Watch (maintainer decision);
    path names come from the host, else automatically. SRT protocol findings
    are in the maintainer's Claude project
    (`srt-protocol-findings-groups-2026-10-09.md`).

@@ -109,6 +109,19 @@ static inline void robotweax_srt_telemetry_host_embed_functions(robotweax_srt_te
     config->getsockname = robotweax_srt_telemetry_host_getsockname;
 }
 
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+/* Robotweax SRT with negotiated path labels (protocol PR #298): names group
+ * paths from the caller's label on both sides (embed_config_v1.
+ * group_path_data). Call it after robotweax_srt_telemetry_host_embed_functions;
+ * the peers enable labels themselves (SRTO_ROBOTWEAX_PATHID_REQUIRED on the
+ * group and the listener, SRTO_ROBOTWEAX_PATHID per endpoint). Not defined
+ * for an srt.h without them. */
+static inline void robotweax_srt_telemetry_host_embed_path_data(robotweax_srt_telemetry_embed_config_v1 *config)
+{
+    config->group_path_data = robotweax_srt_group_path_data_v1;
+}
+#endif
+
 /* Starts an embed from a command-line style spec (see
  * robotweax_srt_telemetry_embed_config_parse), e.g. "0.0.0.0:9810" or
  * "9810,token_file=/run/srt/token". service_name names the application in

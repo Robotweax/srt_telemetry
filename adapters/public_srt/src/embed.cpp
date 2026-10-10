@@ -261,7 +261,9 @@ static_assert(sizeof(robotweax_srt_telemetry_embed_group_v1) == 24 + 4 * sizeof(
                   offsetof(robotweax_srt_telemetry_embed_group_v1, path_name) == 24 + 2 * sizeof(void *),
               "embed group layout is part of the ABI");
 static_assert(offsetof(robotweax_srt_telemetry_embed_config_v1, group_data) ==
-                  sizeof(robotweax_srt_telemetry_embed_config_v1) - 2 * sizeof(void *),
+                      sizeof(robotweax_srt_telemetry_embed_config_v1) - 3 * sizeof(void *) &&
+                  offsetof(robotweax_srt_telemetry_embed_config_v1, group_path_data) ==
+                      sizeof(robotweax_srt_telemetry_embed_config_v1) - sizeof(void *),
               "the group functions end the embed config");
 
 GroupLink::~GroupLink()
@@ -1560,7 +1562,9 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
         config->label_count > ROBOTWEAX_SRT_TELEMETRY_EMBED_MAX_HOST_LABELS ||
         !valid_labels(config->labels, config->label_count) || has_reserved_key(config->labels, config->label_count) ||
         (config->flags & ~(ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP | ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_UI |
-                           ROBOTWEAX_SRT_TELEMETRY_EMBED_STREAM_ID_LABEL)) != 0)
+                           ROBOTWEAX_SRT_TELEMETRY_EMBED_STREAM_ID_LABEL)) != 0 ||
+        /* Negotiated path labels are a Robotweax SRT extension. */
+        (config->group_path_data != nullptr && config->provider != ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT))
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
@@ -1944,7 +1948,9 @@ robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
     session.group = group->group;
     session.provider = config.provider;
     session.capabilities = ROBOTWEAX_SRT_TELEMETRY_CAP_COMMON_STATS_V1 | ROBOTWEAX_SRT_TELEMETRY_CAP_FEC_STATS_V1 |
-                           ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_MEMBERS_V1;
+                           ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_MEMBERS_V1 |
+                           (config.group_path_data != nullptr ? ROBOTWEAX_SRT_TELEMETRY_CAP_GROUP_PATH_IDENTIFIERS_V1
+                                                              : 0);
     session.group_qualified_fields = ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_GROUP_CANDIDATE_FIELDS;
     session.group_qualified_ext_fields = ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_GROUP_EXT_CANDIDATE_FIELDS;
     session.member_qualified_fields = ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_V1_5_5_CANDIDATE_FIELDS;
@@ -1962,6 +1968,16 @@ robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
     if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
         return error;
+    }
+    if (config.group_path_data != nullptr)
+    {
+        /* Before the first sample: names come from negotiated labels. */
+        error = robotweax_srt_telemetry_public_srt_group_session_set_path_data_v1(link.session,
+                                                                                config.group_path_data);
+        if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            return error;
+        }
     }
     robotweax_srt_telemetry_public_srt_connection_config_v1 monitor{};
     monitor.struct_size = sizeof(monitor);
