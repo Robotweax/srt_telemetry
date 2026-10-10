@@ -103,7 +103,7 @@ record.
 
 | Contract field | Source | Role | Notes |
 | --- | --- | --- | --- |
-| `rtt_seconds` | `msRTT` | both | smoothed RTT; ms to s |
+| `rtt_seconds` | `msRTT` | both | provider-reported smoothed estimate; ms to s; validity, source and age unavailable through `msRTT` |
 | `flight_size_packets` | `pktFlightSize` | sender | |
 | `flow_window_packets` | `pktFlowWindow` | sender | receiver free space as reported in ACKs |
 | `congestion_window_packets` | `pktCongestionWindow` | sender | not used in live mode |

@@ -85,7 +85,7 @@ The embed journals connection-group events (see
 | `member_added` | group | code = member socket; detail `path=<name>` | info |
 | `member_removed` | group | code = member socket; detail `path=<name>` | warning |
 | `member_state_changed` | member | previous / current member state (`SRT_MEMBERSTATUS`); code = member socket; detail with the socket states | warning when broken or not connected, else info |
-| `active_member_changed` | group | Backup: previous / current active member socket, detail `path=<a> -> <b>`; Broadcast: current = number of carrying paths, detail `carrying=<names>` | info |
+| `active_member_changed` | group | Backup: previous / current packet-counter-inferred member socket, detail `path=<a> -> <b>`; Broadcast: current = number of carrying paths, detail `carrying=<names>` | info |
 
 Details are cut at 95 characters, so long path names (up to 159) and long
 `carrying=` lists are shortened there; the member's row carries the full
@@ -123,3 +123,7 @@ Events describe episodes, not ticks:
   receiver's history holds its 500 ms records at about 3.3 Mbit/s. When the
   caller closes, the connection monitor's disconnect lands in the sampler
   journal next to both `source_added` events.
+
+Group `active_member_changed` details begin with `inferred; authority=unavailable; `;
+packet-counter inference does not prove a sender promotion. The UI labels these
+events **Observed data path changed**. No event identifier or binary layout changes.

@@ -189,3 +189,9 @@ health, history and journal disabled, missing 1 s windows, and 1,000 mocked
 sources. Its findings are fixed: no XSS or CSP violation, focus kept, bounded
 memory, a single feed connection after a token change, and no "all clear"
 while endpoints are ungraded.
+
+Group path displays disclose packet-counter inference and unavailable send
+authority. **Observed data path changed** reports activity, including possible
+probing/replay; it does not prove failover. Standby means no observed DATA advance
+in the tick. The RTT chart describes an estimate with unavailable validity, source
+and age until an explicitly qualified optional metadata source is enabled.

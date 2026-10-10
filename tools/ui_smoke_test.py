@@ -160,6 +160,8 @@ def main():
             names = re.findall(r'<td class="path-name">([^<]*)</td>', gdom)
             check(sorted(names) == ["lte", "sat"], f"group view lists its paths ({names})")
             check("<h2>Paths</h2>" in gdom and "Own grade" in gdom, "group view: paths section with own grades")
+            check("Data activity: packet-counter inference. Send authority: unavailable." in gdom,
+                  "group view distinguishes observed activity from send authority")
             path = next(s for s in data["sources"] if s["labels"].get("path") == "sat" and s["role"] == "sender")
             pdom = dump_dom(args.browser, f"{base}#/source/{path['id']}")
             check(f'href="#/source/{group["id"]}"' in pdom and "connection group" in pdom

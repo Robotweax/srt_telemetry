@@ -1221,6 +1221,9 @@ void poll_group(Embed &embed, Endpoint &group, const std::uint64_t wall, const s
                     }
                 }
             }
+            /* Keep provenance before paths: journal detail is bounded and
+             * long labels may truncate its tail. */
+            detail = "inferred; authority=unavailable; " + detail;
             journal(embed, group.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED,
                     ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, previous, current, 0, detail, wall, mono);
         }
