@@ -504,6 +504,51 @@ td.r {
   color: var(--text-2);
 }
 
+/* Connection groups: paths follow their group's row, indented. */
+.fleet tbody tr.path-row td {
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
+}
+
+.fleet tbody tr.path-row:hover td {
+  background: var(--surface-2);
+}
+
+.fleet tr.path-row td:nth-child(2) {
+  padding-left: 28px;
+}
+
+.fleet tr.path-row .endpoint-name {
+  font-weight: 500;
+}
+
+.path-mark {
+  color: var(--text-3);
+}
+
+.chip.paths {
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip.paths.short {
+  color: var(--watch-text);
+  border-color: color-mix(in srgb, var(--watch) 60%, var(--border));
+  background: color-mix(in srgb, var(--watch) 14%, var(--surface));
+}
+
+.paths-table td.path-name {
+  font-weight: 600;
+  unicode-bidi: isolate;
+}
+
+.paths-table tbody tr {
+  cursor: pointer;
+}
+
+.paths-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
 .advice {
   max-width: 380px;
 }
@@ -1031,6 +1076,10 @@ details.card[open] > summary {
 
   .fleet td.spark-cell {
     display: none;
+  }
+
+  .fleet tr.path-row td:nth-child(2) {
+    padding-left: 12px;
   }
 
   .search {

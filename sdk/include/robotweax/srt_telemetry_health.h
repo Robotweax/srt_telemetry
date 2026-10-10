@@ -184,6 +184,11 @@ extern "C"
  * OK / REASON_STANDBY instead of a grade of an idle link (no data, or an RTT
  * estimate without traffic). A lost standby still reads as lost. */
 #define ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY (UINT32_C(1) << 2)
+/* health_context_v1.flags (only with GROUP_MEMBER, not with GROUP_STANDBY):
+ * the member is the group's only usable path and carries the stream alone,
+ * so its verdict is not capped. It stays a group path in the status
+ * (HEALTH_STATUS_GROUP_MEMBER). */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH (UINT32_C(1) << 3)
 
     /* What the statistics cannot tell: connection state and settings, as the
      * connection monitor reads them. Optional; set it when it changes. */
@@ -230,6 +235,10 @@ extern "C"
  * paths (health_group_v1); group_usable_paths and group_expected_paths are
  * set. */
 #define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP (UINT32_C(1) << 1)
+/* health_status_v1.flags: the endpoint is one path of a connection group
+ * (HEALTH_CONTEXT_GROUP_MEMBER), capped or not; uncapped_verdict is its own
+ * grade. */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER (UINT32_C(1) << 2)
 
     typedef struct robotweax_srt_telemetry_health_status_v1
     {

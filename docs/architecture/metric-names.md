@@ -123,8 +123,9 @@ any range.
 | `srt_health_indicator_state{indicator}` | `srt.health.indicator.state` ({state}) | `indicators[].state` | Each indicator after hysteresis |
 | `srt_health_indicator_value{indicator}` | `srt.health.indicator.value` (1) | `indicators[].value` | Each indicator's value (null when unavailable) |
 | — | — | `primary_indicator`, `missing_metrics`, `verdict_age_seconds` | Indicator behind the verdict; metrics a verdict needed but did not get; how long the verdict had held at the latest sample |
-| — | — | `capped`, `uncapped_verdict` | A connection-group member's verdict is capped at Watch (one path of several); its own grade |
-| — | — | `group.usable_paths`, `group.expected_paths` | A connection group's own row: paths that can carry the stream, and paths it is meant to have |
+| `srt_health_path_verdict` | `srt.health.path_verdict` ({verdict}) | `uncapped_verdict` (with `group_member`) | A connection-group path's own grade; its `verdict` is capped at Watch while another path is usable (`capped`) |
+| `srt_group_usable_paths` | `srt.group.usable_paths` ({path}) | `group.usable_paths` | A connection group's own row: paths that can carry the stream now |
+| `srt_group_expected_paths` | `srt.group.expected_paths` ({path}) | `group.expected_paths` | Paths the group is meant to have: set by the host, else the most seen usable at once |
 
 Reason, knob and indicator names are those of
 `robotweax_srt_telemetry_health_*_name()`

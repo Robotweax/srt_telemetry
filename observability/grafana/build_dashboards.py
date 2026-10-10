@@ -18,6 +18,13 @@ OUT = os.path.join(HERE, "dashboards")
 DS = {"type": "prometheus", "uid": "${datasource}"}
 SEL = 'job=~"$job",instance=~"$instance"'
 SRC = SEL + ',source_id=~"$source"'
+# Endpoints without the paths of connection groups: a group is one endpoint
+# (its own row), its paths (label path) are shown with it.
+TOP = SEL + ',path=""'
+# The paths of the connection group selected as $source: a path row has the
+# group row's labels plus path, and its own source_id.
+OF_GROUP = f'and ignoring (path, source_id) srt_group_usable_paths{{{SRC}}}'
+OF_GROUP_STAT = f'and ignoring (path, source_id, stat) srt_group_usable_paths{{{SRC}}}'
 
 # Status palette (docs/architecture/web-ui.md): the same colours as the UI.
 COLORS = {"unknown": "#8a8984", "ok": "#0ca30c", "watch": "#fab219", "at_risk": "#ec835a", "failing": "#d03b3b"}
@@ -154,7 +161,9 @@ def fleet():
     l = Layout()
     for index, (value, text, color) in enumerate(reversed(VERDICTS)):
         l.add({"type": "stat", "title": text,
-               "targets": [target(f'count(srt_health_verdict{{{SEL}}} == {value}) or vector(0)', instant=True)],
+               "description": "Endpoints with this verdict; a connection group counts once (its paths are "
+                              "under Connection groups).",
+               "targets": [target(f'count(srt_health_verdict{{{TOP}}} == {value}) or vector(0)', instant=True)],
                "fieldConfig": {"defaults": {"unit": "none", "decimals": 0, "color": {"mode": "thresholds"},
                                             "thresholds": {"mode": "absolute", "steps": [
                                                 {"color": "#5c5b57", "value": None},
@@ -173,19 +182,21 @@ def fleet():
         return target(f"max without (stat) ({expr})", ref=ref, instant=True, fmt="table")
 
     table_targets = [
-        row(name_label(f'srt_health_verdict{{{SEL}}}'), "verdict"),
-        row(f'label_join(srt_health_info{{{SEL}}}, "advice", " ", "direction", "knob")', "info"),
-        row(f'srt_health_suggested_value{{{SEL}}}', "suggested"),
-        row(f'srt_sender_unique_sent_bits_per_second{{{SEL},stat="rate"}} '
-            f'or srt_receiver_unique_received_bits_per_second{{{SEL},stat="rate"}}', "bitrate"),
-        row(f'srt_connection_rtt_seconds{{{SEL},stat="mean"}}', "rtt"),
-        row(f'(srt_receiver_lost_packets_per_second{{{SEL},stat="rate"}} / '
-            f'(srt_receiver_lost_packets_per_second{{{SEL},stat="rate"}} + '
-            f'srt_receiver_unique_received_packets_per_second{{{SEL},stat="rate"}})) '
-            f'or (srt_sender_loss_reported_packets_per_second{{{SEL},stat="rate"}} / '
-            f'srt_sender_unique_sent_packets_per_second{{{SEL},stat="rate"}})', "loss"),
-        row(f'srt_receiver_dropped_packets_per_second{{{SEL},stat="rate"}} '
-            f'or srt_sender_dropped_packets_per_second{{{SEL},stat="rate"}}', "dropped"),
+        row(name_label(f'srt_health_verdict{{{TOP}}}'), "verdict"),
+        row(f'label_join(srt_health_info{{{TOP}}}, "advice", " ", "direction", "knob")', "info"),
+        row(f'srt_health_suggested_value{{{TOP}}}', "suggested"),
+        row(f'srt_group_usable_paths{{{TOP}}}', "usable"),
+        row(f'srt_group_expected_paths{{{TOP}}}', "expected"),
+        row(f'srt_sender_unique_sent_bits_per_second{{{TOP},stat="rate"}} '
+            f'or srt_receiver_unique_received_bits_per_second{{{TOP},stat="rate"}}', "bitrate"),
+        row(f'srt_connection_rtt_seconds{{{TOP},stat="mean"}}', "rtt"),
+        row(f'(srt_receiver_lost_packets_per_second{{{TOP},stat="rate"}} / '
+            f'(srt_receiver_lost_packets_per_second{{{TOP},stat="rate"}} + '
+            f'srt_receiver_unique_received_packets_per_second{{{TOP},stat="rate"}})) '
+            f'or (srt_sender_loss_reported_packets_per_second{{{TOP},stat="rate"}} / '
+            f'srt_sender_unique_sent_packets_per_second{{{TOP},stat="rate"}})', "loss"),
+        row(f'srt_receiver_dropped_packets_per_second{{{TOP},stat="rate"}} '
+            f'or srt_sender_dropped_packets_per_second{{{TOP},stat="rate"}}', "dropped"),
     ]
     l.add({"type": "table", "title": "Endpoints",
            "description": "Verdict and advice of the health engine, and the latest window's values. "
@@ -196,14 +207,17 @@ def fleet():
                {"id": "organize", "options": {
                    "includeByName": {"Value #verdict": True, "endpoint": True, "role": True, "source_id": True,
                                      "instance": True, "reason": True, "advice": True,
-                                     "Value #suggested": True, "Value #bitrate": True, "Value #rtt": True,
+                                     "Value #suggested": True, "Value #usable": True, "Value #expected": True,
+                                     "Value #bitrate": True, "Value #rtt": True,
                                      "Value #loss": True, "Value #dropped": True},
                    "indexByName": {"Value #verdict": 0, "endpoint": 1, "role": 2, "reason": 3, "advice": 4,
-                                   "Value #suggested": 5, "Value #bitrate": 6, "Value #rtt": 7,
-                                   "Value #loss": 8, "Value #dropped": 9, "instance": 10, "source_id": 11},
+                                   "Value #suggested": 5, "Value #usable": 6, "Value #expected": 7,
+                                   "Value #bitrate": 8, "Value #rtt": 9, "Value #loss": 10, "Value #dropped": 11,
+                                   "instance": 12, "source_id": 13},
                    "renameByName": {"Value #verdict": "Verdict", "endpoint": "Endpoint", "role": "Role",
                                     "reason": "Reason", "advice": "Advice",
-                                    "Value #suggested": "Suggested value", "Value #bitrate": "Bitrate",
+                                    "Value #suggested": "Suggested value", "Value #usable": "Paths usable",
+                                    "Value #expected": "Paths expected", "Value #bitrate": "Bitrate",
                                     "Value #rtt": "RTT", "Value #loss": "Loss", "Value #dropped": "Dropped",
                                     "instance": "Instance", "source_id": "Source"}}},
                {"id": "sortBy", "options": {"sort": [{"field": "Verdict", "desc": True}]}},
@@ -246,12 +260,18 @@ def fleet():
                                 "properties": [{"id": "custom.width", "value": 90}]},
                                {"matcher": {"id": "byName", "options": "Source"},
                                 "properties": [{"id": "custom.width", "value": 70}]},
+                               {"matcher": {"id": "byName", "options": "Paths usable"},
+                                "properties": [{"id": "decimals", "value": 0}, {"id": "custom.width", "value": 80},
+                                               {"id": "description",
+                                                "value": "Connection groups: paths that can carry the stream now."}]},
+                               {"matcher": {"id": "byName", "options": "Paths expected"},
+                                "properties": [{"id": "decimals", "value": 0}, {"id": "custom.width", "value": 80}]},
                            ]},
            "options": {"showHeader": True, "cellHeight": "sm", "footer": {"show": False}}}, 24, 12)
 
     l.row("History")
     l.add({"type": "state-timeline", "title": "Verdict over time",
-           "targets": [target(name_label(f'srt_health_verdict{{{SEL}}}'),
+           "targets": [target(name_label(f'srt_health_verdict{{{TOP}}}'),
                               "{{endpoint}} {{role}} #{{source_id}}")],
            "fieldConfig": {"defaults": {"mappings": verdict_mappings(), "thresholds": verdict_thresholds(),
                                         "color": {"mode": "thresholds"}, "custom": {"fillOpacity": 85,
@@ -260,26 +280,48 @@ def fleet():
            "options": {"showValue": "never", "mergeValues": True, "rowHeight": 0.85,
                        "legend": {"showLegend": False}}}, 24, 10)
     l.add(timeseries("Bitrate", [
-        target(name_label(f'srt_sender_unique_sent_bits_per_second{{{SEL},stat="rate"}}'),
+        target(name_label(f'srt_sender_unique_sent_bits_per_second{{{TOP},stat="rate"}}'),
                "{{endpoint}} sender #{{source_id}}", "A"),
-        target(name_label(f'srt_receiver_unique_received_bits_per_second{{{SEL},stat="rate"}}'),
+        target(name_label(f'srt_receiver_unique_received_bits_per_second{{{TOP},stat="rate"}}'),
                "{{endpoint}} receiver #{{source_id}}", "B")], "bps",
         "Original packets sent, distinct packets received."), 12, 9)
     l.add(timeseries("Round-trip time", [
-        target(name_label(f'srt_connection_rtt_seconds{{{SEL},stat="mean"}}'),
+        target(name_label(f'srt_connection_rtt_seconds{{{TOP},stat="mean"}}'),
                "{{endpoint}} {{role}} #{{source_id}}")], "s"), 12, 9)
     l.add(timeseries("Unrecovered packets", [
-        target(name_label(f'srt_receiver_dropped_packets_per_second{{{SEL},stat="rate"}}'),
+        target(name_label(f'srt_receiver_dropped_packets_per_second{{{TOP},stat="rate"}}'),
                "{{endpoint}} receiver #{{source_id}}", "A"),
-        target(name_label(f'srt_sender_dropped_packets_per_second{{{SEL},stat="rate"}}'),
+        target(name_label(f'srt_sender_dropped_packets_per_second{{{TOP},stat="rate"}}'),
                "{{endpoint}} sender #{{source_id}}", "B")], "pps",
         "Receiver: never delivered to the application. Sender: dropped as too late to send."), 12, 9)
     l.add(timeseries("Loss before repair", [
-        target(name_label(f'srt_receiver_lost_packets_per_second{{{SEL},stat="rate"}} / '
-                          f'(srt_receiver_lost_packets_per_second{{{SEL},stat="rate"}} + '
-                          f'srt_receiver_unique_received_packets_per_second{{{SEL},stat="rate"}})'),
+        target(name_label(f'srt_receiver_lost_packets_per_second{{{TOP},stat="rate"}} / '
+                          f'(srt_receiver_lost_packets_per_second{{{TOP},stat="rate"}} + '
+                          f'srt_receiver_unique_received_packets_per_second{{{TOP},stat="rate"}})'),
                "{{endpoint}} receiver #{{source_id}}")], "percentunit",
         "Share of packets detected missing at the receiver, before retransmission."), 12, 9)
+
+    l.row("Connection groups")
+    l.add(timeseries("Usable paths", [
+        target(name_label(f'srt_group_usable_paths{{{SEL}}}'), "{{endpoint}} {{role}} usable", "A"),
+        target(name_label(f'srt_group_expected_paths{{{SEL}}}'), "{{endpoint}} {{role}} expected", "B")],
+        "none", "Paths of each connection group that can carry the stream, against the paths it is meant to "
+                "have. One path left is At risk on the group; none is Failing."), 10, 9)
+    l.panels[-1]["fieldConfig"]["defaults"]["decimals"] = 0
+    l.panels[-1]["fieldConfig"]["overrides"] = [
+        {"matcher": {"id": "byRegexp", "options": ".* expected"},
+         "properties": [{"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [6, 4]}}]}]
+    l.add({"type": "state-timeline", "title": "Paths: own grade",
+           "description": "Each path's own grade. A path's verdict is capped at Watch while another path "
+                          "is usable, so a cut path never pages on its own; the group's verdict does.",
+           "targets": [target(name_label(f'srt_health_path_verdict{{{SEL}}}'),
+                              "{{endpoint}} {{role}} {{path}}")],
+           "fieldConfig": {"defaults": {"mappings": verdict_mappings(), "thresholds": verdict_thresholds(),
+                                        "color": {"mode": "thresholds"}, "custom": {"fillOpacity": 85,
+                                                                                   "lineWidth": 0}},
+                           "overrides": []},
+           "options": {"showValue": "never", "mergeValues": True, "rowHeight": 0.85,
+                       "legend": {"showLegend": False}}}, 14, 9)
     return dashboard("srt-fleet", "SRT fleet",
                      "Every SRT endpoint the selected exporters monitor: is it fine, or which knob?", l,
                      COMMON_VARS,
@@ -343,6 +385,34 @@ def endpoint():
            "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": True, "Value": True,
                                                                                "__name__": True}}}],
            "options": {"showHeader": True, "cellHeight": "sm"}}, 24, 4)
+
+    l.row("Connection group paths (when the endpoint is a group)")
+    l.add({"type": "stat", "title": "Usable paths",
+           "description": "Paths that can carry the stream, of the paths the group is meant to have.",
+           "targets": [target(f'srt_group_usable_paths{{{SRC}}}', "usable", "A", instant=True),
+                       target(f'srt_group_expected_paths{{{SRC}}}', "expected", "B", instant=True)],
+           "fieldConfig": {"defaults": {"decimals": 0, "color": {"mode": "fixed", "fixedColor": "text"},
+                                        "noValue": "not a group"}, "overrides": []},
+           "options": {"textMode": "value_and_name", "colorMode": "none", "graphMode": "none",
+                       "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"]}}}, 4, 9)
+    l.add({"type": "state-timeline", "title": "Paths: own grade",
+           "description": "Each path's own grade (its verdict is capped at Watch while another path is usable).",
+           "targets": [target(f'srt_health_path_verdict{{{SEL}}} {OF_GROUP}', "{{path}}")],
+           "fieldConfig": {"defaults": {"mappings": verdict_mappings(), "thresholds": verdict_thresholds(),
+                                        "color": {"mode": "thresholds"},
+                                        "custom": {"fillOpacity": 85, "lineWidth": 0}}, "overrides": []},
+           "options": {"showValue": "never", "mergeValues": True, "rowHeight": 0.8,
+                       "legend": {"showLegend": False}}}, 8, 9)
+    l.add(timeseries("Paths: bitrate", [
+        target(f'srt_sender_unique_sent_bits_per_second{{{SEL},path!="",stat="rate"}} {OF_GROUP_STAT}',
+               "{{path}} sent", "A"),
+        target(f'srt_receiver_received_bits_per_second{{{SEL},path!="",stat="rate"}} {OF_GROUP_STAT}',
+               "{{path}} received", "B")], "bps",
+        "What each path carries: Broadcast sends everything on every path; Main/Backup on the active one."), 6, 9)
+    l.add(timeseries("Paths: round-trip time", [
+        target(f'srt_connection_rtt_seconds{{{SEL},path!="",stat="mean"}} {OF_GROUP_STAT}', "{{path}}")], "s",
+        "A standby path carries only keepalives: SRT does not measure its RTT (it shows the initial "
+        "estimate) until it takes over."), 6, 9)
 
     l.row("Health indicators")
     l.add({"type": "table", "title": "Indicators",

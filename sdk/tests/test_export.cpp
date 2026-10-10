@@ -584,7 +584,8 @@ void test_render()
 
     /* Counters stay exact integers far above 2^53 / 1e9. */
     receiver.packets = UINT64_C(123'456'953'512);
-    static_cast<void>(robotweax_srt_telemetry_sampler_tick(sampler, base_unix + 125 * second / 10, second + 125 * second / 10));
+    static_cast<void>(
+        robotweax_srt_telemetry_sampler_tick(sampler, base_unix + 125 * second / 10, second + 125 * second / 10));
     {
         auto big = parse_prometheus(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS));
         check(big.valid && any_line_contains(big, "srt_receiver_unique_received_packets_total{source_id=\"2\"",
@@ -823,6 +824,129 @@ int dump_otlp()
 
 } // namespace
 
+/* Connection groups: the group's path counts and each path's own grade. */
+void test_groups()
+{
+    robotweax_srt_telemetry_sampler_config_v1 config{};
+    robotweax_srt_telemetry_sampler_config_default(&config);
+    robotweax_srt_telemetry_sampler *sampler = nullptr;
+    static_cast<void>(robotweax_srt_telemetry_sampler_create(&config, &sampler));
+
+    Fake group;
+    Fake path;
+    Fake plain_source;
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&group.engine));
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&path.engine));
+    static_cast<void>(robotweax_srt_telemetry_delta_engine_create(&plain_source.engine));
+    const robotweax_srt_telemetry_label_v1 group_labels[] = {{"stream", "bonded"}, {"group", "backup"}};
+    const robotweax_srt_telemetry_label_v1 path_labels[] = {
+        {"stream", "bonded"}, {"group", "backup"}, {"path", "lte"}};
+    const robotweax_srt_telemetry_label_v1 plain_labels[] = {{"stream", "single"}};
+    robotweax_srt_telemetry_source_config_v1 cfg{};
+    cfg.struct_size = sizeof(cfg);
+    cfg.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    cfg.sample = &fake_sample;
+    cfg.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    std::uint64_t group_id = 0;
+    std::uint64_t path_id = 0;
+    std::uint64_t plain_id = 0;
+    cfg.source_data = &group;
+    cfg.labels = group_labels;
+    cfg.label_count = 2;
+    static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &cfg, &group_id));
+    cfg.source_data = &path;
+    cfg.labels = path_labels;
+    cfg.label_count = 3;
+    static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &cfg, &path_id));
+    cfg.source_data = &plain_source;
+    cfg.labels = plain_labels;
+    cfg.label_count = 1;
+    static_cast<void>(robotweax_srt_telemetry_sampler_add_source(sampler, &cfg, &plain_id));
+
+    /* Without health, and before any group input: no group families. */
+    {
+        const auto e = parse_prometheus(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS));
+        check(e.valid && e.types.count("srt_group_usable_paths") == 0 && e.types.count("srt_health_path_verdict") == 0,
+              "groups: no group families without health");
+    }
+    static_cast<void>(robotweax_srt_telemetry_sampler_enable_health(sampler, 1));
+    robotweax_srt_telemetry_health_group_v1 input{};
+    input.struct_size = sizeof(input);
+    input.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    input.usable_paths = 1;
+    input.expected_paths = 2;
+    input.paths_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK;
+    check(robotweax_srt_telemetry_sampler_set_health_group(sampler, group_id, &input) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "groups: group input");
+    robotweax_srt_telemetry_health_context_v1 member{};
+    robotweax_srt_telemetry_health_context_init(&member);
+    member.flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER;
+    check(robotweax_srt_telemetry_sampler_set_health_context(sampler, path_id, &member) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "groups: member context");
+    for (std::uint64_t i = 0; i < 125; ++i)
+    {
+        static_cast<void>(
+            robotweax_srt_telemetry_sampler_tick(sampler, base_unix + i * second / 10, second + i * second / 10));
+    }
+    robotweax_srt_telemetry_health_status_v1 status{};
+    status.struct_size = sizeof(status);
+    status.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    check(robotweax_srt_telemetry_sampler_health_read(sampler, path_id, &status) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              (status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER) != 0,
+          "groups: a member's status carries GROUP_MEMBER, capped or not");
+    const auto path_grade = status.uncapped_verdict;
+    check(robotweax_srt_telemetry_sampler_health_read(sampler, plain_id, &status) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              (status.flags & (ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER |
+                               ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP)) == 0,
+          "groups: a plain endpoint carries neither group flag");
+
+    auto e = parse_prometheus(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS));
+    check(e.valid, "groups: exposition is valid: " + e.error);
+    check(e.types["srt_group_usable_paths"] == "gauge" && e.types["srt_group_expected_paths"] == "gauge" &&
+              e.types["srt_health_path_verdict"] == "gauge",
+          "groups: families and types");
+    const std::string group_row = "{source_id=\"1\",role=\"sender\",stream=\"bonded\",group=\"backup\"} ";
+    check(has_line(e, "srt_group_usable_paths" + group_row + "1") &&
+              has_line(e, "srt_group_expected_paths" + group_row + "2"),
+          "groups: path counts on the group's row");
+    check(has_line(e, "srt_health_path_verdict{source_id=\"2\",role=\"sender\",stream=\"bonded\",group=\"backup\","
+                      "path=\"lte\"} " +
+                          std::to_string(static_cast<int>(path_grade))),
+          "groups: a path's own grade on its row");
+    check(!any_line_contains(e, "srt_group_usable_paths{source_id=\"2\"", "") &&
+              !any_line_contains(e, "srt_group_usable_paths{source_id=\"3\"", "") &&
+              !any_line_contains(e, "srt_health_path_verdict{source_id=\"1\"", "") &&
+              !any_line_contains(e, "srt_health_path_verdict{source_id=\"3\"", ""),
+          "groups: only group rows count paths, only paths have a path grade");
+
+    const auto otlp = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_OTLP_JSON);
+    check(valid_json(otlp) && otlp.find("\"name\":\"srt.group.usable_paths\",") != std::string::npos &&
+              otlp.find("\"unit\":\"{path}\"") != std::string::npos &&
+              otlp.find("\"name\":\"srt.group.expected_paths\"") != std::string::npos &&
+              otlp.find("\"name\":\"srt.health.path_verdict\"") != std::string::npos,
+          "groups: OTLP families");
+    const auto json = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON);
+    check(valid_json(json) && json.find("\"group_member\":true") != std::string::npos &&
+              json.find("\"group_member\":false") != std::string::npos &&
+              json.find("\"group\":{\"usable_paths\":1,\"expected_paths\":2}") != std::string::npos,
+          "groups: snapshot marks paths and counts the group's paths");
+
+    /* The group input cleared: the families go with it. */
+    check(robotweax_srt_telemetry_sampler_set_health_group(sampler, group_id, nullptr) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "groups: clear group input");
+    static_cast<void>(
+        robotweax_srt_telemetry_sampler_tick(sampler, base_unix + 125 * second / 10, second + 125 * second / 10));
+    const auto cleared = parse_prometheus(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_PROMETHEUS));
+    check(cleared.valid && cleared.types.count("srt_group_usable_paths") == 0,
+          "groups: no path counts once the group input is cleared");
+
+    robotweax_srt_telemetry_sampler_destroy(sampler);
+    for (auto *f : {&group, &path, &plain_source})
+    {
+        robotweax_srt_telemetry_delta_engine_destroy(f->engine);
+    }
+}
+
 int main(const int argc, char **argv)
 {
     if (argc > 1 && std::string_view(argv[1]) == "--dump-otlp")
@@ -832,6 +956,7 @@ int main(const int argc, char **argv)
     test_names();
     test_render();
     test_otlp();
+    test_groups();
     if (failures != 0)
     {
         std::cerr << failures << " export checks failed\n";

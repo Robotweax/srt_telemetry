@@ -1046,8 +1046,9 @@ void test_group_member_cap()
     check(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context) == ROBOTWEAX_SRT_TELEMETRY_OK,
           "group member flag accepted");
     check(run.feed(Condition{}, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
-              run.status.flags == 0 && run.status.uncapped_verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK,
-          "a clean member is OK, not capped");
+              run.status.flags == ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER &&
+              run.status.uncapped_verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK,
+          "a clean member is OK, not capped, marked as a member");
     context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
     static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &context));
     check(run.feed(Condition{}, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
@@ -1055,6 +1056,29 @@ void test_group_member_cap()
               (run.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0 &&
               run.status.uncapped_verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
           "a lost member is Watch with the reason, capped from Failing");
+    {
+        /* The only usable path carries the stream alone: not capped, still
+         * a group path (its own grade is exported as the path's). */
+        Run sole(RECEIVER);
+        auto only = context;
+        only.flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH;
+        check(robotweax_srt_telemetry_health_engine_set_context(sole.engine, &only) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "sole path flag accepted");
+        check(sole.feed(Condition{}, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  sole.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST &&
+                  sole.status.flags == ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER,
+              "the sole path is not capped and stays a group path");
+        only.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH;
+        check(robotweax_srt_telemetry_health_engine_set_context(sole.engine, &only) ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "sole path without group member rejected");
+        only.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                     ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH |
+                     ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY;
+        check(robotweax_srt_telemetry_health_engine_set_context(sole.engine, &only) ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "a sole path cannot be a standby");
+    }
 
     /* A short source error keeps the uncapped grade. */
     run.now += period;
@@ -1829,6 +1853,63 @@ void test_lab_ground_truth()
     }
 }
 
+/* A reconnect that continues a row (a group member back on its path, or a
+ * socket continuing a lost source) is a new connection: the old one's trouble
+ * does not show on it. Found with the dashboard demo: a Main/Backup path
+ * reconnected after an outage, took over at once and kept the stalled
+ * acknowledgements of its broken predecessor, so the group paged. */
+void test_reconnect()
+{
+    const auto context = [](const robotweax_srt_telemetry_connection_condition connection)
+    {
+        robotweax_srt_telemetry_health_context_v1 c;
+        robotweax_srt_telemetry_health_context_init(&c);
+        c.connection = connection;
+        c.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS;
+        c.overhead_percent = 25;
+        return c;
+    };
+    const Condition clean;
+    Condition stall = clean;
+    stall.send_buffer_ratio = 1.0;
+    stall.packets_per_second = 0;
+    {
+        Run run(SENDER);
+        run.feed(clean, 3);
+        check(run.feed(stall, 4) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING, "reconnect: the stall fails first");
+        auto lost = context(ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST);
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &lost));
+        check(run.feed(stall, 1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST,
+              "reconnect: lost while broken");
+        auto connected = context(ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED);
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &connected));
+        bool stale = false;
+        bool wrong_ok = false;
+        for (int i = 0; i < 30; ++i)
+        {
+            const auto verdict = run.feed(clean, 0.1);
+            stale = stale || verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH;
+            /* Never a wrong OK: a new connection needs its own evidence. */
+            wrong_ok = wrong_ok || (i < 15 && verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK);
+        }
+        check(!stale, "reconnect: the new connection does not keep the old stall, got " + describe(run.status));
+        check(!wrong_ok, "reconnect: not OK before the new connection showed its own evidence");
+        check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "reconnect: OK once it did, got " +
+                                                                            describe(run.status));
+    }
+    {
+        /* The same connection recovering keeps the leave hold. */
+        Run run(SENDER);
+        run.feed(clean, 3);
+        run.feed(stall, 4);
+        auto connected = context(ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED);
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(run.engine, &connected));
+        check(run.feed(clean, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
+              "reconnect: a recovery on the same connection keeps its leave hold");
+    }
+}
+
 int main()
 {
     test_api();
@@ -1840,6 +1921,7 @@ int main()
     test_review_cases();
     test_group_member_cap();
     test_group_verdict();
+    test_reconnect();
     test_sampler_health();
     test_lab_ground_truth();
     if (failures != 0)
