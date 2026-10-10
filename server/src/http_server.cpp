@@ -409,7 +409,27 @@ void record_json(std::string &out, const robotweax_srt_telemetry_compact_record_
     out += ",\"reason\":";
     json_string(out, robotweax_srt_telemetry_health_reason_name(
                          static_cast<robotweax_srt_telemetry_health_reason>(r.health_reason)));
-    out += "},\"metrics\":{";
+    out += '}';
+    if (r.group != 0)
+    {
+        out += ",\"group\":{";
+        if ((r.group & ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_ROW) != 0)
+        {
+            out += "\"usable_paths\":";
+            json_u64(out, ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_USABLE_PATHS(r.group));
+            out += ",\"expected_paths\":";
+            json_u64(out, ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_EXPECTED_PATHS(r.group));
+        }
+        else
+        {
+            out += "\"capped\":";
+            out += (r.group & ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_CAPPED) != 0 ? "true" : "false";
+            out += ",\"standby\":";
+            out += (r.group & ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_STANDBY) != 0 ? "true" : "false";
+        }
+        out += '}';
+    }
+    out += ",\"metrics\":{";
     bool first_metric = true;
     const char *open = nullptr;
     for (const auto &v : compact_values)

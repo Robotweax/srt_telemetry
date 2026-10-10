@@ -1,5 +1,7 @@
 #include <robotweax/srt_telemetry_health.h>
 
+#include "health_internal.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -9,6 +11,7 @@
 #include <deque>
 #include <limits>
 #include <new>
+#include <string_view>
 
 static_assert(sizeof(robotweax_srt_telemetry_health_indicator_status_v1) == 24,
               "indicator status layout is part of the ABI");
@@ -20,6 +23,10 @@ static_assert(offsetof(robotweax_srt_telemetry_health_status_v1, suggested_value
                   offsetof(robotweax_srt_telemetry_health_status_v1, indicators) == 80,
               "health status layout is part of the ABI");
 static_assert(sizeof(robotweax_srt_telemetry_health_config_v1) == 48, "health config layout is part of the ABI");
+static_assert(sizeof(robotweax_srt_telemetry_health_group_v1) == 40 &&
+                  offsetof(robotweax_srt_telemetry_health_group_v1, paths_verdict) == 16 &&
+                  offsetof(robotweax_srt_telemetry_health_group_v1, paths_suggested_value) == 32,
+              "health group layout is part of the ABI");
 static_assert(sizeof(robotweax_srt_telemetry_health_context_v1) == 32, "health context layout is part of the ABI");
 
 namespace
@@ -341,6 +348,14 @@ struct robotweax_srt_telemetry_health_engine
     Verdict verdict = UNKNOWN;
     /* The verdict before a group member's cap (equal to verdict otherwise). */
     Verdict uncapped = UNKNOWN;
+    /* A connection group's paths (health_group_v1) and the redundancy grade
+     * derived from them, with the indicators' holds. */
+    bool has_group = false;
+    robotweax_srt_telemetry_health_group_v1 group{};
+    Hysteresis redundancy;
+    /* The group's own grade before its paths and redundancy were added (what
+     * a short statistics-read failure holds). */
+    Verdict own = UNKNOWN;
     std::uint64_t verdict_since = 0;
 };
 
@@ -1287,6 +1302,101 @@ void update_hysteresis(const Engine &engine, Hysteresis &h, const Raw &raw, cons
     }
 }
 
+/* A connection group: its own grade, the carrying paths' grade and its
+ * redundancy (see health_group_v1). Updates verdict, reason and advice.
+ * own_blocks: the group's own grade is Unknown although it can be measured
+ * (its required indicator settling or missing, or a failed read); the paths
+ * may then raise the verdict, but never turn that Unknown into OK. */
+void compose_group(Engine &engine, robotweax_srt_telemetry_health_status_v1 &status, Verdict &verdict,
+                   Reason &reason, const bool own_blocks, const std::uint64_t now)
+{
+    const auto &g = engine.group;
+    const auto advice_from_paths = [&] {
+        status.primary_indicator = -1;
+        status.knob = g.paths_knob;
+        status.knob_direction = g.paths_knob_direction;
+        status.suggested_value = g.paths_suggested_value;
+    };
+    const auto no_advice = [&] {
+        status.primary_indicator = -1;
+        status.knob = ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE;
+        status.knob_direction = ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE;
+        status.suggested_value = 0;
+    };
+
+    /* Redundancy, with the indicators' holds. */
+    if (g.usable_paths == 0)
+    {
+        /* No path at all: when one comes back, a group meant for several is
+         * on its last path, At risk at once (not a held OK from before). */
+        if (g.expected_paths >= 2)
+        {
+            engine.redundancy = {};
+            engine.redundancy.state = AT_RISK;
+            engine.redundancy.ever_known = true;
+            engine.redundancy.last_known = now;
+            engine.redundancy.latched.reason = ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST;
+        }
+    }
+    else
+    {
+        Raw redundancy;
+        redundancy.applicable = true;
+        redundancy.available = true;
+        redundancy.grade = OK;
+        if (g.expected_paths >= 2 && g.usable_paths == 1)
+        {
+            redundancy.grade = AT_RISK;
+            redundancy.advice.reason = ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST;
+        }
+        else if (g.expected_paths >= 2 && g.usable_paths >= 2 && g.usable_paths < g.expected_paths)
+        {
+            redundancy.grade = WATCH;
+            redundancy.advice.reason = ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_LOST;
+        }
+        update_hysteresis(engine, engine.redundancy, redundancy, now);
+    }
+
+    /* No usable path: the stream is gone, at once. */
+    if (g.usable_paths == 0 && g.expected_paths > 0)
+    {
+        verdict = FAILING;
+        reason = ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST;
+        no_advice();
+        return;
+    }
+
+    /* Quality: the worse of the group's own grade and the carrying paths'. */
+    const bool own_graded = verdict != UNKNOWN;
+    const bool paths_graded = g.paths_verdict != UNKNOWN;
+    const bool paths_win = paths_graded && (own_graded ? g.paths_verdict > verdict
+                                                       : !own_blocks || g.paths_verdict > OK);
+    if (paths_win)
+    {
+        verdict = g.paths_verdict;
+        reason = g.paths_reason;
+        advice_from_paths();
+    }
+    else if (!own_graded && !own_blocks && !paths_graded && g.usable_paths > 0)
+    {
+        /* Neither is graded: the paths say why (e.g. no data, settling),
+         * which beats the group's own reason (a sender group has no buffer
+         * metric). */
+        reason = g.paths_reason;
+        no_advice();
+    }
+
+    /* Redundancy, when worse than the quality, or the only grade there is.
+     * At equal grades the quality keeps its reason and advice. */
+    const auto lost = engine.redundancy.state;
+    if (lost > OK && (verdict == UNKNOWN || lost > verdict))
+    {
+        verdict = lost;
+        reason = engine.redundancy.latched.reason;
+        no_advice();
+    }
+}
+
 void set_verdict(Engine &engine, const Verdict verdict, const std::uint64_t now)
 {
     if (verdict != engine.verdict || engine.verdict_since == 0)
@@ -1400,6 +1510,53 @@ robotweax_srt_telemetry_health_engine_set_context(robotweax_srt_telemetry_health
     }
     engine->context = *context;
     engine->context.struct_size = sizeof(engine->context);
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+robotweax_srt_telemetry_error
+robotweax_srt_telemetry_internal::validate_health_group(const robotweax_srt_telemetry_health_group_v1 &group)
+{
+    if (group.struct_size < sizeof(group) || group.abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    const auto verdict = static_cast<std::int64_t>(group.paths_verdict);
+    const auto knob = static_cast<std::int64_t>(group.paths_knob);
+    const auto direction = static_cast<std::int64_t>(group.paths_knob_direction);
+    if (verdict < UNKNOWN || verdict > FAILING || knob < ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE ||
+        knob > ROBOTWEAX_SRT_TELEMETRY_KNOB_RECEIVING_APPLICATION ||
+        direction < ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE ||
+        direction > ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK ||
+        std::string_view(robotweax_srt_telemetry_health_reason_name(group.paths_reason)) == "invalid" ||
+        group.usable_paths > 65535 || group.expected_paths > 65535 || !std::isfinite(group.paths_suggested_value))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_health_engine_set_group(robotweax_srt_telemetry_health_engine *engine,
+                                                const robotweax_srt_telemetry_health_group_v1 *group)
+{
+    if (engine == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (group == nullptr)
+    {
+        engine->has_group = false;
+        engine->redundancy = {};
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    const auto error = robotweax_srt_telemetry_internal::validate_health_group(*group);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        return error;
+    }
+    engine->group = *group;
+    engine->group.struct_size = sizeof(engine->group);
+    engine->has_group = true;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
@@ -1795,8 +1952,24 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
     }
 
     /* Verdict. */
-    const auto finish = [&](const Verdict graded, const Reason reason)
+    const auto finish = [&](Verdict graded, Reason reason)
     {
+        if (engine->has_group && reason != ROBOTWEAX_SRT_TELEMETRY_REASON_ROLE_UNKNOWN &&
+            reason != ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST && reason != ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTING)
+        {
+            engine->own = graded;
+            /* Measurable (its required indicator was seen) but not graded:
+             * settling, missing, or a failed read. A sender group never sees
+             * its required metric, so its paths keep grading it. */
+            const bool own_blocks = graded == UNKNOWN && engine->required_seen;
+            compose_group(*engine, *status, graded, reason, own_blocks, now);
+        }
+        if (engine->has_group)
+        {
+            status->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP;
+            status->group_usable_paths = static_cast<std::uint16_t>(engine->group.usable_paths);
+            status->group_expected_paths = static_cast<std::uint16_t>(engine->group.expected_paths);
+        }
         /* A group member is one path of several: it never pages on its own. */
         auto verdict = graded;
         status->uncapped_verdict = graded;
@@ -1839,7 +2012,10 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
             engine->verdict != UNKNOWN)
         {
             status->primary_indicator = -1;
-            return finish(engine->uncapped, ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
+            /* A group holds its own grade; its paths and redundancy are
+             * added again. */
+            return finish(engine->has_group ? engine->own : engine->uncapped,
+                          ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
         }
         return finish(UNKNOWN, ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
     }
@@ -1978,6 +2154,10 @@ robotweax_srt_telemetry_health_reason_name(const robotweax_srt_telemetry_health_
         return "role_unknown";
     case ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY:
         return "standby";
+    case ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_LOST:
+        return "path_lost";
+    case ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST:
+        return "redundancy_lost";
     case ROBOTWEAX_SRT_TELEMETRY_REASON_RECOVERY_HEADROOM_LOW:
         return "recovery_headroom_low";
     case ROBOTWEAX_SRT_TELEMETRY_REASON_LATENCY_LOW_FOR_RTT:

@@ -839,6 +839,15 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
             /* A group member's verdict is capped at Watch; its own grade. */
             out += ",\"capped\":";
             out += (h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0 ? "true" : "false";
+            /* A connection group's own row: its paths. */
+            if ((h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0)
+            {
+                out += ",\"group\":{\"usable_paths\":";
+                json_number(out, h.group_usable_paths);
+                out += ",\"expected_paths\":";
+                json_number(out, h.group_expected_paths);
+                out += '}';
+            }
             out += ",\"uncapped_verdict\":";
             json_string(out, robotweax_srt_telemetry_health_verdict_name(h.uncapped_verdict));
             out += ",\"knob\":";

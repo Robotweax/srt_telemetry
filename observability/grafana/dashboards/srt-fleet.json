@@ -825,61 +825,69 @@
                         "text": "standby",
                         "index": 8
                       },
+                      "path_lost": {
+                        "text": "a path is down",
+                        "index": 9
+                      },
+                      "redundancy_lost": {
+                        "text": "no backup path left",
+                        "index": 10
+                      },
                       "recovery_headroom_low": {
                         "text": "little recovery headroom",
-                        "index": 9
+                        "index": 11
                       },
                       "latency_low_for_rtt": {
                         "text": "latency short for the RTT",
-                        "index": 10
+                        "index": 12
                       },
                       "unrecovered_loss": {
                         "text": "unrecovered loss",
-                        "index": 11
+                        "index": 13
                       },
                       "undecryptable": {
                         "text": "undecryptable packets",
-                        "index": 12
+                        "index": 14
                       },
                       "late_repairs": {
                         "text": "repairs arrive late",
-                        "index": 13
+                        "index": 15
                       },
                       "recovery_inefficient": {
                         "text": "repairs failing",
-                        "index": 14
+                        "index": 16
                       },
                       "overhead_budget_high": {
                         "text": "recovery bandwidth used up",
-                        "index": 15
+                        "index": 17
                       },
                       "path_capacity_exceeded": {
                         "text": "above path capacity",
-                        "index": 16
+                        "index": 18
                       },
                       "sender_backlog": {
                         "text": "send buffer backlog",
-                        "index": 17
+                        "index": 19
                       },
                       "sender_drops": {
                         "text": "sender drops",
-                        "index": 18
+                        "index": 20
                       },
                       "peer_read_stall": {
                         "text": "receiver not reading",
-                        "index": 19
+                        "index": 21
                       },
                       "application_read_stall": {
                         "text": "application not reading",
-                        "index": 20
+                        "index": 22
                       },
                       "acknowledgements_stalled": {
                         "text": "no acknowledgements",
-                        "index": 21
+                        "index": 23
                       },
                       "path_congested": {
                         "text": "path congested",
-                        "index": 22
+                        "index": 24
                       }
                     }
                   }

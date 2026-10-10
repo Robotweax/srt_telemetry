@@ -43,6 +43,16 @@ extern "C"
 #define ROBOTWEAX_SRT_TELEMETRY_COMPACT_FILTER_RECOVERED (UINT32_C(1) << 18)
 #define ROBOTWEAX_SRT_TELEMETRY_COMPACT_FILTER_UNRECOVERED (UINT32_C(1) << 19)
 
+/* compact_record_v1.group: a connection group's own row, with its usable
+ * and expected paths at the window's end (each saturating at 63). */
+#define ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_ROW (UINT16_C(1) << 15)
+#define ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_USABLE_PATHS(group) ((unsigned)(group) & 63u)
+#define ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_EXPECTED_PATHS(group) (((unsigned)(group) >> 6) & 63u)
+/* A member path whose verdict was capped at Watch during the window. */
+#define ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_CAPPED (UINT16_C(1) << 12)
+/* A member path waiting as standby at the window's end. */
+#define ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_STANDBY (UINT16_C(1) << 13)
+
     /* One window of one socket. Rates are window rates (exact totals over
      * covered time); packet counts are window totals. Floats keep about 7
      * significant digits. */
@@ -59,7 +69,8 @@ extern "C"
          * values); 0 = unknown / none. */
         uint8_t health_verdict;
         uint8_t health_reason;
-        uint16_t reserved;
+        /* COMPACT_GROUP_* bits for connection groups (0 otherwise). */
+        uint16_t group;
 
         float unique_sent_bits_per_second;
         float retransmitted_bits_per_second;

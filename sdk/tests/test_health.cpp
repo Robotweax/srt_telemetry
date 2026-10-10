@@ -1172,6 +1172,226 @@ void test_group_member_cap()
           "a single socket still fails");
 }
 
+robotweax_srt_telemetry_health_group_v1 group_input(const std::uint32_t usable, const std::uint32_t expected,
+                                                    const robotweax_srt_telemetry_health_verdict paths,
+                                                    const robotweax_srt_telemetry_health_reason reason =
+                                                        ROBOTWEAX_SRT_TELEMETRY_REASON_NONE)
+{
+    robotweax_srt_telemetry_health_group_v1 g{};
+    g.struct_size = sizeof(g);
+    g.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    g.usable_paths = usable;
+    g.expected_paths = expected;
+    g.paths_verdict = paths;
+    g.paths_reason = reason;
+    return g;
+}
+
+/* A connection group's own row: own grade, carrying path, redundancy. */
+void test_group_verdict()
+{
+    using V = robotweax_srt_telemetry_health_verdict;
+    const auto set = [](Run &run, const robotweax_srt_telemetry_health_group_v1 &g) {
+        return robotweax_srt_telemetry_health_engine_set_group(run.engine, &g);
+    };
+    {
+        /* A sender group has no buffer metric of its own: the paths grade it. */
+        Run run(SENDER);
+        Condition silent{};
+        silent.sending = false;
+        check(set(run, group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK)) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "group input accepted");
+        check(run.feed(silent, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                  (run.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0 &&
+                  run.status.group_usable_paths == 2 && run.status.group_expected_paths == 2,
+              "ungraded own row, OK paths, full redundancy: OK, got " + describe(run.status));
+
+        /* The active path at risk, with advice: the group shows it. */
+        auto g = group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK,
+                             ROBOTWEAX_SRT_TELEMETRY_REASON_LATENCY_LOW_FOR_RTT);
+        g.paths_knob = ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY;
+        g.paths_knob_direction = ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE;
+        g.paths_suggested_value = 0.4;
+        set(run, g);
+        check(run.feed(silent, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_LATENCY_LOW_FOR_RTT &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY && run.status.suggested_value == 0.4 &&
+                  run.status.primary_indicator == -1,
+              "the carrying path's grade and advice, got " + describe(run.status));
+
+        /* The last usable path: At risk / redundancy_lost after enter_hold. */
+        set(run, group_input(1, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        check(run.feed(silent, 1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "redundancy loss waits for enter_hold");
+        check(run.feed(silent, 1.5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST &&
+                  run.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE,
+              "last usable path: At risk / redundancy_lost, got " + describe(run.status));
+
+        /* Back to full redundancy: better only after leave_hold. */
+        set(run, group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        check(run.feed(silent, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK, "recovery waits for leave_hold");
+        check(run.feed(silent, 6) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "and then OK");
+
+        /* No usable path: Failing at once. */
+        set(run, group_input(0, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN, ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA));
+        check(run.feed(silent, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST,
+              "no usable path: Failing / connection_lost at once");
+
+        /* Nothing graded anywhere: Unknown with the paths' reason. */
+        Run fresh(SENDER);
+        set(fresh, group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN, ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA));
+        check(fresh.feed(silent, 0.5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN &&
+                  fresh.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA,
+              "nothing graded: Unknown with the paths' reason, got " + describe(fresh.status));
+    }
+    {
+        /* Some paths down, more than one left: Watch / path_lost. */
+        Run run(SENDER);
+        Condition silent{};
+        silent.sending = false;
+        set(run, group_input(2, 3, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        check(run.feed(silent, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_LOST,
+              "2 of 3 paths: Watch / path_lost, got " + describe(run.status));
+        /* A worse carrying path wins over Watch. */
+        set(run, group_input(2, 3, ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
+                             ROBOTWEAX_SRT_TELEMETRY_REASON_SENDER_DROPS));
+        check(run.feed(silent, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SENDER_DROPS,
+              "a failing carrying path beats path_lost");
+    }
+    {
+        /* A receiver group's own grade (what the application lost) counts. */
+        Run run(RECEIVER);
+        set(run, group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        Condition dropping{};
+        dropping.loss_per_second = 60;
+        dropping.drops_per_second = 30;
+        check(run.feed(dropping, 4) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING &&
+                  run.status.reason != ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_LOST,
+              "the group's own drops fail it although its paths look fine, got " + describe(run.status));
+        /* A single-path group (expected 1) has no redundancy to lose. */
+        Run single(RECEIVER);
+        set(single, group_input(1, 1, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        check(single.feed(Condition{}, 4) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "one expected path: no redundancy loss");
+        /* Clearing the input: an ordinary endpoint again. */
+        check(robotweax_srt_telemetry_health_engine_set_group(single.engine, nullptr) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "clear group input");
+        single.feed(Condition{}, 0.1);
+        check((single.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) == 0, "cleared: no group flag");
+    }
+    {
+        /* Review C1 #1: after a total outage, the first path back is the last
+         * one: At risk at once, never a held OK in between. */
+        Run run(SENDER);
+        Condition silent{};
+        silent.sending = false;
+        set(run, group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        run.feed(silent, 5);
+        set(run, group_input(0, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN, ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA));
+        check(run.feed(silent, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING, "all paths down: Failing");
+        set(run, group_input(1, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        bool ever_ok = false;
+        for (int i = 0; i < 25; ++i)
+        {
+            ever_ok = ever_ok || run.feed(silent, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK;
+        }
+        check(!ever_ok && run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST,
+              "one path back after an outage: At risk at once, no OK in between");
+    }
+    {
+        /* Review C1 #2: a receiver group's own loss count settles before the
+         * paths may call it OK. */
+        Run run(RECEIVER);
+        set(run, group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        Condition dropping{};
+        dropping.loss_per_second = 60;
+        dropping.drops_per_second = 30;
+        bool ever_ok = false;
+        for (int i = 0; i < 40; ++i)
+        {
+            ever_ok = ever_ok || run.feed(dropping, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK;
+        }
+        check(!ever_ok && run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_FAILING,
+              "a receiver group dropping from the start is never OK, got " + describe(run.status));
+
+        /* A failed read past enter_hold: Unknown, not the paths' OK. */
+        Run reads(RECEIVER);
+        set(reads, group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        reads.feed(Condition{}, 4);
+        robotweax_srt_telemetry_metric_sample_v1 failed{};
+        failed.struct_size = sizeof(failed);
+        failed.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        failed.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
+        for (int i = 0; i < 40; ++i)
+        {
+            reads.now += period;
+            failed.sample_monotonic_nano = reads.now;
+            static_cast<void>(robotweax_srt_telemetry_health_engine_push(reads.engine, &failed, &reads.status));
+        }
+        check(reads.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN &&
+                  reads.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR,
+              "a group whose own reads fail is Unknown, not its paths' OK, got " + describe(reads.status));
+    }
+    {
+        /* Review C1 round 2: a sender group (own grade never measurable)
+         * keeps its paths' grade through a failed read. */
+        Run run(SENDER);
+        Condition silent{};
+        silent.sending = false;
+        set(run, group_input(2, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        check(run.feed(silent, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "sender group OK");
+        robotweax_srt_telemetry_metric_sample_v1 failed{};
+        failed.struct_size = sizeof(failed);
+        failed.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        failed.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
+        run.now += period;
+        failed.sample_monotonic_nano = run.now;
+        static_cast<void>(robotweax_srt_telemetry_health_engine_push(run.engine, &failed, &run.status));
+        check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK,
+              "a sender group keeps OK through one failed read, got " + describe(run.status));
+    }
+    {
+        /* Review C1 #6: a short read failure keeps the redundancy reason. */
+        Run run(RECEIVER);
+        set(run, group_input(1, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK));
+        check(run.feed(Condition{}, 4) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK, "receiver group on its last path");
+        robotweax_srt_telemetry_metric_sample_v1 failed{};
+        failed.struct_size = sizeof(failed);
+        failed.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        failed.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
+        run.now += period;
+        failed.sample_monotonic_nano = run.now;
+        static_cast<void>(robotweax_srt_telemetry_health_engine_push(run.engine, &failed, &run.status));
+        check(run.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK &&
+                  run.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST,
+              "a short read failure keeps redundancy_lost, got " + describe(run.status));
+    }
+    {
+        Run run(SENDER);
+        auto g = group_input(1, 2, static_cast<V>(9));
+        check(robotweax_srt_telemetry_health_engine_set_group(run.engine, &g) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "invalid paths verdict rejected");
+        g = group_input(1, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, static_cast<robotweax_srt_telemetry_health_reason>(15));
+        check(robotweax_srt_telemetry_health_engine_set_group(run.engine, &g) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "invalid paths reason rejected");
+        g = group_input(70000, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK);
+        check(robotweax_srt_telemetry_health_engine_set_group(run.engine, &g) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "path counts bounded");
+        g = group_input(1, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK);
+        g.abi_version = 7;
+        check(robotweax_srt_telemetry_health_engine_set_group(run.engine, &g) == ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH,
+              "group input ABI checked");
+        check(std::string_view(robotweax_srt_telemetry_health_reason_name(
+                  ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST)) == "redundancy_lost" &&
+                  std::string_view(robotweax_srt_telemetry_health_reason_name(
+                      ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_LOST)) == "path_lost",
+              "reason names");
+    }
+}
+
 void test_sampler_health()
 {
     robotweax_srt_telemetry_sampler_config_v1 config{};
@@ -1290,6 +1510,61 @@ void test_sampler_health()
     run(0.1);
     static_cast<void>(robotweax_srt_telemetry_sampler_health_read(sampler, id, &status));
     check(status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST, "lost connection through the sampler");
+
+    /* Group input through the sampler, kept and recorded in the history. */
+    {
+        auto g = group_input(1, 2, ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK);
+        check(robotweax_srt_telemetry_sampler_set_health_group(sampler, 999, &g) == ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND,
+              "group input for an unknown source");
+        g.paths_verdict = static_cast<robotweax_srt_telemetry_health_verdict>(7);
+        check(robotweax_srt_telemetry_sampler_set_health_group(sampler, id, &g) ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "invalid group input rejected by the sampler");
+        g.paths_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK;
+        context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_health_context(sampler, id, &context));
+        check(robotweax_srt_telemetry_sampler_set_health_group(sampler, id, &g) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "group input through the sampler");
+        check(robotweax_srt_telemetry_sampler_enable_health(sampler, 0) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+                  robotweax_srt_telemetry_sampler_enable_health(sampler, 1) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "health off and on keeps the group input");
+        run(4);
+        static_cast<void>(robotweax_srt_telemetry_sampler_health_read(sampler, id, &status));
+        check(status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_AT_RISK &&
+                  status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST &&
+                  status.group_usable_paths == 1 && status.group_expected_paths == 2,
+              "group verdict through the sampler, got " + describe(status));
+        static_cast<void>(robotweax_srt_telemetry_sampler_history_read(sampler, id, 0, records.data(),
+                                                                       records.size(), &count));
+        bool group_record = false;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const auto bits = records[i].group;
+            group_record = group_record || ((bits & ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_ROW) != 0 &&
+                                            ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_USABLE_PATHS(bits) == 1 &&
+                                            ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_EXPECTED_PATHS(bits) == 2);
+        }
+        check(group_record, "history records carry the group's paths");
+        check(robotweax_srt_telemetry_sampler_set_health_group(sampler, id, nullptr) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "clear group input through the sampler");
+
+        /* A member path: capped while lost, recorded in its history. */
+        robotweax_srt_telemetry_health_context_v1 member;
+        robotweax_srt_telemetry_health_context_init(&member);
+        member.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
+        member.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER;
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_health_context(sampler, id, &member));
+        run(2.5);
+        static_cast<void>(robotweax_srt_telemetry_sampler_history_read(sampler, id, 0, records.data(),
+                                                                       records.size(), &count));
+        bool capped_record = false;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            capped_record = capped_record || ((records[i].group & ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_CAPPED) != 0 &&
+                                              (records[i].group & ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_ROW) == 0);
+        }
+        check(capped_record, "a member's history records its capping");
+    }
 
     /* Thresholds apply to current and future sources of the role. */
     context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
@@ -1564,6 +1839,7 @@ int main()
     test_unknown_and_context();
     test_review_cases();
     test_group_member_cap();
+    test_group_verdict();
     test_sampler_health();
     test_lab_ground_truth();
     if (failures != 0)
