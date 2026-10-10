@@ -178,6 +178,15 @@ struct GroupLink
     robotweax_srt_telemetry_provider provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_UNKNOWN;
     /* Member sockets' paths, kept after they leave (event details). */
     std::map<std::int32_t, std::string> path_by_socket;
+    /* Redundancy: paths meant (host, 0: automatic) and the most seen usable. */
+    std::uint32_t expected_paths = 0;
+    std::uint32_t max_usable = 0;
+    /* This tick: usable paths (distinct names, plus unnamed usable members),
+     * and the named ones alone (for the high-water mark). */
+    std::uint32_t usable_paths = 0;
+    std::uint32_t usable_named_paths = 0;
+    bool has_applied_health = false;
+    robotweax_srt_telemetry_health_group_v1 applied_health{};
     /* Members on the dashboard, by path. */
     std::map<std::string, std::unique_ptr<Endpoint>> members;
 
@@ -1027,7 +1036,7 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
         usable ? ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED : ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
     /* Capped while the group has another usable path; the last usable path
      * carries the stream alone and is graded on its own. */
-    const bool last_path = usable && link.result.usable_member_count <= 1;
+    const bool last_path = usable && link.usable_paths <= 1;
     /* A Main/Backup member other than the active one, carrying nothing, waits
      * as standby. */
     const bool standby = link.type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP && usable && !last_path &&
@@ -1037,6 +1046,101 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
                                       : ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
                                             (standby ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY : 0u);
     apply_context(embed, *member);
+}
+
+/* Rank of a path's own grade for "the best path": graded beats ungraded, then
+ * OK > Watch > At risk > Failing. */
+int path_rank(const robotweax_srt_telemetry_health_verdict verdict)
+{
+    return verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN ? -1 : 10 - static_cast<int>(verdict);
+}
+
+/* The group's health input from its paths' latest statuses (the previous
+ * tick's, 100 ms old): usable and expected paths, and the grade of the
+ * path(s) carrying the stream. Applied when it changed. Lock held. */
+void apply_group_health(Embed &embed, Endpoint &group)
+{
+    auto &link = *group.group;
+    robotweax_srt_telemetry_health_group_v1 input{};
+    input.struct_size = sizeof(input);
+    input.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    input.usable_paths = link.usable_paths;
+    link.max_usable = std::max(link.max_usable, link.usable_named_paths);
+    input.expected_paths = link.expected_paths != 0 ? link.expected_paths : link.max_usable;
+    input.paths_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
+    input.paths_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NO_DATA;
+
+    /* The path(s) carrying the stream. A standby carries nothing and never
+     * counts; nor does a status from before a path took over (still
+     * standby). Backup: the active path, Unknown when it has no row yet.
+     * Broadcast, or before any path carried: the best usable path, Unknown
+     * while a usable path is ungraded and the best graded one is not OK
+     * (that path may be the one delivering). */
+    robotweax_srt_telemetry_health_status_v1 status{};
+    status.struct_size = sizeof(status);
+    status.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    const bool backup_active = link.type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP && link.result.active_member >= 0;
+    bool found = false;
+    bool ungraded = false;
+    /* Backup: the active path's status is from before it took over. */
+    bool taking_over = false;
+    robotweax_srt_telemetry_health_status_v1 best{};
+    for (const auto &[path, member] : link.members)
+    {
+        if (!member->added || member->context.connection != ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED ||
+            (backup_active && member->socket != link.result.active_member) ||
+            robotweax_srt_telemetry_sampler_health_read(embed.sampler, member->source_id, &status) !=
+                ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            continue;
+        }
+        if (status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY)
+        {
+            taking_over = taking_over || backup_active;
+            continue;
+        }
+        if (status.uncapped_verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN)
+        {
+            ungraded = true;
+        }
+        if (!found || path_rank(status.uncapped_verdict) > path_rank(best.uncapped_verdict))
+        {
+            best = status;
+            found = true;
+        }
+    }
+    if (found && !(ungraded && best.uncapped_verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK))
+    {
+        input.paths_verdict = best.uncapped_verdict;
+        input.paths_reason = best.reason;
+        input.paths_knob = best.knob;
+        input.paths_knob_direction = best.knob_direction;
+        input.paths_suggested_value = best.suggested_value;
+    }
+    else if (found)
+    {
+        input.paths_reason = best.reason;
+    }
+    else if (taking_over && link.has_applied_health)
+    {
+        /* For the tick in which the new active path's status is still its
+         * standby one, keep the previous carrying grade. */
+        input.paths_verdict = link.applied_health.paths_verdict;
+        input.paths_reason = link.applied_health.paths_reason;
+        input.paths_knob = link.applied_health.paths_knob;
+        input.paths_knob_direction = link.applied_health.paths_knob_direction;
+        input.paths_suggested_value = link.applied_health.paths_suggested_value;
+    }
+    if (link.has_applied_health && std::memcmp(&input, &link.applied_health, sizeof(input)) == 0)
+    {
+        return;
+    }
+    if (robotweax_srt_telemetry_sampler_set_health_group(embed.sampler, group.source_id, &input) ==
+        ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        link.applied_health = input;
+        link.has_applied_health = true;
+    }
 }
 
 /* Samples a group and all its members with this tick's timestamps; the
@@ -1062,6 +1166,30 @@ void poll_group(Embed &embed, Endpoint &group, const std::uint64_t wall, const s
     link.result_wall = wall;
     try
     {
+        /* Paths, not sockets: two sockets on one path (a replacement that
+         * overlaps the old member, or duplicate names) are one path. */
+        std::vector<std::string_view> names;
+        std::uint32_t unnamed = 0;
+        for (std::uint32_t i = 0; i < result.member_count; ++i)
+        {
+            const auto &entry = link.entries[i];
+            if ((entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_USABLE) == 0 ||
+                (entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_REMOVED) != 0)
+            {
+                continue;
+            }
+            const std::string_view name = entry.path;
+            if (name.empty())
+            {
+                ++unnamed;
+            }
+            else if (std::find(names.begin(), names.end(), name) == names.end())
+            {
+                names.push_back(name);
+            }
+        }
+        link.usable_named_paths = static_cast<std::uint32_t>(names.size());
+        link.usable_paths = link.usable_named_paths + unnamed;
         for (std::uint32_t i = 0; i < result.member_count; ++i)
         {
             group_member(embed, group, link.entries[i], wall, mono);
@@ -1094,6 +1222,7 @@ void poll_group(Embed &embed, Endpoint &group, const std::uint64_t wall, const s
             journal(embed, group.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_ACTIVE_MEMBER_CHANGED,
                     ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, previous, current, 0, detail, wall, mono);
         }
+        apply_group_health(embed, group);
         if (error == ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL)
         {
             /* Members that did not fit carry over to the next tick. */
@@ -1768,7 +1897,7 @@ robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
     if ((role != ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER && role != ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER) ||
         (group->group_type != ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST &&
          group->group_type != ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP) ||
-        group->reserved != 0 ||
+        group->expected_paths > 65535 ||
         embed->labels.size() + group->label_count > ROBOTWEAX_SRT_TELEMETRY_EMBED_MAX_HOST_LABELS ||
         !valid_labels(group->labels, group->label_count, embed->labels) ||
         has_reserved_key(group->labels, group->label_count))
@@ -1807,6 +1936,7 @@ robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
     auto &link = *endpoint->group;
     link.type = group->group_type;
     link.provider = config.provider;
+    link.expected_paths = group->expected_paths;
 
     robotweax_srt_telemetry_public_srt_group_config_v1 session{};
     session.struct_size = sizeof(session);
@@ -1888,6 +2018,9 @@ robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
         std::swap(lingering.group->session, link.session);
         std::swap(lingering.monitor, endpoint->monitor);
         lingering.group->result_ok = false;
+        lingering.group->expected_paths = link.expected_paths;
+        /* A new attach: the high-water mark of usable paths starts again. */
+        lingering.group->max_usable = 0;
         lingering.socket = group->group;
         lingering.context = endpoint->context;
         /* As for a socket: lost until the new group connects. */

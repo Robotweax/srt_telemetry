@@ -201,35 +201,40 @@ tests:
         alertname: SRTStreamUngraded
         exp_alerts: []
 
-  # Connection groups: the group's own row has no verdict of its own yet,
-  # so it never alerts as ungraded; an ungraded member path still does.
+  # Connection groups: a group whose last path is left is At risk
+  # (redundancy_lost) and alerts on the group's row; its paths are capped at
+  # Watch and never alert.
   - interval: 10s
     input_series:
       - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="20",role="sender",stream="cam",group="backup"}'
-        values: '0x23'
+        values: '1 1 1 3x20'
+      - series: 'srt_health_info{job="srt",instance="enc:9810",source_id="20",role="sender",stream="cam",group="backup",verdict="at_risk",reason="redundancy_lost",knob="none",direction="none"}'
+        values: '_ _ _ 1x20'
       - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="20",role="sender",stream="cam",group="backup"}'
         values: '1x23'
       - series: 'srt_health_verdict{job="srt",instance="enc:9810",source_id="21",role="sender",stream="cam",group="backup",path="token-1"}'
-        values: '0x23'
+        values: '1 1 1 2x20'
       - series: 'srt_source_up{job="srt",instance="enc:9810",source_id="21",role="sender",stream="cam",group="backup",path="token-1"}'
         values: '1x23'
     alert_rule_test:
-      - eval_time: 130s
-        alertname: SRTStreamUngraded
+      - eval_time: 80s
+        alertname: SRTStreamAtRisk
         exp_alerts:
           - exp_labels:
               severity: warning
               job: srt
               instance: "enc:9810"
-              source_id: "21"
+              source_id: "20"
               role: sender
               stream: cam
               group: backup
-              path: token-1
             exp_annotations:
-              summary: "SRT sender 21 on enc:9810 cannot be graded"
-              description: "The health engine has no grade for this endpoint: no packets, a metric or setting the verdict needs is missing, or the connection is being set up."
-              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#verdicts"
+              summary: "SRT sender 20 on enc:9810 is at risk"
+              description: "The stream works, but a margin is close to gone. Reason: redundancy_lost."
+              runbook_url: "https://github.com/Robotweax/srt_telemetry/blob/main/docs/architecture/health-engine.md#reasons-and-advice"
+      - eval_time: 80s
+        alertname: SRTStreamFailing
+        exp_alerts: []
 
   # A target that stays down keeps its alert for hours, not just the hour
   # after its last scrape.

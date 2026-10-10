@@ -30,6 +30,7 @@ REASONS = {
     "none": "all clear", "no_data": "no data", "missing_metric": "metric missing",
     "missing_setting": "setting missing", "source_error": "statistics read failed", "connecting": "connecting",
     "connection_lost": "connection lost", "role_unknown": "role unknown", "standby": "standby",
+    "path_lost": "a path is down", "redundancy_lost": "no backup path left",
     "recovery_headroom_low": "little recovery headroom", "latency_low_for_rtt": "latency short for the RTT",
     "unrecovered_loss": "unrecovered loss", "undecryptable": "undecryptable packets",
     "late_repairs": "repairs arrive late", "recovery_inefficient": "repairs failing",

@@ -285,6 +285,14 @@ void backup_scenario()
           "one idle standby per side is OK / standby");
     check(count_with(all, {"\"path\":", "\"verdict\":\"unknown\""}) == 0, "no member is ungraded");
     check(!group_row(all, "cam-tx").empty() && !group_row(all, "cam-rx").empty(), "group rows found");
+    check(wait_for(
+              [&] {
+                  const auto row = group_row(sources(embed), "cam-tx");
+                  return has(row, "\"verdict\":\"ok\"") &&
+                         has(row, "\"group\":{\"usable_paths\":2,\"expected_paths\":2}");
+              },
+              6000),
+          "the sending group is graded through its paths: OK, 2 of 2 paths");
     check(has(group_row(all, "cam-rx"), "\"verdict\":\"ok\""), "the receiving group is graded OK");
 
     Journal journal;
@@ -327,6 +335,14 @@ void backup_scenario()
           "the cut path is Watch, capped from Failing, with the reason: " + cut.substr(0, 0));
     check(!has(group_row(all, "cam-tx"), "\"verdict\":\"failing\""),
           "the group is not Failing while the backup carries");
+    check(wait_for(
+              [&] {
+                  const auto row = group_row(sources(embed), "cam-tx");
+                  return has(row, "\"verdict\":\"at_risk\"") && has(row, "\"reason\":\"redundancy_lost\"") &&
+                         has(row, "\"usable_paths\":1,\"expected_paths\":2");
+              },
+              6000),
+          "the sending group runs on its last path: At risk / redundancy_lost");
     /* The backup took over: it is the last usable path, graded on its own;
      * its standby period left no latched grade, so it settles to OK. */
     check(wait_for(
@@ -354,6 +370,13 @@ void backup_scenario()
               },
               5000),
           "the reconnect is journaled");
+    check(wait_for(
+              [&] {
+                  const auto row = group_row(sources(embed), "cam-tx");
+                  return has(row, "\"verdict\":\"ok\"") && has(row, "\"usable_paths\":2,\"expected_paths\":2");
+              },
+              15000),
+          "redundancy back: the group returns to OK after the leave hold");
     sleep_ms(1500);
     all = sources(embed);
     journal.read(embed);
@@ -524,6 +547,7 @@ void broadcast_scenario()
     g.labels = labels;
     g.label_count = 1;
     g.path_name = &name_by_weight;
+    g.expected_paths = 3; /* one path never comes up */
     check(robotweax_srt_telemetry_embed_attach_group(embed, &g) == ROBOTWEAX_SRT_TELEMETRY_OK, "attach broadcast");
 
     std::vector<std::string> all;
@@ -567,6 +591,14 @@ void broadcast_scenario()
         }
     }
     check(both_ok, "both broadcast paths OK while both are usable");
+    check(wait_for(
+              [&] {
+                  const auto row = group_row(sources(embed), "bc");
+                  return has(row, "\"verdict\":\"watch\"") && has(row, "\"reason\":\"path_lost\"") &&
+                         has(row, "\"usable_paths\":2,\"expected_paths\":3");
+              },
+              6000),
+          "broadcast on 2 of 3 expected paths: Watch / path_lost");
 
     /* Cut "lte": without a linger its row goes at once; "sat" is the last
      * usable path and is graded on its own. */
@@ -581,6 +613,13 @@ void broadcast_scenario()
     journal.read(embed);
     check(journal.count(ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_REMOVED, "path=lte") == 1, "member_removed for lte");
     check(has(find_source(all, {"\"path\":\"sat\""}), "\"capped\":false"), "the last path is not capped");
+    check(wait_for(
+              [&] {
+                  const auto row = group_row(sources(embed), "bc");
+                  return has(row, "\"reason\":\"redundancy_lost\"") && has(row, "\"usable_paths\":1,\"expected_paths\":3");
+              },
+              6000),
+          "broadcast on 1 of 3 expected paths: redundancy_lost");
 
     /* Stop while the group is still attached; then the host closes. */
     robotweax_srt_telemetry_embed_stop(embed);
@@ -675,6 +714,52 @@ void duplicate_names_scenario()
     run.finish();
 }
 
+/* Review C1 #3: a replacement on the same path while the old member still
+ * works is one path: no inflated expected count, no lasting Watch. */
+void overlap_scenario()
+{
+    GroupRun run;
+    check(run.start(SRT_GTYPE_BACKUP), "overlap group connected");
+    auto *embed = start_embed(30);
+    robotweax_srt_telemetry_label_v1 labels[] = {{"stream", "ov"}};
+    robotweax_srt_telemetry_embed_group_v1 g;
+    robotweax_srt_telemetry_embed_group_default(&g);
+    g.group = run.group;
+    g.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    g.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
+    g.labels = labels;
+    g.label_count = 1;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &g) == ROBOTWEAX_SRT_TELEMETRY_OK, "attach overlap group");
+    check(wait_for([&] { return has(group_row(sources(embed), "ov"), "\"usable_paths\":2,\"expected_paths\":2"); },
+                   5000),
+          "two paths");
+
+    /* A third member with the primary's token: same path, overlapping. */
+    sockaddr_in address{};
+    int length = sizeof(address);
+    srt_getsockname(run.listener, reinterpret_cast<sockaddr *>(&address), &length);
+    std::vector<SRT_SOCKGROUPCONFIG> again;
+    again.push_back(srt_prepare_endpoint(nullptr, reinterpret_cast<sockaddr *>(&address), sizeof(address)));
+    again.back().weight = 20;
+    again.back().token = run.endpoints[0].token;
+    check(srt_connect_group(run.group, again.data(), 1) != SRT_ERROR, "overlapping replacement connects");
+    sleep_ms(2500);
+    const auto row = group_row(sources(embed), "ov");
+    check(has(row, "\"usable_paths\":2,\"expected_paths\":2"), "the overlap counts as two paths, not three");
+
+    /* The old member leaves: still two paths of two, no lasting Watch. */
+    srt_close(run.endpoints[0].id);
+    check(wait_for(
+              [&] {
+                  const auto r = group_row(sources(embed), "ov");
+                  return has(r, "\"usable_paths\":2,\"expected_paths\":2") && !has(r, "path_lost");
+              },
+              8000),
+          "after the old member leaves: 2 of 2 paths, no path_lost");
+    robotweax_srt_telemetry_embed_stop(embed);
+    run.finish();
+}
+
 /* group and path belong to the embed; a plain socket never continues a
  * group's row. */
 void reserved_labels_scenario()
@@ -696,6 +781,14 @@ void reserved_labels_scenario()
     check(robotweax_srt_telemetry_embed_attach(embed, socket, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER, path_key,
                                                1) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
           "attach rejects the path label");
+    robotweax_srt_telemetry_embed_group_v1 big;
+    robotweax_srt_telemetry_embed_group_default(&big);
+    big.group = socket;
+    big.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    big.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
+    big.expected_paths = 70000;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &big) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "expected_paths above 65535 rejected");
     srt_close(socket);
     robotweax_srt_telemetry_embed_stop(embed);
 }
@@ -718,6 +811,7 @@ int main(int argc, char **argv)
     broadcast_scenario();
     duplicate_names_scenario();
     listener_names_reconnect_scenario();
+    overlap_scenario();
     reserved_labels_scenario();
     srt_cleanup();
     if (failures != 0)

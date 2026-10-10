@@ -227,6 +227,32 @@ Two flags describe a member of an SRT connection group:
 The embed sets both from the group session; see
 [connection groups](embedding.md#connection-groups).
 
+### Connection groups
+
+A group's own source gets `health_group_v1` with its paths
+(`health_engine_set_group`, `sampler_set_health_group`). Its verdict is the
+worst of:
+
+| Part | From | Grade |
+| --- | --- | --- |
+| Own counters | the group's unique counters | what the application got: a receiver's unrecovered loss (a sender group has no buffer metric and stays ungraded) |
+| Carrying path | Backup: the active path; Broadcast: the best usable path (graded beats ungraded, OK beats Watch...) | that path's own, uncapped verdict, with its reason and advice |
+| Redundancy | usable vs expected paths, with the enter and leave holds | Watch / `path_lost` while some paths are down; At risk / `redundancy_lost` on the last usable path of a group meant for several |
+| No path | no usable path, with `expected_paths` > 0 | Failing / `connection_lost`, at once; the first path back is then At risk at once (on a group meant for several) |
+
+Parts that cannot be graded are left out; the verdict is Unknown only when
+none can, with the paths' reason. While the group's own counters can be
+graded but are not yet (a receiver settling after a start or a gap, or a
+failed read), the paths may make the verdict worse but never OK: never a
+wrong OK. When the paths decide, the status's indicators and
+`missing_metrics` still describe the group's own counters. The status carries `HEALTH_STATUS_GROUP`
+and the usable and expected paths. The group's handle lost or connecting
+reads as for a single socket.
+
+A group is meant for redundancy, so losing it is At risk: a warning
+(`SRTStreamAtRisk`) while the stream still works, a page
+(`SRTStreamFailing`) only when the stream is hurt or gone.
+
 ## Sampler integration
 
 ```c

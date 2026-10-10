@@ -10,13 +10,21 @@ sampler integration in `robotweax/srt_telemetry_sampler.h`.
 
 | Group | Fields |
 | --- | --- |
-| Identity | window start, window length, sample count, window quality flags, availability bits, worst health verdict and reason |
+| Identity | window start, window length, sample count, window quality flags, availability bits, worst health verdict and reason, connection-group bits |
 | Throughput | unique sent, retransmitted and unique received bit/s (window rates); link capacity (mean) |
 | Path | RTT mean and max |
 | Margins | recovery headroom min and mean, send buffer max, receive buffer min, send buffer / drop threshold max, flight / flow window max |
 | Counts (window totals) | sender loss, receiver loss, retransmitted, received retransmitted, sender drop, receiver drop, undecryptable, belated, FEC recovered, FEC unrecovered |
 
 Floats keep about 7 significant digits; counts saturate at 2³² − 1.
+
+The `group` field (`COMPACT_GROUP_*`) is 0 except for connection groups. A
+group's own row sets `COMPACT_GROUP_ROW` with its usable and expected paths at
+the window's end (6 bits each, saturating at 63). A member path sets
+`COMPACT_GROUP_CAPPED` when its verdict was capped at Watch during the window,
+and `COMPACT_GROUP_STANDBY` when it waited as standby at the window's end. The
+HTTP history renders them as `group: {usable_paths, expected_paths}` or
+`group: {capped, standby}`.
 
 `sampler_enable_history(sampler, n)` keeps a ring of `n` records per source,
 one per closed window of the shortest configured window (1 s by default).

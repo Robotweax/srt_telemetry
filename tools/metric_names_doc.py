@@ -107,6 +107,7 @@ any range.
 | `srt_health_indicator_value{indicator}` | `srt.health.indicator.value` (1) | `indicators[].value` | Each indicator's value (null when unavailable) |
 | — | — | `primary_indicator`, `missing_metrics`, `verdict_age_seconds` | Indicator behind the verdict; metrics a verdict needed but did not get; how long the verdict had held at the latest sample |
 | — | — | `capped`, `uncapped_verdict` | A connection-group member's verdict is capped at Watch (one path of several); its own grade |
+| — | — | `group.usable_paths`, `group.expected_paths` | A connection group's own row: paths that can carry the stream, and paths it is meant to have |
 
 Reason, knob and indicator names are those of
 `robotweax_srt_telemetry_health_*_name()`

@@ -175,10 +175,24 @@ broken members listed until they are closed.
   its problems alert like a single socket's.
 - A connected Main/Backup member other than the active one is OK with reason
   `standby`. It carries only keepalives, so there is nothing to grade.
-- The group's own row is graded on what the group counters allow: a receiver
-  on unrecovered loss; a sender has no buffer metric and stays Unknown. The
-  group verdict proper (from the paths) is the next part. A broken group reads
-  lost (Failing) through the connection monitor on the group handle.
+- The group's own row combines its counters (what a receiving application
+  lost), the grade of the path carrying the stream (Backup: the active one;
+  Broadcast: the best), and its redundancy, from the paths' statuses one tick
+  earlier. Fewer usable paths than expected is Watch (`path_lost`); the last
+  usable one of several is At risk (`redundancy_lost`); no usable path is
+  Failing. See [Health engine](health-engine.md#connection-groups).
+- Paths are counted by name, not by socket: a replacement that overlaps the
+  old member on the same path is one path.
+- Expected paths: `expected_paths` in `embed_group_v1`, or, with 0, the most
+  named paths seen usable at once since attach (also since a re-attach that
+  continues the row). Set it when a group may start with a path down, or when
+  paths are removed on purpose (the automatic value never goes down).
+- The carrying path's grade: Backup takes the active path, Broadcast the best
+  usable path. A path waiting as standby never counts, and while a usable
+  path is still ungraded, a Broadcast group takes no path grade worse than
+  OK (the ungraded one may be delivering).
+- A broken group reads lost (Failing) through the connection monitor on the
+  group handle.
 - Before its first connection a group has no statistics. Its row then gets
   empty samples rather than failed reads, so it shows as connecting and
   `SRTSourceStatisticsFailing` stays quiet.

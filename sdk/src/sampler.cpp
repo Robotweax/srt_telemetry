@@ -1,6 +1,7 @@
 #include <robotweax/srt_telemetry_sampler.h>
 
 #include "export_internal.h"
+#include "health_internal.h"
 #include "history_internal.h"
 
 #include <algorithm>
@@ -81,6 +82,8 @@ struct Source
     std::unique_ptr<robotweax_srt_telemetry_health_engine, HealthDeleter> health;
     bool has_health_context = false;
     robotweax_srt_telemetry_health_context_v1 health_context{};
+    bool has_health_group = false;
+    robotweax_srt_telemetry_health_group_v1 health_group{};
     bool has_health_status = false;
     robotweax_srt_telemetry_health_status_v1 health_status{};
     /* Worst verdict of the current shortest window, for the compact record;
@@ -89,6 +92,8 @@ struct Source
     bool window_has_health = false;
     robotweax_srt_telemetry_health_verdict window_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
     robotweax_srt_telemetry_health_reason window_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NONE;
+    /* COMPACT_GROUP_* bits of the current shortest window. */
+    std::uint16_t window_group = 0;
     /* Ring of compact records (empty when history is off). */
     std::vector<robotweax_srt_telemetry_compact_record_v1> history;
     std::size_t history_head = 0;
@@ -362,6 +367,7 @@ int deliver_window(void *user_data, const robotweax_srt_telemetry_window_summary
                 {
                     record.health_verdict = static_cast<std::uint8_t>(source.window_verdict);
                     record.health_reason = static_cast<std::uint8_t>(source.window_reason);
+                    record.group = source.window_group;
                 }
                 source.history_push(record);
             }
@@ -369,6 +375,7 @@ int deliver_window(void *user_data, const robotweax_srt_telemetry_window_summary
         source.window_has_health = false;
         source.window_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN;
         source.window_reason = ROBOTWEAX_SRT_TELEMETRY_REASON_NONE;
+        source.window_group = 0;
         struct Flag
         {
             std::uint32_t bit;
@@ -483,6 +490,10 @@ robotweax_srt_telemetry_error create_health(robotweax_srt_telemetry_sampler &sam
     if (source.has_health_context)
     {
         static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(engine, &source.health_context));
+    }
+    if (source.has_health_group)
+    {
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_group(engine, &source.health_group));
     }
     source.has_health_status = false;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
@@ -613,6 +624,28 @@ void fold_health(Source &source)
         source.window_verdict = status.verdict;
         source.window_reason = status.reason;
     }
+    /* Groups: paths at the latest sample, capping at any, standby at the
+     * latest. */
+    constexpr std::uint16_t latest_bits = ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_ROW | 0x0fff |
+                                          ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_STANDBY;
+    auto group = static_cast<std::uint16_t>(source.window_group & ~latest_bits);
+    if ((status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0)
+    {
+        const auto usable = std::min<unsigned>(status.group_usable_paths, 63u);
+        const auto expected = std::min<unsigned>(status.group_expected_paths, 63u);
+        group |= static_cast<std::uint16_t>(ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_ROW | usable | (expected << 6));
+    }
+    if ((status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0)
+    {
+        group |= ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_CAPPED;
+    }
+    if (source.has_health_context &&
+        (source.health_context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
+        status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY)
+    {
+        group |= ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_STANDBY;
+    }
+    source.window_group = group;
 }
 
 /* Caller holds sampler.mutex. Called for every failed sample. */
@@ -1436,6 +1469,47 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_hea
     if (source.health)
     {
         static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(source.health.get(), &source.health_context));
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_health_group(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+    const robotweax_srt_telemetry_health_group_v1 *group)
+{
+    if (sampler == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    if (group != nullptr)
+    {
+        const auto error = robotweax_srt_telemetry_internal::validate_health_group(*group);
+        if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            return error;
+        }
+    }
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    }
+    auto &source = *found->second;
+    source.has_health_group = group != nullptr;
+    if (group != nullptr)
+    {
+        source.health_group = *group;
+        source.health_group.struct_size = sizeof(source.health_group);
+    }
+    if (source.health)
+    {
+        static_cast<void>(robotweax_srt_telemetry_health_engine_set_group(
+            source.health.get(), source.has_health_group ? &source.health_group : nullptr));
     }
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

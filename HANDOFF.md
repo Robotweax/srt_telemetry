@@ -128,10 +128,12 @@ the thresholds.
 ## Next work, in priority order
 
 0. **Connection groups** (maintainer, 2026-10-09; the Network Lab's request):
-   part A, the group session, is merged (#29); part B, groups in the
-   embedding layer, follows. Next: part C, a group verdict from its paths
-   and group panels in the UI and Grafana; part D, the Lab's multi-path
-   qualification. Member paths are capped at Watch (maintainer decision);
+   part A, the group session (#29), and part B, groups in the embedding
+   layer (#31), are merged; negotiated path identifiers (#32) are reviewed.
+   Part C1 grades a group from its paths and redundancy. Next: part C2,
+   group panels in the UI and Grafana and path gauges in the exports; the
+   embed option for the path-identifier getter once #32 is merged; part D,
+   the Lab's multi-path qualification. Member paths are capped at Watch (maintainer decision);
    path names come from the host, else automatically. SRT protocol findings
    are in the maintainer's Claude project
    (`srt-protocol-findings-groups-2026-10-09.md`).

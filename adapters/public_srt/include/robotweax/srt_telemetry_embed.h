@@ -196,8 +196,10 @@ extern "C"
         robotweax_srt_telemetry_endpoint_role role;
         /* GROUP_TYPE_BROADCAST or GROUP_TYPE_BACKUP. */
         uint32_t group_type;
-        /* Must be zero. */
-        uint32_t reserved;
+        /* The paths the group is meant to have, at most 65535; fewer usable
+         * paths read as lost redundancy (Watch, or At risk on the last one).
+         * 0: the most paths seen usable at once since attach. */
+        uint32_t expected_paths;
         /* As for embed_attach; copied. */
         const robotweax_srt_telemetry_label_v1 *labels;
         size_t label_count;
@@ -214,8 +216,10 @@ extern "C"
     /* Monitors a connection group and its members from now on: one source
      * for the group (labels + group=<type>) and one per member path (also
      * path=<name>), sampled together in every tick. A member's verdict is
-     * capped at Watch; a member that reconnects on the same path continues
-     * that path's row. Group events: member_added, member_removed and
+     * capped at Watch while another path is usable; a member that reconnects
+     * on the same path continues that path's row. The group's own verdict
+     * combines its counters, the carrying path's grade and its redundancy
+     * (health_group_v1). Group events: member_added, member_removed and
      * active_member_changed on the group's source, member_state_changed on
      * the member's. Detach the group with embed_detach (its members go with
      * it) before closing it. INVALID_STATE when the handle is attached or

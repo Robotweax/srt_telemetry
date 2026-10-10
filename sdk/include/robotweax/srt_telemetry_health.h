@@ -86,6 +86,12 @@ extern "C"
         /* A connected Main/Backup member waiting as standby: it carries no
          * stream, so its indicators have nothing to grade (verdict OK). */
         ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY = 8,
+        /* A connection group lost a path; the others carry the stream
+         * (Watch). */
+        ROBOTWEAX_SRT_TELEMETRY_REASON_PATH_LOST = 9,
+        /* A connection group meant for several paths runs on its last one:
+         * the stream works with no backup left (At risk). */
+        ROBOTWEAX_SRT_TELEMETRY_REASON_REDUNDANCY_LOST = 10,
 
         ROBOTWEAX_SRT_TELEMETRY_REASON_RECOVERY_HEADROOM_LOW = 16,
         ROBOTWEAX_SRT_TELEMETRY_REASON_LATENCY_LOW_FOR_RTT = 17,
@@ -220,6 +226,10 @@ extern "C"
  * endpoint is a group member (HEALTH_CONTEXT_GROUP_MEMBER); uncapped_verdict
  * holds the grade it would have had. */
 #define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED UINT32_C(1)
+/* health_status_v1.flags: the endpoint is a connection group graded with its
+ * paths (health_group_v1); group_usable_paths and group_expected_paths are
+ * set. */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP (UINT32_C(1) << 1)
 
     typedef struct robotweax_srt_telemetry_health_status_v1
     {
@@ -244,7 +254,9 @@ extern "C"
         /* With HEALTH_STATUS_CAPPED: the verdict before the cap; otherwise
          * equal to verdict. */
         robotweax_srt_telemetry_health_verdict uncapped_verdict;
-        uint32_t reserved;
+        /* With HEALTH_STATUS_GROUP: the group's usable and expected paths. */
+        uint16_t group_usable_paths;
+        uint16_t group_expected_paths;
         robotweax_srt_telemetry_health_indicator_status_v1
             indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_SLOTS_V1];
     } robotweax_srt_telemetry_health_status_v1;
@@ -263,6 +275,43 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_health_engine_set_context(
         robotweax_srt_telemetry_health_engine *engine,
         const robotweax_srt_telemetry_health_context_v1 *context);
+
+    /* A connection group's paths, for the engine of the group's own source.
+     * The group's own counters show what the application got (a receiver's
+     * unrecovered loss); its paths show what carries the stream and how many
+     * are left. The verdict is the worst of:
+     * - the group's own grade, when graded;
+     * - paths_verdict: the grade of the path(s) carrying the stream (Backup:
+     *   the active path's own, uncapped verdict; Broadcast: the best usable
+     *   path's), with its reason and advice; UNKNOWN when none is graded;
+     * - redundancy: with expected_paths >= 2, Watch / PATH_LOST while some
+     *   paths are down, At risk / REDUNDANCY_LOST on the last usable one
+     *   (with the usual enter/leave holds);
+     * and Failing / CONNECTION_LOST at once when no path is usable and
+     * expected_paths > 0. While the group's own grade can be measured (its
+     * required indicator was seen) but is not graded (settling, or a failed
+     * read), the paths may raise the verdict above OK but never make it OK. UNKNOWN only when none of these
+     * is graded. When the paths decide, the status's indicators and
+     * missing_metrics still describe the group's own counters. */
+    typedef struct robotweax_srt_telemetry_health_group_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        /* Paths that can carry the stream now (connected, not broken). */
+        uint32_t usable_paths;
+        /* Paths the group is meant to have, at most 65535. */
+        uint32_t expected_paths;
+        robotweax_srt_telemetry_health_verdict paths_verdict;
+        robotweax_srt_telemetry_health_reason paths_reason;
+        robotweax_srt_telemetry_health_knob paths_knob;
+        robotweax_srt_telemetry_knob_direction paths_knob_direction;
+        double paths_suggested_value;
+    } robotweax_srt_telemetry_health_group_v1;
+
+    /* Sets (or, with NULL, clears) the group input. INVALID_ARGUMENT for
+     * values out of range. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_health_engine_set_group(
+        robotweax_srt_telemetry_health_engine *engine, const robotweax_srt_telemetry_health_group_v1 *group);
 
     /* Grades one indicator. For indicators where higher is worse the state
      * is the worst level whose threshold the value exceeds; where lower is

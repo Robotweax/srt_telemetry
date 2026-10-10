@@ -353,6 +353,26 @@ void test_endpoints()
               r.body.find("\"srt.receiver.recovery_headroom\":{\"min\":") != std::string::npos &&
               r.body.find("\"health\":{\"verdict\":") != std::string::npos,
           "history");
+    {
+        /* A connection group's own row: paths in the history and snapshot. */
+        robotweax_srt_telemetry_health_group_v1 group{};
+        group.struct_size = sizeof(group);
+        group.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        group.usable_paths = 1;
+        group.expected_paths = 2;
+        group.paths_verdict = ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK;
+        check(robotweax_srt_telemetry_sampler_set_health_group(s.sampler, s.id, &group) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "group input");
+        s.tick(30);
+        r = get(port, "/api/v1/sources/1/history?since_ms=0");
+        check(r.status == 200 && r.body.find("\"group\":{\"usable_paths\":1,\"expected_paths\":2}") != std::string::npos,
+              "history carries the group's paths");
+        r = get(port, "/api/v1/snapshot");
+        check(r.status == 200 && r.body.find("\"group\":{\"usable_paths\":1,\"expected_paths\":2}") != std::string::npos &&
+                  r.body.find("\"reason\":\"redundancy_lost\"") != std::string::npos,
+              "snapshot carries the group's paths and verdict");
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_health_group(s.sampler, s.id, nullptr));
+    }
     r = get(port, "/api/v1/sources/99/history?since_ms=0");
     check(r.status == 404, "history of an unknown source: 404");
     r = get(port, "/api/v1/sources/x/history");

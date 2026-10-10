@@ -8,9 +8,10 @@ group and every member, so they are linked and timestamped alike. Header:
 This is part A of group support: the adapter. Part B builds on it in the
 embedding layer (sources, labels `group`/`path`, journal events, member paths
 capped at Watch, standby paths OK; see
-[connection groups](embedding.md#connection-groups)). The group verdict from
-its paths and the group panels (part C) and the Network Lab's multi-path
-qualification (part D) follow.
+[connection groups](embedding.md#connection-groups)). Part C1 grades the
+group from its paths and redundancy
+([health engine](health-engine.md#connection-groups)); the group panels
+(part C2) and the Network Lab's multi-path qualification (part D) follow.
 
 ## What one call reads
 

@@ -246,6 +246,13 @@ extern "C"
         robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
         const robotweax_srt_telemetry_health_context_v1 *context);
 
+    /* A connection group's paths for one source (the group's own), e.g. from
+     * the embedding layer; NULL clears. Kept while health is disabled and
+     * applied when it is enabled; see health_group_v1. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_health_group(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
+        const robotweax_srt_telemetry_health_group_v1 *group);
+
     /* The status after the source's latest sample. NOT_FOUND for an unknown
      * source; INVALID_STATE when health is off or from a callback. */
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
