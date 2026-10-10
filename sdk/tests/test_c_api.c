@@ -1,8 +1,14 @@
 #include <robotweax/srt_telemetry.h>
 #include <robotweax/srt_telemetry_sampler.h>
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+_Static_assert(sizeof(robotweax_srt_telemetry_rtt_metadata_v1) == 64, "RTT metadata ABI");
+_Static_assert(offsetof(robotweax_srt_telemetry_rtt_metadata_v1, local_ackack_age_microseconds) ==
+                   32,
+               "RTT age offset");
 
 static int accept_jsonl(void *user_data, const char *line, size_t line_size)
 {

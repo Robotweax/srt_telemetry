@@ -131,6 +131,23 @@ static inline void robotweax_srt_telemetry_host_embed_path_data(robotweax_srt_te
 }
 #endif
 
+#if defined(ROBOTWEAX_SRT_RTTDATA_VERSION) && ROBOTWEAX_SRT_RTTDATA_VERSION == 1
+static inline int robotweax_srt_telemetry_host_rtt_data(int32_t socket,
+                                                        struct ROBOTWEAX_SRT_RttDataV1_ *output,
+                                                        size_t output_size)
+{
+    return robotweax_srt_rtt_data_v1((SRTSOCKET)socket, output, output_size);
+}
+/* Opt-in after build qualification; ordinary host helpers remain compatible
+ * with old providers and never resolve/link this symbol by themselves. */
+static inline robotweax_srt_telemetry_error
+robotweax_srt_telemetry_host_embed_rtt_data(robotweax_srt_telemetry_embed *embed)
+{
+    return robotweax_srt_telemetry_embed_set_rtt_data_v1(embed,
+                                                         robotweax_srt_telemetry_host_rtt_data);
+}
+#endif
+
 /* Starts an embed from a command-line style spec (see
  * robotweax_srt_telemetry_embed_config_parse), e.g. "0.0.0.0:9810" or
  * "9810,token_file=/run/srt/token". service_name names the application in

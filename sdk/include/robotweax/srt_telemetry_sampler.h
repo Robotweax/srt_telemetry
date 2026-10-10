@@ -27,6 +27,28 @@ extern "C"
 #define ROBOTWEAX_SRT_TELEMETRY_LABEL_KEY_CAPACITY 64u
 #define ROBOTWEAX_SRT_TELEMETRY_LABEL_VALUE_CAPACITY 256u
 
+    /* Optional RTT history, separate from every existing sample/metric ABI.
+     * availability: 0 unsupported/disabled, 1 getter failed, 2 snapshot.
+     * flags: 1 accepted observation, 2 local tracked ACKACK, 4 peer estimate.
+     * last_update_source: 0 none, 1 local, 2 peer. UINT64_MAX age is absent.
+     * Peer age is local acceptance age, not the unknown peer measurement age.
+     * This is instantaneous metadata, never a health input or an RTT window. */
+    typedef struct robotweax_srt_telemetry_rtt_metadata_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        uint32_t availability;
+        uint32_t flags;
+        uint32_t last_update_source;
+        int32_t native_result;
+        uint32_t smoothed_microseconds;
+        uint32_t variation_microseconds;
+        uint64_t local_ackack_age_microseconds;
+        uint64_t peer_estimate_age_microseconds;
+        uint64_t sampled_monotonic_nano;
+        uint32_t reserved[2];
+    } robotweax_srt_telemetry_rtt_metadata_v1;
+
     /* Host label such as {"site", "studio-2"}. Keys: [A-Za-z_][A-Za-z0-9_]*,
      * at most 63 bytes. Values: printable ASCII, at most 255 bytes. Labels are
      * copied when the source is added. */
@@ -304,6 +326,13 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_render(
         robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_render_options_v1 *options,
         char *buffer, size_t capacity, size_t *length);
+
+    /* Copies validated metadata under the sampler lock; NULL clears it.
+     * Must not be called from a sampler callback. Removal forgets metadata. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
+        const robotweax_srt_telemetry_rtt_metadata_v1 *metadata);
 
 #ifdef __cplusplus
 }

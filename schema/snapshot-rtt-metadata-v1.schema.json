@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Optional instantaneous RTT observation metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "availability"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "availability": {
+      "enum": [
+        "available",
+        "read_failed",
+        "unavailable"
+      ]
+    },
+    "observed": {
+      "type": "boolean"
+    },
+    "last_update_source": {
+      "enum": [
+        "none",
+        "local_ackack",
+        "peer_estimate"
+      ]
+    },
+    "smoothed_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "variation_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "local_ackack_age_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "peer_estimate_age_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "capture_age_seconds": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "observed",
+          "last_update_source",
+          "smoothed_seconds",
+          "variation_seconds",
+          "local_ackack_age_seconds",
+          "peer_estimate_age_seconds",
+          "capture_age_seconds"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "observed": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "last_update_source": {
+                  "const": "none"
+                },
+                "local_ackack_age_seconds": {
+                  "type": "null"
+                },
+                "peer_estimate_age_seconds": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "last_update_source": {
+                  "enum": [
+                    "local_ackack",
+                    "peer_estimate"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "last_update_source": {
+                  "const": "local_ackack"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "local_ackack_age_seconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "last_update_source": {
+                  "const": "peer_estimate"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "peer_estimate_age_seconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        ]
+      },
+      "else": {
+        "maxProperties": 2
+      }
+    }
+  ]
+}

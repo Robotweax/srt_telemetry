@@ -195,3 +195,11 @@ authority. **Observed data path changed** reports activity, including possible
 probing/replay; it does not prove failover. Standby means no observed DATA advance
 in the tick. The RTT chart describes an estimate with unavailable validity, source
 and age until an explicitly qualified optional metadata source is enabled.
+
+The **Current RTT estimate** tile uses the optional instantaneous metadata;
+**RTT estimate (window)** stays the existing windowed metric. Local ACKACK and
+peer-estimate acceptance ages are displayed independently, with the last update
+source. The peer's measurement age remains unknown. Path RTT tooltips describe
+current metadata beside the window estimate. Missing/read-failed metadata never
+labels a 100 ms value as initial or measured. Initial is shown only when a
+successful V1 snapshot explicitly reports no accepted observation.

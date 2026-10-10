@@ -768,6 +768,37 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
         out += s.failed ? "false" : "true";
         out += ",\"connection\":";
         json_string(out, connection_name(s.connection));
+        const auto &rtt = s.rtt_metadata;
+        out += ",\"rtt_metadata\":{\"version\":1,\"availability\":";
+        json_string(out, rtt.availability == 2   ? "available"
+                         : rtt.availability == 1 ? "read_failed"
+                                                 : "unavailable");
+        if (rtt.availability == 2)
+        {
+            out += ",\"observed\":";
+            out += (rtt.flags & 1) != 0 ? "true" : "false";
+            out += ",\"last_update_source\":";
+            json_string(out, rtt.last_update_source == 1   ? "local_ackack"
+                             : rtt.last_update_source == 2 ? "peer_estimate"
+                                                           : "none");
+            out += ",\"smoothed_seconds\":";
+            json_number(out, static_cast<double>(rtt.smoothed_microseconds) / 1e6);
+            out += ",\"variation_seconds\":";
+            json_number(out, static_cast<double>(rtt.variation_microseconds) / 1e6);
+            out += ",\"local_ackack_age_seconds\":";
+            if ((rtt.flags & 2) != 0)
+                json_number(out, static_cast<double>(rtt.local_ackack_age_microseconds) / 1e6);
+            else
+                out += "null";
+            out += ",\"peer_estimate_age_seconds\":";
+            if ((rtt.flags & 4) != 0)
+                json_number(out, static_cast<double>(rtt.peer_estimate_age_microseconds) / 1e6);
+            else
+                out += "null";
+            out += ",\"capture_age_seconds\":";
+            json_number(out, s.rtt_capture_age_seconds);
+        }
+        out += '}';
 
         if (window_usable(s))
         {

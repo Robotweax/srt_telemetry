@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <string_view>
 #include <type_traits>
@@ -411,10 +412,75 @@ void test_group_candidates_are_a_subset()
     robotweax_srt_telemetry_public_srt_session_destroy(session);
 }
 
+/* Synthetic optional-extension contract fixture, not provider qualification. */
+struct RttWire
+{
+    std::uint32_t size = 48, version = 1, flags = 0, source = 0, rtt = 100'000, variation = 50'000;
+    std::uint64_t local = UINT64_MAX, peer = UINT64_MAX;
+    std::uint32_t reserved[2] = {};
+};
+static_assert(sizeof(RttWire) == 48);
+RttWire rtt_wire;
+int rtt_native_result = 0;
+int fake_rtt(std::int32_t, ROBOTWEAX_SRT_RttDataV1_ *output, std::size_t size)
+{
+    check(size == 48, "getter receives exact versioned buffer size");
+    std::memcpy(output, &rtt_wire, sizeof(rtt_wire));
+    return rtt_native_result;
+}
+void test_optional_rtt_metadata()
+{
+    robotweax_srt_telemetry_rtt_metadata_v1 out{};
+    out.struct_size = sizeof(out);
+    out.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    const auto read = [&]
+    { return robotweax_srt_telemetry_public_srt_read_rtt_metadata_v1(42, fake_rtt, 123, &out); };
+    check(robotweax_srt_telemetry_public_srt_read_rtt_metadata_v1(42, nullptr, 123, &out) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              out.availability == 0,
+          "missing optional getter is unavailable");
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.availability == 2 && out.flags == 0 &&
+              out.local_ackack_age_microseconds == UINT64_MAX,
+          "100 ms default is available estimate without observation");
+    rtt_wire.flags = 3;
+    rtt_wire.source = 1;
+    rtt_wire.local = 100;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.flags == 3 &&
+              out.smoothed_microseconds == 100'000,
+          "numeric 100 ms can also be an observed local value");
+    rtt_wire.flags = 7;
+    rtt_wire.source = 2;
+    rtt_wire.peer = 200;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.local_ackack_age_microseconds == 100 &&
+              out.peer_estimate_age_microseconds == 200,
+          "mixed history preserves separate ages");
+    rtt_wire.peer = UINT64_MAX;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE && out.availability == 1 &&
+              out.flags == 0,
+          "inconsistent presence rejected without stale prior metadata");
+    rtt_wire = {};
+    rtt_wire.version = 2;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE && out.availability == 1,
+          "unknown version fails explicitly");
+    rtt_wire = {};
+    rtt_native_result = -1;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE && out.flags == 0 &&
+              out.native_result == -1,
+          "native failure retains no freshness");
+    rtt_native_result = 0;
+    rtt_wire = {};
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.flags == 0 &&
+              out.peer_estimate_age_microseconds == UINT64_MAX,
+          "new connection resets observation history");
+    out.struct_size = 1;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "short result rejected");
+}
+
 } // namespace
 
 int main()
 {
+    test_optional_rtt_metadata();
     test_non_destructive_mapping_and_delta();
     test_provider_failure_is_explicit();
     test_capability_and_provider_validation();

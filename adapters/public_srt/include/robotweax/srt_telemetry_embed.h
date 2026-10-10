@@ -270,6 +270,15 @@ extern "C"
      * NULL: nothing done. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API void robotweax_srt_telemetry_embed_stop(robotweax_srt_telemetry_embed *embed);
 
+    /* Enable only after qualifying this optional getter in the selected SRT
+     * build. Serializes with sampling; NULL disables and clears metadata.
+     * Existing config/sample ABI layouts are unchanged. Do not call from
+     * embedding or sampler callbacks; the selected library must remain loaded. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_embed_set_rtt_data_v1(
+        robotweax_srt_telemetry_embed *embed,
+        robotweax_srt_telemetry_public_srt_rtt_data_v1_fn getter);
+
 #ifdef __cplusplus
 }
 #endif

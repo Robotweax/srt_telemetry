@@ -381,6 +381,7 @@ struct robotweax_srt_telemetry_embed
 {
     robotweax_srt_telemetry_embed_config_v1 config{};
     Labels labels;
+    robotweax_srt_telemetry_public_srt_rtt_data_v1_fn rtt_getter = nullptr;
     std::string service_name;
     robotweax_srt_telemetry_sampler *sampler = nullptr;
     robotweax_srt_telemetry_http_server *server = nullptr;
@@ -1240,6 +1241,20 @@ void poll_group(Embed &embed, Endpoint &group, const std::uint64_t wall, const s
     }
 }
 
+void poll_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
+{
+    if (endpoint.kind == EndpointKind::group)
+        return;
+    robotweax_srt_telemetry_rtt_metadata_v1 metadata{};
+    metadata.struct_size = sizeof(metadata);
+    metadata.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    if (!endpoint.retired && endpoint.socket >= 0)
+        static_cast<void>(robotweax_srt_telemetry_public_srt_read_rtt_metadata_v1(
+            endpoint.socket, embed.rtt_getter, mono, &metadata));
+    static_cast<void>(robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
+        embed.sampler, endpoint.source_id, &metadata));
+}
+
 void run(Embed &embed)
 {
     const auto period = std::chrono::nanoseconds(embed.period_nano);
@@ -1258,9 +1273,12 @@ void run(Embed &embed)
         for (auto &[socket, endpoint] : embed.active)
         {
             poll(embed, *endpoint, wall, mono);
+            poll_rtt(embed, *endpoint, mono);
             if (endpoint->kind == EndpointKind::group)
             {
                 poll_group(embed, *endpoint, wall, mono);
+                for (auto &[path, member] : endpoint->group->members)
+                    poll_rtt(embed, *member, mono);
             }
         }
         for (auto it = embed.retired.begin(); it != embed.retired.end();)
@@ -1272,6 +1290,7 @@ void run(Embed &embed)
             }
             else
             {
+                poll_rtt(embed, **it, mono);
                 ++it;
             }
         }
@@ -2177,4 +2196,23 @@ extern "C" void robotweax_srt_telemetry_embed_stop(robotweax_srt_telemetry_embed
     {
         teardown(embed);
     }
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_rtt_data_v1(
+    robotweax_srt_telemetry_embed *embed, robotweax_srt_telemetry_public_srt_rtt_data_v1_fn getter)
+{
+    if (embed == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(embed->mutex);
+    embed->rtt_getter = getter;
+    for (auto &[socket, endpoint] : embed->active)
+    {
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
+            embed->sampler, endpoint->source_id, nullptr));
+        if (endpoint->group)
+            for (auto &[path, member] : endpoint->group->members)
+                static_cast<void>(robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
+                    embed->sampler, member->source_id, nullptr));
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

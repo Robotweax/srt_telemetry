@@ -1677,15 +1677,29 @@
       sub ? h('div', { class: 's num', text: sub }) : null);
   }
 
+  function rttProvenance(src) {
+    const m = src.rtt_metadata;
+    if (!m || m.availability === 'unavailable') return 'Validity, source and sample age unavailable';
+    if (m.availability !== 'available') return 'RTT metadata read failed; validity and age unavailable';
+    if (!m.observed) return 'Initial estimate; no accepted RTT observation';
+    const capture = Number.isFinite(m.capture_age_seconds) ? m.capture_age_seconds : 0;
+    const parts = [];
+    if (Number.isFinite(m.local_ackack_age_seconds)) parts.push(`local ACKACK ${fmtAge(m.local_ackack_age_seconds + capture)} ago`);
+    if (Number.isFinite(m.peer_estimate_age_seconds)) parts.push(`peer estimate accepted ${fmtAge(m.peer_estimate_age_seconds + capture)} ago (peer measurement age unknown)`);
+    parts.push(`last update: ${m.last_update_source === 'local_ackack' ? 'local ACKACK' : 'peer estimate'}`);
+    return parts.join(' · ');
+  }
+
   function tilesFor(src) {
     const rtt = windowStat(src, 'srt.connection.rtt', 'mean', 'last');
     const rttMax = windowStat(src, 'srt.connection.rtt', 'max');
     const latency = latencyOf(src);
     const ratio = rtt && latency ? `${fmtNumber(latency / rtt, 1)} × RTT` : '';
     const counters = src.counters || {};
+    const rttNote = rttProvenance(src);
     const list = [];
     if (src.role !== 'sender' && src.role !== 'receiver') {
-      list.push(tile('RTT', fmtDuration(rtt), rttMax !== null ? `max ${fmtDuration(rttMax)}` : ''));
+      list.push(tile('RTT estimate (window)', fmtDuration(rtt), rttMax !== null ? `max ${fmtDuration(rttMax)}` : ''));
       list.push(tile('Latency', fmtDuration(latency), ratio));
     } else if (src.role === 'sender') {
       const unique = windowStat(src, 'srt.sender.unique_sent.bitrate', 'rate');
@@ -1696,7 +1710,7 @@
         fmtPacketRate(windowStat(src, 'srt.sender.retransmitted.packet_rate', 'rate'))));
       list.push(tile('Loss reported', fmtPercent(lossShare(src)), fmtPacketRate(windowStat(src, 'srt.sender.loss_reported.packet_rate', 'rate'))));
       list.push(tile('Dropped (too late)', fmtPacketRate(dropRate(src)), `${fmtCount(counters['srt.sender.dropped.packets'])} since connect`));
-      list.push(tile('RTT', fmtDuration(rtt), rttMax !== null ? `max ${fmtDuration(rttMax)}` : ''));
+      list.push(tile('RTT estimate (window)', fmtDuration(rtt), rttMax !== null ? `max ${fmtDuration(rttMax)}` : ''));
       list.push(tile('Latency (receiver)', fmtDuration(latency), ratio));
       list.push(tile('Send buffer', fmtDuration(windowStat(src, 'srt.sender.buffer.duration', 'max', 'mean')),
         `${fmtPercent(windowStat(src, 'srt.sender.buffer.drop_threshold_utilization', 'max'))} of the drop limit`));
@@ -1712,7 +1726,7 @@
       list.push(tile('Unrecovered', fmtPacketRate(dropRate(src)), `${fmtCount(counters['srt.receiver.dropped.packets'])} since connect`));
       list.push(tile('Repairs received', fmtPacketRate(windowStat(src, 'srt.receiver.retransmitted.packet_rate', 'rate')),
         `${fmtCount(counters['srt.receiver.belated.packets'])} arrived too late`));
-      list.push(tile('RTT', fmtDuration(rtt), rttMax !== null ? `max ${fmtDuration(rttMax)}` : ''));
+      list.push(tile('RTT estimate (window)', fmtDuration(rtt), rttMax !== null ? `max ${fmtDuration(rttMax)}` : ''));
       list.push(tile('Latency', fmtDuration(latency), ratio));
       list.push(tile('Receive buffer', fmtDuration(windowStat(src, 'srt.receiver.buffer.duration', 'min', 'mean')),
         `headroom ${fmtPercent(windowStat(src, 'srt.receiver.recovery_headroom', 'min', 'mean'))}`));
@@ -1721,6 +1735,7 @@
       const fec = windowStat(src, 'srt.receiver.fec_recovered.packet_rate', 'rate');
       if (fec) list.push(tile('FEC rebuilt', fmtPacketRate(fec), `${fmtPacketRate(windowStat(src, 'srt.receiver.fec_unrecovered.packet_rate', 'rate'))} not rebuilt`));
     }
+    list.push(tile('Current RTT estimate', src.rtt_metadata?.availability === 'available' ? fmtDuration(src.rtt_metadata.smoothed_seconds) : '—', rttNote));
     return list;
   }
 
@@ -1896,6 +1911,7 @@
           const standby = m.health?.reason === 'standby';
           const label = `Path ${pathName(m)}: ${standby ? 'standby' : VERDICT_LABEL[own]}. Open details.`;
           if (row.tr.getAttribute('aria-label') !== label) row.tr.setAttribute('aria-label', label);
+          row.cells[4].title = `Window estimate. Current metadata: ${rttProvenance(m)}`;
           const texts = [pathName(m), null, `${m.connection || 'unreported'}${m.up ? '' : ' · read failing'}`,
             fmtBitrate(windowStat(m, primaryBitrateKey(m.role), 'rate')),
             fmtDuration(windowStat(m, 'srt.connection.rtt', 'mean', 'last')),

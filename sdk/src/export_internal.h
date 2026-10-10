@@ -3,6 +3,7 @@
 
 #include <robotweax/srt_telemetry_export.h>
 #include <robotweax/srt_telemetry_health.h>
+#include <robotweax/srt_telemetry_sampler.h>
 
 #include <cstdint>
 #include <string>
@@ -27,6 +28,8 @@ struct ExportSource
     robotweax_srt_telemetry_window_summary_v1 window{};
     bool has_metrics = false;
     robotweax_srt_telemetry_metric_sample_v1 metrics{};
+    robotweax_srt_telemetry_rtt_metadata_v1 rtt_metadata{};
+    double rtt_capture_age_seconds = 0;
     bool has_raw = false;
     robotweax_srt_telemetry_raw_sample_v1 raw{};
     bool has_ext = false;
