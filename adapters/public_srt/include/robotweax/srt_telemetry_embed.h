@@ -140,6 +140,16 @@ extern "C"
          * robotweax_srt_telemetry_host_embed_functions fills them. */
         robotweax_srt_telemetry_public_srt_group_data_fn group_data;
         robotweax_srt_telemetry_public_srt_getsockname_fn getsockname;
+        /* Optional, Robotweax SRT with negotiated path labels (SRT protocol
+         * PR #298): robotweax_srt_group_path_data_v1 of the same library as
+         * the functions above. Set, a group path is named from the caller's
+         * negotiated label ("pathid-<hex>", the same on both sides) when the
+         * host's path_name gives no name; the peers must enable labels
+         * themselves (SRTO_ROBOTWEAX_PATHID). NULL: host name, token,
+         * addresses. Only with provider ROBOTWEAX_SRT, else embed_start
+         * returns INVALID_ARGUMENT. robotweax_srt_telemetry_host_embed_path_data
+         * (srt_telemetry_public_srt_host.h) fills it where srt.h has it. */
+        robotweax_srt_telemetry_public_srt_group_path_data_v1_fn group_path_data;
     } robotweax_srt_telemetry_embed_config_v1;
 
     /* Defaults as above; the SRT functions are left NULL. */

@@ -170,6 +170,31 @@ broken or gone. That happens with duplicate names, and with a reconnect under
 the same name before the broken member leaves the list; Robotweax SRT keeps
 broken members listed until they are closed.
 
+**Negotiated path labels** (Robotweax SRT with protocol PR #298, not
+v0.2.8): the caller labels each path in the handshake, so the accepting side
+can use the same names without host code. The host enables labels on both
+peers and passes the provider's getter to the embed:
+
+```c
+/* both peers */
+srt_setsockflag(group_or_listener, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof yes);
+/* caller, per endpoint */
+srt_config_add(endpoint.config, SRTO_ROBOTWEAX_PATHID, "lte", 3);
+
+robotweax_srt_telemetry_host_embed_functions(&config);
+robotweax_srt_telemetry_host_embed_path_data(&config); /* sets group_path_data */
+```
+
+A labelled path is named `pathid-<hex of the label>` (`pathid-6c7465` for
+`lte`) on both sides, unless the host's `path_name` gives a name. The helper
+exists only when `srt.h` declares the getter (`ROBOTWEAX_SRT_PATHID_NEGOTIATED`).
+`group_path_data` with any provider other than Robotweax SRT is refused at
+`embed_start`. Passing the getter is the host's qualification of
+`CAP_GROUP_PATH_IDENTIFIERS_V1`: take it from the library that owns the
+sockets, at a revision with the protocol; the group sessions then carry the
+capability. See [path names](public-srt-group.md#path-names) for the order
+and the pending state while a label is not negotiated yet.
+
 **Health.**
 - A member path is capped at Watch while the group has another usable path:
   losing or impairing one path is what a group is built to survive. The

@@ -796,6 +796,150 @@ void reserved_labels_scenario()
     robotweax_srt_telemetry_embed_stop(embed);
 }
 
+int no_path_data(std::int32_t, struct ROBOTWEAX_SRT_GroupPathDataV1_ *, std::size_t *)
+{
+    return -1;
+}
+
+/* Negotiated path labels are a Robotweax SRT extension: the getter is refused
+ * with another provider. */
+void path_data_provider_scenario()
+{
+    robotweax_srt_telemetry_embed_config_v1 config;
+    robotweax_srt_telemetry_embed_config_default(&config);
+    robotweax_srt_telemetry_host_embed_functions(&config);
+    config.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
+    config.provider = ROBOTWEAX_SRT_TELEMETRY_PROVIDER_HAIVISION_SRT;
+    config.group_path_data = &no_path_data;
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT &&
+              embed == nullptr,
+          "start rejects a path-label getter for Haivision SRT");
+}
+
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+/* Robotweax SRT with negotiated labels: both sides name the paths from the
+ * caller's labels, so the receiver's rows match the sender's without host
+ * code. */
+void negotiated_labels_scenario()
+{
+    const SRTSOCKET listener = srt_create_socket();
+    int yes = 1;
+    srt_setsockflag(listener, SRTO_GROUPCONNECT, &yes, sizeof(yes));
+    const SRTSOCKET group = srt_create_group(SRT_GTYPE_BROADCAST);
+    check(srt_setsockflag(group, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0 &&
+              srt_setsockflag(listener, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0,
+          "labels: both peers require path labels");
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+    int length = sizeof(address);
+    check(srt_bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0 &&
+              srt_listen(listener, 4) == 0 &&
+              srt_getsockname(listener, reinterpret_cast<sockaddr *>(&address), &length) == 0,
+          "labels: listen");
+    std::atomic<SRTSOCKET> accepted{SRT_INVALID_SOCK};
+    std::atomic<bool> stop{false};
+    std::thread receiver([&] {
+        sockaddr_storage peer{};
+        int size = sizeof(peer);
+        const SRTSOCKET socket = srt_accept(listener, reinterpret_cast<sockaddr *>(&peer), &size);
+        if (socket == SRT_INVALID_SOCK)
+        {
+            return;
+        }
+        accepted = socket;
+        int timeout = 100;
+        srt_setsockflag(socket, SRTO_RCVTIMEO, &timeout, sizeof(timeout));
+        char buffer[1500];
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_recvmsg2(socket, buffer, sizeof(buffer), &control));
+        }
+    });
+    std::vector<SRT_SOCKGROUPCONFIG> endpoints;
+    for (const char *label : {"lte", "sat"})
+    {
+        endpoints.push_back(srt_prepare_endpoint(nullptr, reinterpret_cast<sockaddr *>(&address), sizeof(address)));
+        endpoints.back().config = srt_create_config();
+        check(srt_config_add(endpoints.back().config, SRTO_ROBOTWEAX_PATHID, label,
+                             static_cast<int>(std::strlen(label))) == 0,
+              std::string("labels: endpoint label ") + label);
+    }
+    const bool connected = srt_connect_group(group, endpoints.data(), 2) != SRT_ERROR;
+    for (auto &endpoint : endpoints)
+    {
+        srt_delete_config(endpoint.config);
+    }
+    check(connected, "labels: connect group");
+    std::thread sender([&] {
+        char payload[1316];
+        std::memset(payload, 0x47, sizeof(payload));
+        auto next = std::chrono::steady_clock::now();
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_sendmsg2(group, payload, sizeof(payload), &control));
+            next += std::chrono::milliseconds(2);
+            std::this_thread::sleep_until(next);
+        }
+    });
+    check(wait_for([&] { return accepted != SRT_INVALID_SOCK; }, 5000), "labels: accepted");
+
+    robotweax_srt_telemetry_embed_config_v1 config;
+    robotweax_srt_telemetry_embed_config_default(&config);
+    robotweax_srt_telemetry_host_embed_functions(&config);
+    robotweax_srt_telemetry_host_embed_path_data(&config);
+    config.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
+    config.linger_seconds = 0;
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "labels: embed start");
+    robotweax_srt_telemetry_label_v1 labels[] = {{"stream", "labeled"}};
+    robotweax_srt_telemetry_embed_group_v1 g;
+    robotweax_srt_telemetry_embed_group_default(&g);
+    g.group = group;
+    g.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    g.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST;
+    g.labels = labels;
+    g.label_count = 1;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &g) == ROBOTWEAX_SRT_TELEMETRY_OK, "labels: attach sender");
+    g.group = accepted;
+    g.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &g) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "labels: attach receiver");
+    /* "lte" and "sat" as lowercase hexadecimal. */
+    std::vector<std::string> all;
+    const bool named = wait_for(
+        [&] {
+            all = sources(embed);
+            int found = 0;
+            for (const char *role : {"\"role\":\"sender\"", "\"role\":\"receiver\""})
+            {
+                for (const char *path : {"\"path\":\"pathid-6c7465\"", "\"path\":\"pathid-736174\""})
+                {
+                    found += count_with(all, {"\"stream\":\"labeled\"", role, path});
+                }
+            }
+            return found == 4;
+        },
+        5000);
+    check(named, "labels: both sides name the paths from the caller's labels");
+    check(count_with(all, {"\"stream\":\"labeled\"", "\"path\":"}) == 4,
+          "labels: no other path rows (no address names on the receiver)");
+    robotweax_srt_telemetry_embed_stop(embed);
+    stop = true;
+    sender.join();
+    srt_close(group);
+    srt_close(listener);
+    receiver.join();
+    if (accepted != SRT_INVALID_SOCK)
+    {
+        srt_close(accepted);
+    }
+}
+#endif
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -816,6 +960,10 @@ int main(int argc, char **argv)
     listener_names_reconnect_scenario();
     overlap_scenario();
     reserved_labels_scenario();
+    path_data_provider_scenario();
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+    negotiated_labels_scenario();
+#endif
     srt_cleanup();
     if (failures != 0)
     {
