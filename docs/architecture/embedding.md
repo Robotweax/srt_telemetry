@@ -338,3 +338,29 @@ and frees the embed. Call it before `srt_cleanup`.
 Group `active_member_changed` details begin with `inferred; authority=unavailable; `;
 packet-counter inference does not prove a sender promotion. The UI labels these
 events **Observed data path changed**. No event identifier or binary layout changes.
+
+
+## Optional Standby RTT metadata
+
+After qualifying the selected provider build, opt in independently:
+
+```c
+#if defined(ROBOTWEAX_SRT_STANDBY_RTT_VERSION) && ROBOTWEAX_SRT_STANDBY_RTT_VERSION == 1
+robotweax_srt_telemetry_host_embed_standby_rtt_data(embed);
+#endif
+```
+
+This helper is intentionally absent from the ordinary configuration helper.
+Alternatively inject the exact compatible getter using
+`robotweax_srt_telemetry_embed_set_standby_rtt_data_v1`; the library must remain
+loaded. Null disables and clears observations. The setter serializes with
+sampling and must not run from callbacks. Each group member is polled separately;
+group aggregate rows remain unavailable. Ordinary disabled connected sockets
+can report an available getter with monitoring not negotiated.
+
+The independent metadata and snapshot JSON carry a single measured RTT, its
+age/freshness and **last attempt** outcome. Neither `MEASURED` nor `PAUSED`
+establishes current monitoring eligibility. These observations do not feed the
+existing RTT health flag or estimator, DATA health, send authority, windows,
+Prometheus or OTLP metrics. See the [field contract](srt-stats-field-map.md#optional-standby-rtt-observation)
+for null ages, lifecycle, capacity and freshness boundaries.

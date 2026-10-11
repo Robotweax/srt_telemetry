@@ -3,6 +3,7 @@
 #include "export_internal.h"
 #include "health_internal.h"
 #include "history_internal.h"
+#include "standby_metadata_internal.h"
 
 #include <algorithm>
 #include <array>
@@ -71,6 +72,8 @@ struct Source
     std::string prometheus_labels;
     bool has_latest_metrics = false;
     robotweax_srt_telemetry_metric_sample_v1 latest_metrics{};
+    robotweax_srt_telemetry_standby_rtt_metadata_v1 standby_rtt_metadata{};
+    std::uint64_t standby_rtt_updated_steady = 0;
     robotweax_srt_telemetry_rtt_metadata_v1 rtt_metadata{};
     std::uint64_t rtt_updated_steady = 0;
     robotweax_srt_telemetry_group_send_metadata_v1 group_send_metadata{};
@@ -1741,6 +1744,9 @@ robotweax_srt_telemetry_error render_impl(robotweax_srt_telemetry_sampler *sampl
                 out.metrics = source.latest_metrics;
                 out.has_raw = source.has_latest_raw;
                 out.raw = source.latest_raw;
+                out.standby_rtt_metadata = source.standby_rtt_metadata;
+                out.standby_rtt_capture_age_seconds =
+                    static_cast<double>(now_steady - source.standby_rtt_updated_steady) / 1e9;
                 out.rtt_metadata = source.rtt_metadata;
                 out.rtt_capture_age_seconds =
                     static_cast<double>(now_steady - source.rtt_updated_steady) / 1e9;
@@ -2003,5 +2009,26 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_gro
     found->second->group_send_metadata =
         metadata == nullptr ? robotweax_srt_telemetry_group_send_metadata_v1{} : *metadata;
     found->second->group_send_updated_steady = steady_nano();
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_sampler_set_standby_rtt_metadata_v1(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+    const robotweax_srt_telemetry_standby_rtt_metadata_v1 *metadata)
+{
+    if (sampler == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    if (in_callback_of(sampler))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    if (metadata != nullptr && !robotweax_srt_telemetry_internal::valid_standby_metadata(*metadata))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    found->second->standby_rtt_metadata =
+        metadata == nullptr ? robotweax_srt_telemetry_standby_rtt_metadata_v1{} : *metadata;
+    found->second->standby_rtt_updated_steady = steady_nano();
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

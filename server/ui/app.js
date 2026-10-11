@@ -373,6 +373,7 @@
     sources: new Map(),
     generatedMs: 0,
     lastDataAt: 0,
+    lastSnapshotSteadyMs: 0,
     series: new Map(),
     events: [],
     eventSequences: new Set(),
@@ -631,6 +632,7 @@
     if (!snapshot || !Array.isArray(snapshot.sources)) return;
     state.generatedMs = snapshot.generated_unix_ms || Date.now();
     state.lastDataAt = Date.now();
+    state.lastSnapshotSteadyMs = performance.now();
     const seen = new Set();
     for (const src of snapshot.sources) {
       seen.add(src.id);
@@ -1691,6 +1693,31 @@
     return parts.join(' · ');
   }
 
+  // Last attempt outcome is history; it cannot identify a current DATA pause.
+  function standbyRttDisplay(src) {
+    const m = src.standby_rtt;
+    if (!m || m.availability === 'unavailable') return { value: '—', note: 'Standby RTT unavailable' };
+    if (m.availability !== 'available') return { value: '—', note: 'Standby RTT read failed' };
+    const labels = { none: 'none', pending: 'pending', measured: 'measured', timeout: 'timeout',
+      send_skipped: 'send skipped', paused: 'paused', id_exhausted: 'ID exhausted', capacity: 'capacity limit' };
+    const parts = [];
+    if (!m.negotiated) parts.push('Monitoring not negotiated');
+    else if (!m.admitted) parts.push('Monitoring capacity limited');
+    else if (!m.observed) parts.push('No accepted measurement');
+    if (m.observed) {
+      const age = Number.isFinite(m.age_seconds) && Number.isFinite(m.capture_age_seconds)
+        ? m.age_seconds + m.capture_age_seconds +
+          Math.max(0, (performance.now() - state.lastSnapshotSteadyMs) / 1000) : null;
+      const fresh = m.fresh === true && age !== null && age <= 3;
+      parts.push(age === null ? 'measurement age unavailable' : `${fmtAge(age)} old · ${fresh ? 'fresh' : 'stale'}`);
+      parts.push(`${m.samples} accepted samples`);
+    }
+    if (m.terminal) parts.push('retained terminal observation');
+    parts.push(`last attempt: ${labels[m.last_outcome] || 'unknown'}`);
+    parts.push('separate from DATA RTT and health');
+    return { value: m.observed ? fmtDuration(m.rtt_seconds) : '—', note: parts.join(' · ') };
+  }
+
   function tilesFor(src) {
     const rtt = windowStat(src, 'srt.connection.rtt', 'mean', 'last');
     const rttMax = windowStat(src, 'srt.connection.rtt', 'max');
@@ -1737,6 +1764,10 @@
       if (fec) list.push(tile('FEC rebuilt', fmtPacketRate(fec), `${fmtPacketRate(windowStat(src, 'srt.receiver.fec_unrecovered.packet_rate', 'rate'))} not rebuilt`));
     }
     list.push(tile('Current RTT estimate', src.rtt_metadata?.availability === 'available' ? fmtDuration(src.rtt_metadata.smoothed_seconds) : '—', rttNote));
+    if (!src.labels?.group || src.labels?.path) {
+      const standby = standbyRttDisplay(src);
+      list.push(tile('Standby RTT observation', standby.value, standby.note));
+    }
     return list;
   }
 
@@ -1756,7 +1787,8 @@
           h('th', { class: 'r', text: 'Bitrate' }),
           h('th', { class: 'r', text: 'RTT' }),
           h('th', { class: 'r', text: 'Loss' }),
-          h('th', { class: 'r', text: 'Dropped' }))),
+          h('th', { class: 'r', text: 'Dropped' }),
+          h('th', { class: 'r', text: 'Standby RTT' }))),
         pathsBody)));
     const head = h('div', { class: 'source-head' });
     const hero = h('div', { class: 'card hero' });
@@ -1904,7 +1936,7 @@
           let row = pathRows.get(m.id);
           if (!row) {
             const cells = [h('td', { class: 'path-name' }), h('td'), h('td', { class: 'faint' }),
-              h('td', { class: 'r num' }), h('td', { class: 'r num' }), h('td', { class: 'r num' }), h('td', { class: 'r num' })];
+              h('td', { class: 'r num' }), h('td', { class: 'r num' }), h('td', { class: 'r num' }), h('td', { class: 'r num' }), h('td', { class: 'r num' })];
             const tr = h('tr', { tabindex: '0' }, cells);
             const open = () => {
               location.hash = `#/source/${m.id}`;
@@ -1925,10 +1957,12 @@
           const label = `Path ${pathName(m)}: ${standby ? 'standby' : VERDICT_LABEL[own]}. Open details.`;
           if (row.tr.getAttribute('aria-label') !== label) row.tr.setAttribute('aria-label', label);
           row.cells[4].title = `Window estimate. Current metadata: ${rttProvenance(m)}`;
+          const standbyRtt = standbyRttDisplay(m);
+          row.cells[7].title = standbyRtt.note;
           const texts = [pathName(m), null, `${m.connection || 'unreported'}${m.up ? '' : ' · read failing'}`,
             fmtBitrate(windowStat(m, primaryBitrateKey(m.role), 'rate')),
             fmtDuration(windowStat(m, 'srt.connection.rtt', 'mean', 'last')),
-            fmtPercent(lossShare(m)), fmtPacketRate(dropRate(m))];
+            fmtPercent(lossShare(m)), fmtPacketRate(dropRate(m)), standbyRtt.value];
           texts.forEach((text, k) => {
             if (text !== null && row.cells[k].textContent !== text) row.cells[k].textContent = text;
           });
@@ -1943,7 +1977,7 @@
           pathsBody.dataset.order = pathOrder;
           const focused = document.activeElement;
           if (members.length) put(pathsBody, ...members.map((m) => pathRows.get(m.id).tr));
-          else put(pathsBody, h('tr', {}, h('td', { colspan: '7', class: 'faint', text: 'No path has connected yet.' })));
+          else put(pathsBody, h('tr', {}, h('td', { colspan: '8', class: 'faint', text: 'No path has connected yet.' })));
           if (focused && focused !== document.activeElement && document.contains(focused)) focused.focus();
         }
       }
@@ -2091,7 +2125,11 @@
       window.scrollTo(0, 0);
       render();
     });
-    setInterval(renderBanner, 1000);
+    setInterval(() => {
+      renderBanner();
+      // Age retained observations even if the live feed stops delivering.
+      if (state.lastDataAt && performance.now() - state.lastSnapshotSteadyMs > 2000) render();
+    }, 1000);
     setInterval(watchdog, 1000);
     start();
   }

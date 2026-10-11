@@ -9,6 +9,10 @@ _Static_assert(sizeof(robotweax_srt_telemetry_group_send_metadata_v1) == 216,
                "group authority metadata ABI");
 _Static_assert(offsetof(robotweax_srt_telemetry_group_send_metadata_v1, authority_revision) == 56,
                "group authority revision offset");
+_Static_assert(sizeof(robotweax_srt_telemetry_standby_rtt_metadata_v1) == 64,
+               "standby RTT metadata ABI");
+_Static_assert(offsetof(robotweax_srt_telemetry_standby_rtt_metadata_v1, rtt_microseconds) == 24,
+               "standby RTT offset");
 _Static_assert(sizeof(robotweax_srt_telemetry_rtt_metadata_v1) == 64, "RTT metadata ABI");
 _Static_assert(offsetof(robotweax_srt_telemetry_rtt_metadata_v1, local_ackack_age_microseconds) ==
                    32,

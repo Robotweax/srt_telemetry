@@ -800,6 +800,59 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
         }
         out += '}';
 
+        const auto &standby = s.standby_rtt_metadata;
+        out += ",\"standby_rtt\":{\"version\":1,\"availability\":";
+        json_string(out, standby.availability == 2   ? "available"
+                         : standby.availability == 1 ? "read_failed"
+                                                     : "unavailable");
+        if (standby.availability == 2)
+        {
+            const auto boolean = [&](const char *key, bool value)
+            {
+                out += ",\"";
+                out += key;
+                out += "\":";
+                out += value ? "true" : "false";
+            };
+            const bool observed = (standby.flags & 4) != 0;
+            const bool age_present = standby.age_microseconds != UINT64_MAX;
+            const double age = static_cast<double>(standby.age_microseconds) / 1e6;
+            boolean("negotiated", (standby.flags & 1) != 0);
+            boolean("admitted", (standby.flags & 2) != 0);
+            boolean("observed", observed);
+            boolean("terminal", (standby.flags & 16) != 0);
+            boolean("fresh_at_capture", (standby.flags & 8) != 0);
+            boolean("fresh", (standby.flags & 8) != 0 && age_present &&
+                                 age + s.standby_rtt_capture_age_seconds <= 3.0);
+            static constexpr const char *outcomes[] = {"none",         "pending",      "measured",
+                                                       "timeout",      "send_skipped", "paused",
+                                                       "id_exhausted", "capacity"};
+            out += ",\"last_outcome\":";
+            json_string(out, outcomes[standby.outcome]);
+            out += ",\"rtt_seconds\":";
+            if (observed)
+                json_number(out, static_cast<double>(standby.rtt_microseconds) / 1e6);
+            else
+                out += "null";
+            out += ",\"rtt_microseconds\":";
+            if (observed)
+                json_string(out, std::to_string(standby.rtt_microseconds));
+            else
+                out += "null";
+            out += ",\"age_seconds\":";
+            if (age_present)
+                json_number(out, age);
+            else
+                out += "null";
+            out += ",\"samples\":";
+            json_string(out, std::to_string(standby.samples));
+            out += ",\"sampled_monotonic_nano\":";
+            json_string(out, std::to_string(standby.sampled_monotonic_nano));
+            out += ",\"capture_age_seconds\":";
+            json_number(out, s.standby_rtt_capture_age_seconds);
+        }
+        out += '}';
+
         const auto &sender = s.group_send_metadata;
         out += ",\"send_authority\":{\"version\":1,\"availability\":";
         json_string(out, sender.availability == 2   ? "available"

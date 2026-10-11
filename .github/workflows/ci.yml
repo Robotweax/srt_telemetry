@@ -60,8 +60,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install the OTLP protobuf definitions (OTLP JSON validation test)
-        run: python3 -m pip install opentelemetry-proto==1.45.0
+      - name: Install OTLP and snapshot schema definitions
+        run: python3 -m pip install opentelemetry-proto==1.45.0 jsonschema==4.26.0
       - name: Configure
         run: >
           cmake -S . -B build

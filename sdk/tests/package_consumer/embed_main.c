@@ -44,10 +44,12 @@ int main(void)
     {
         return 1;
     }
-    if (robotweax_srt_telemetry_embed_http_port(embed) == 0 ||
+    if (robotweax_srt_telemetry_embed_set_standby_rtt_data_v1(embed, NULL) !=
+            ROBOTWEAX_SRT_TELEMETRY_OK ||
+        robotweax_srt_telemetry_embed_http_port(embed) == 0 ||
         robotweax_srt_telemetry_embed_detach(embed, 7) != ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND ||
-        robotweax_srt_telemetry_embed_attach(NULL, 7, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER, NULL, 0) !=
-            ROBOTWEAX_SRT_TELEMETRY_OK)
+        robotweax_srt_telemetry_embed_attach(NULL, 7, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                             NULL, 0) != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
         robotweax_srt_telemetry_embed_stop(embed);
         return 2;

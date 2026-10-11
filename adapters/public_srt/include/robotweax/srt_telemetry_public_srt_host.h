@@ -158,6 +158,16 @@ robotweax_srt_telemetry_host_embed_rtt_data(robotweax_srt_telemetry_embed *embed
 }
 #endif
 
+#if defined(ROBOTWEAX_SRT_STANDBY_RTT_VERSION) && ROBOTWEAX_SRT_STANDBY_RTT_VERSION == 1
+/* Explicit opt-in only; ordinary helpers never link the optional symbol. */
+static inline robotweax_srt_telemetry_error
+robotweax_srt_telemetry_host_embed_standby_rtt_data(robotweax_srt_telemetry_embed *embed)
+{
+    return robotweax_srt_telemetry_embed_set_standby_rtt_data_v1(embed,
+                                                                 robotweax_srt_standby_rtt_data_v1);
+}
+#endif
+
 /* Starts an embed from a command-line style spec (see
  * robotweax_srt_telemetry_embed_config_parse), e.g. "0.0.0.0:9810" or
  * "9810,token_file=/run/srt/token". service_name names the application in
