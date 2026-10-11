@@ -1918,7 +1918,7 @@
           }
           const own = VERDICT_LABEL[m.health?.uncapped_verdict] ? m.health.uncapped_verdict
             : VERDICT_LABEL[m.health?.verdict] ? m.health.verdict : 'unknown';
-          const standby = m.health?.reason === 'standby';
+          const standby = m.health?.standby === true || m.health?.reason === 'standby';
           const label = `Path ${pathName(m)}: ${standby ? 'standby' : VERDICT_LABEL[own]}. Open details.`;
           if (row.tr.getAttribute('aria-label') !== label) row.tr.setAttribute('aria-label', label);
           row.cells[4].title = `Window estimate. Current metadata: ${rttProvenance(m)}`;

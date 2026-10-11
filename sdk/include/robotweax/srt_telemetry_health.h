@@ -189,6 +189,14 @@ extern "C"
  * so its verdict is not capped. It stays a group path in the status
  * (HEALTH_STATUS_GROUP_MEMBER). */
 #define ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH (UINT32_C(1) << 3)
+/* health_context_v1.flags (only with GROUP_STANDBY): the host vouches that the
+ * RTT in the statistics comes from an accepted, current observation, not the
+ * initial estimate (for example from robotweax_srt_rtt_data_v1 ages). The
+ * standby path then keeps its latency-sufficiency grade: OK / REASON_STANDBY
+ * while that is OK, otherwise that grade (capped at Watch, like any member).
+ * Recovery headroom needs DATA and stays ungraded. Without the flag a standby
+ * ignores its RTT as before. */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED (UINT32_C(1) << 4)
 
     /* What the statistics cannot tell: connection state and settings, as the
      * connection monitor reads them. Optional; set it when it changes. */
@@ -239,6 +247,10 @@ extern "C"
  * (HEALTH_CONTEXT_GROUP_MEMBER), capped or not; uncapped_verdict is its own
  * grade. */
 #define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER (UINT32_C(1) << 2)
+/* health_status_v1.flags: a connected standby path (HEALTH_CONTEXT_GROUP_STANDBY),
+ * whether it reads OK / REASON_STANDBY or carries a latency grade from a
+ * measured RTT (HEALTH_CONTEXT_RTT_MEASURED). */
+#define ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY (UINT32_C(1) << 3)
 
     typedef struct robotweax_srt_telemetry_health_status_v1
     {

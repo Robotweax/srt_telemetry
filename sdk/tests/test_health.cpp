@@ -1155,6 +1155,91 @@ void test_group_member_cap()
         check(takeover.feed(carrying, 3) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK, "and OK once the path has carried");
     }
 
+    /* RTT_MEASURED: the host vouches for a measured RTT on a standby. */
+    {
+        robotweax_srt_telemetry_health_context_v1 bad;
+        robotweax_srt_telemetry_health_context_init(&bad);
+        bad.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        bad.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                    ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED;
+        Run reject(RECEIVER);
+        check(robotweax_srt_telemetry_health_engine_set_context(reject.engine, &bad) ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "RTT_MEASURED only with GROUP_STANDBY");
+
+        for (const auto role : {RECEIVER, SENDER})
+        {
+            const std::string side = role == RECEIVER ? "receiver" : "sender";
+            Run backup(role);
+            robotweax_srt_telemetry_health_context_v1 measured;
+            robotweax_srt_telemetry_health_context_init(&measured);
+            measured.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+            measured.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
+                             ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY |
+                             ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED;
+            check(robotweax_srt_telemetry_health_engine_set_context(backup.engine, &measured) ==
+                      ROBOTWEAX_SRT_TELEMETRY_OK,
+                  side + ": standby with a measured RTT accepted");
+            Condition ready{};
+            ready.receiving = false;
+            ready.sending = false;
+            ready.rtt = 0.02;
+            ready.latency = 0.12;
+            check(backup.feed(ready, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                      backup.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY,
+                  side + ": a measured, sufficient standby is OK / standby (headroom needs DATA)");
+            check((backup.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) != 0,
+                  side + ": the status marks the waiting path as standby");
+            Condition slow = ready;
+            slow.rtt = 0.100; /* measured: the backup path really is this slow */
+            check(backup.feed(slow, 5) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+                      backup.status.uncapped_verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
+                      (backup.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0 &&
+                      backup.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_LATENCY_LOW_FOR_RTT &&
+                      backup.status.primary_indicator == ROBOTWEAX_SRT_TELEMETRY_INDICATOR_LATENCY_SUFFICIENCY &&
+                      backup.status.knob == ROBOTWEAX_SRT_TELEMETRY_KNOB_LATENCY,
+                  side + ": a measured standby too slow for the latency says so before a failover (capped)");
+            check((backup.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) != 0,
+                  side + ": a graded standby is still marked standby");
+            check(backup.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_RECOVERY_HEADROOM].state ==
+                      ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN,
+                  side + ": recovery headroom keeps no grade on a standby");
+            /* A failed read keeps the latched grade for the enter hold, then
+             * Unknown, as for any endpoint; never OK beside a latched grade. */
+            const auto fail = [&]
+            {
+                backup.now += period;
+                robotweax_srt_telemetry_metric_sample_v1 error{};
+                error.struct_size = sizeof(error);
+                error.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+                error.observed_at_unix_nano = backup.now;
+                error.sample_monotonic_nano = backup.now;
+                error.quality_flags = ROBOTWEAX_SRT_TELEMETRY_METRIC_SAMPLE_SOURCE_ERROR;
+                static_cast<void>(robotweax_srt_telemetry_health_engine_push(backup.engine, &error, &backup.status));
+            };
+            const auto graded_uncapped = backup.status.uncapped_verdict;
+            fail();
+            check(backup.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR &&
+                      backup.status.uncapped_verdict == graded_uncapped &&
+                      (backup.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) != 0,
+                  side + ": a short source error keeps a graded standby's grade");
+            for (int i = 0; i < 40; ++i)
+                fail();
+            check(backup.status.verdict == ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN &&
+                      backup.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR,
+                  side + ": a long source error makes a graded standby Unknown");
+            static_cast<void>(backup.feed(slow, 3));
+            /* The measurement goes stale: back to waiting, the grade drops. */
+            measured.flags &= ~ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED;
+            static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(backup.engine, &measured));
+            check(backup.feed(slow, 0.2) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK &&
+                      backup.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY &&
+                      backup.status.indicators[ROBOTWEAX_SRT_TELEMETRY_INDICATOR_LATENCY_SUFFICIENCY].state ==
+                          ROBOTWEAX_SRT_TELEMETRY_HEALTH_UNKNOWN,
+                  side + ": without RTT_MEASURED a standby ignores its RTT and keeps no latency state");
+        }
+    }
+
     /* A path flapping between active and standby every half second while it
      * loses data is still graded on the loss (only latency-based state is
      * reset in standby). */
@@ -1179,11 +1264,15 @@ void test_group_member_cap()
         check(graded_failing, "a flapping lossy path is still graded (Failing, capped at Watch)");
     }
 
+    check((standby.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) != 0,
+          "an idle standby's status is marked standby");
     idle.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
     static_cast<void>(robotweax_srt_telemetry_health_engine_set_context(standby.engine, &idle));
     check(standby.feed(silent, 0.1) == ROBOTWEAX_SRT_TELEMETRY_HEALTH_WATCH &&
               standby.status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_CONNECTION_LOST,
           "a lost standby reads lost (capped at Watch)");
+    check((standby.status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) == 0,
+          "a lost standby is not marked standby");
 
     Run plain(RECEIVER);
     plain.feed(Condition{}, 3);

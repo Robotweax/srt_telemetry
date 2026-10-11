@@ -32,7 +32,8 @@ extern "C"
      * flags: 1 accepted observation, 2 local tracked ACKACK, 4 peer estimate.
      * last_update_source: 0 none, 1 local, 2 peer. UINT64_MAX age is absent.
      * Peer age is local acceptance age, not the unknown peer measurement age.
-     * This is instantaneous metadata, never a health input or an RTT window. */
+     * Instantaneous metadata, never read by the health engine or an RTT window;
+     * the embed may derive HEALTH_CONTEXT_RTT_MEASURED for a standby from it. */
     typedef struct robotweax_srt_telemetry_rtt_metadata_v1
     {
         uint32_t struct_size;

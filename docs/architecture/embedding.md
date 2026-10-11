@@ -203,7 +203,13 @@ and the pending state while a label is not negotiated yet.
 - The last usable path carries the stream alone and is graded uncapped, so
   its problems alert like a single socket's.
 - A connected Main/Backup member other than the active one is OK with reason
-  `standby`. It carries only keepalives, so there is nothing to grade.
+  `standby`. It carries only keepalives, so there is nothing to grade, except
+  its RTT when that is measured: with the optional RTT metadata enabled
+  (`embed_set_rtt_data_v1`), a standby whose latest accepted RTT observation
+  is at most 1 s old gets `HEALTH_CONTEXT_RTT_MEASURED`, and a latency too
+  short for that RTT grades it (capped at Watch) before a failover. The
+  snapshot marks a waiting path with `health.standby` either way. Without the
+  metadata (Haivision, older Robotweax) the standby stays OK / `standby`.
 - The group's own row combines its counters (what a receiving application
   lost), the grade of the path carrying the stream (Backup: the active one;
   Broadcast: the best), and its redundancy, from the paths' statuses one tick

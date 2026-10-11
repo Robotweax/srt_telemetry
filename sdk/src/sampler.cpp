@@ -643,9 +643,7 @@ void fold_health(Source &source)
     {
         group |= ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_CAPPED;
     }
-    if (source.has_health_context &&
-        (source.health_context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
-        status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY)
+    if ((status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) != 0)
     {
         group |= ROBOTWEAX_SRT_TELEMETRY_COMPACT_GROUP_STANDBY;
     }
