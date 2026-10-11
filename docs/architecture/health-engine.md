@@ -222,7 +222,26 @@ Two flags describe a member of an SRT connection group:
   A connected standby reads OK even on an impaired link: SRT carries only
   keepalives on it, and notices a dead link only through their timeout.
   Whether a backup is ready shows only once it carries the stream (see the
-  protocol findings on RTT measurement for standby links).
+  protocol findings on RTT measurement for standby links), unless its RTT is
+  known to be measured:
+- `HEALTH_CONTEXT_RTT_MEASURED` (only with GROUP_STANDBY): the host vouches
+  that the statistics' RTT comes from a current accepted observation, not the
+  initial estimate. The engine never reads RTT metadata itself; the embed sets
+  the flag from the optional `robotweax_srt_rtt_data_v1` ages (an observation
+  at most 1 s old). Latency sufficiency then keeps grading the standby: it
+  stays OK / `standby` while that is OK, and otherwise takes that grade and
+  advice (capped at Watch, as for any member), so a backup too slow for the
+  configured latency shows before a failover. Recovery headroom needs DATA
+  and stays ungraded. When the flag clears (stale or disabled metadata), the
+  latency state is dropped again. The flag starts from no latency state, and
+  the 2 s enter hold outlasts the 1 s gauge window, so a window that still
+  holds pre-observation estimates cannot latch a grade on its own. A failed
+  read keeps a latched grade for the enter hold, then reads Unknown, as for
+  any endpoint. Only latency sufficiency can grade a standby: its loss and
+  drop indicators keep their state for a takeover, but do not set its
+  verdict while it waits.
+- `HEALTH_STATUS_STANDBY` marks the status of a connected standby, graded or
+  not (`health.standby` in the snapshot; the compact record's standby bit).
 
 The embed sets both from the group session; see
 [connection groups](embedding.md#connection-groups). The group's only usable

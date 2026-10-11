@@ -1016,8 +1016,23 @@ void test_groups()
     const auto json = render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON);
     check(valid_json(json) && json.find("\"group_member\":true") != std::string::npos &&
               json.find("\"group_member\":false") != std::string::npos &&
+              json.find("\"standby\":false") != std::string::npos &&
               json.find("\"group\":{\"usable_paths\":1,\"expected_paths\":2}") != std::string::npos,
           "groups: snapshot marks paths and counts the group's paths");
+    {
+        /* A connected standby path is marked as such in the snapshot. */
+        auto waiting = member;
+        waiting.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        waiting.flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY;
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_health_context(sampler, path_id, &waiting));
+        static_cast<void>(robotweax_srt_telemetry_sampler_tick(sampler, base_unix + 125 * second / 10,
+                                                               second + 125 * second / 10));
+        check(render(sampler, ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON).find("\"standby\":true") != std::string::npos,
+              "groups: snapshot marks a waiting path as standby");
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_health_context(sampler, path_id, &member));
+        static_cast<void>(robotweax_srt_telemetry_sampler_tick(sampler, base_unix + 126 * second / 10,
+                                                               second + 126 * second / 10));
+    }
 
     /* The group input cleared: the families go with it. */
     check(robotweax_srt_telemetry_sampler_set_health_group(sampler, group_id, nullptr) == ROBOTWEAX_SRT_TELEMETRY_OK,

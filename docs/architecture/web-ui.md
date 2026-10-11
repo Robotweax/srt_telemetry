@@ -66,7 +66,8 @@ and back.
 - **Verdict and advice:** the verdict with the reason in operator language and
   how long it has held; next to it, the suggested change with its value. Watch
   never asks for a change: its advice is shown as "If it persists: …".
-- **Paths** (a connection group): each path with its own grade (or standby),
+- **Paths** (a connection group): each path with its own grade (or standby;
+  a standby with a measured RTT can show its latency grade beside it),
   connection, bitrate, RTT, loss and drops; a row opens the path. The heading
   says how many paths can carry the stream. A path's view links back to its
   group.

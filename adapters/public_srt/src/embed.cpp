@@ -230,6 +230,9 @@ struct Endpoint
     std::int64_t last_rejection = 0;
     /* Detached: no further SRT calls; shown as lost until expires. */
     bool retired = false;
+    /* The latest RTT metadata read showed an accepted observation no older
+     * than rtt_fresh_bound: the statistics' RTT is measured, not initial. */
+    bool rtt_fresh = false;
     SteadyClock::time_point expires;
 
     /* Group endpoints. */
@@ -1012,6 +1015,8 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
     if (member->socket != entry.socket)
     {
         member->socket = entry.socket;
+        /* The old socket's RTT history says nothing about the new one. */
+        member->rtt_fresh = false;
         journal(embed, group.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED,
                 ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, 0, 0, entry.socket, "path=" + path, wall, mono);
     }
@@ -1050,7 +1055,9 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
                          (entry.flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_CARRYING) == 0;
     member->context.flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
                             (last_path ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH : 0u) |
-                            (standby ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY : 0u);
+                            (standby ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY : 0u) |
+                            /* The previous tick's metadata read (members are read after this). */
+                            (standby && member->rtt_fresh ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED : 0u);
     apply_context(embed, *member);
 }
 
@@ -1100,7 +1107,9 @@ void apply_group_health(Embed &embed, Endpoint &group)
         {
             continue;
         }
-        if (status.reason == ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY)
+        /* A standby status, OK or graded on a measured RTT, is from before
+         * the path carried. */
+        if ((status.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) != 0)
         {
             taking_over = taking_over || backup_active;
             continue;
@@ -1293,6 +1302,10 @@ void poll_authority(Embed &embed, Endpoint &endpoint, std::uint64_t wall, std::u
         embed.sampler, endpoint.source_id, &state));
 }
 
+/* A standby's RTT counts as measured while an observation is this recent;
+ * SRT acknowledges every 10 ms on a live link. */
+constexpr std::uint64_t rtt_fresh_bound_us = 1'000'000;
+
 void poll_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
 {
     if (endpoint.kind == EndpointKind::group)
@@ -1303,6 +1316,10 @@ void poll_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
     if (!endpoint.retired && endpoint.socket >= 0)
         static_cast<void>(robotweax_srt_telemetry_public_srt_read_rtt_metadata_v1(
             endpoint.socket, embed.rtt_getter, mono, &metadata));
+    /* Either source refreshes the estimator: the receiver's own ACKACK or the
+     * sender's accepted peer estimate. */
+    const auto age = std::min(metadata.local_ackack_age_microseconds, metadata.peer_estimate_age_microseconds);
+    endpoint.rtt_fresh = metadata.availability == 2 && (metadata.flags & 1u) != 0 && age <= rtt_fresh_bound_us;
     static_cast<void>(robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
         embed.sampler, endpoint.source_id, &metadata));
 }

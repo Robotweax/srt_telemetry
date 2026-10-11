@@ -969,6 +969,9 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
             /* One path of a connection group (capped or not). */
             out += ",\"group_member\":";
             out += (h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER) != 0 ? "true" : "false";
+            /* A waiting Backup path: OK / standby, or graded on a measured RTT. */
+            out += ",\"standby\":";
+            out += (h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) != 0 ? "true" : "false";
             /* A connection group's own row: its paths. */
             if ((h.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0)
             {

@@ -297,6 +297,8 @@ void backup_scenario()
     check(count_with(all, {"\"provider\":"}) == 6, "every source has the provider label");
     check(count_with(all, {"\"path\":", "\"verdict\":\"ok\"", "\"reason\":\"standby\""}) == 2,
           "one idle standby per side is OK / standby");
+    check(count_with(all, {"\"path\":", "\"reason\":\"standby\"", "\"standby\":true"}) == 2,
+          "the snapshot marks each waiting path as standby");
     check(count_with(all, {"\"path\":", "\"verdict\":\"unknown\""}) == 0, "no member is ungraded");
     check(!group_row(all, "cam-tx").empty() && !group_row(all, "cam-rx").empty(), "group rows found");
     check(wait_for(

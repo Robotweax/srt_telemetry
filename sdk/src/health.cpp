@@ -1506,7 +1506,10 @@ robotweax_srt_telemetry_health_engine_set_context(robotweax_srt_telemetry_health
         (context->flags & ~(ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_BANDWIDTH_SETTINGS |
                             ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER |
                             ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY |
-                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH)) != 0 ||
+                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH |
+                            ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED)) != 0 ||
+        ((context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED) != 0 &&
+         (context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) == 0) ||
         ((context->flags & (ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY |
                             ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH)) != 0 &&
          (context->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_MEMBER) == 0) ||
@@ -1927,17 +1930,22 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
                 }
             }
         }
-        /* A connected standby path carries only keepalives: SRT measures no
-         * RTT on it (an idle link reports its initial estimate), so the
-         * latency-based indicators would latch grades of an idle link and
-         * show them once it takes over. Those two keep no state while it
-         * waits; the others keep grading (a path that flaps between active
-         * and standby is still graded on loss and drops). */
+        /* A connected standby path carries only keepalives. Without proof of
+         * a measured RTT it may report the initial estimate (Haivision), so
+         * the latency-based indicators would latch grades of an idle link and
+         * show them once it takes over. Those keep no state while it waits;
+         * the others keep grading (a path that flaps between active and
+         * standby is still graded on loss and drops). With RTT_MEASURED the
+         * RTT is real and latency sufficiency keeps grading; recovery
+         * headroom needs DATA and never grades a standby. */
         const bool standby = (engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
                              engine->context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+        const bool rtt_measured =
+            (engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED) != 0;
         for (std::size_t i = 0; i < INDICATORS; ++i)
         {
-            if (raws[i].applicable && !(standby && (i == LATENCY || i == HEADROOM)))
+            if (raws[i].applicable &&
+                !(standby && (i == HEADROOM || (i == LATENCY && !rtt_measured))))
             {
                 update_hysteresis(*engine, engine->hysteresis[i], raws[i], now);
             }
@@ -2009,6 +2017,12 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
         {
             status->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP_MEMBER;
         }
+        if ((engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
+            engine->context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED &&
+            reason != ROBOTWEAX_SRT_TELEMETRY_REASON_ROLE_UNKNOWN)
+        {
+            status->flags |= ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY;
+        }
         const bool sole = (engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_SOLE_PATH) != 0;
         if (member && !sole && graded > WATCH)
         {
@@ -2037,6 +2051,29 @@ robotweax_srt_telemetry_health_engine_push(robotweax_srt_telemetry_health_engine
     if ((engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_GROUP_STANDBY) != 0 &&
         engine->context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED)
     {
+        /* A backup that is too slow for the latency says so before a
+         * failover, when its RTT is measured; anything else waits as OK. */
+        const auto &latency = engine->hysteresis[LATENCY];
+        const bool graded = (engine->context.flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED) != 0 &&
+                            latency.state > OK;
+        if (graded && source_error)
+        {
+            /* As for any endpoint: a failed read or two keeps the latched
+             * grade; after enter_hold without a good sample it is UNKNOWN. */
+            status->primary_indicator = -1;
+            return finish(engine->has_good && now - engine->last_good < engine->config.enter_hold_nano
+                              ? latency.state
+                              : UNKNOWN,
+                          ROBOTWEAX_SRT_TELEMETRY_REASON_SOURCE_ERROR);
+        }
+        if (graded && raws[LATENCY].applicable)
+        {
+            status->primary_indicator = static_cast<std::int32_t>(LATENCY);
+            status->knob = latency.latched.knob;
+            status->knob_direction = latency.latched.direction;
+            status->suggested_value = latency.latched.value;
+            return finish(latency.state, latency.latched.reason);
+        }
         status->primary_indicator = -1;
         return finish(OK, ROBOTWEAX_SRT_TELEMETRY_REASON_STANDBY);
     }
