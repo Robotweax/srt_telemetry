@@ -282,7 +282,12 @@ A hard fallback can clear then select (two changes). Snapshot polling can miss
 intermediate states; revision gaps expose their count, not their identity or
 exact time. `send_authority_changed` (event19) records observed differences,
 including an initial comparison baseline, separately from existing inferred
-`active_member_changed` DATA activity. Existing event meanings stay unchanged.
+`active_member_changed` DATA activity. A group that has never selected a member
+(unselected, revision 0: a receiving group, or a sender before its first send)
+takes its baseline silently; its first selection then reports `changes=1`.
+The detail reads `observed; local_sender; revision=R; changes=N|baseline;
+member_generation=G; path=P`, where G is the active member's connection
+generation (0 when none), not the group generation. Existing event meanings stay unchanged.
 The `authority=unavailable` prefix on the latter refers to that event's own
 counter source; a separate authority snapshot may be available.
 

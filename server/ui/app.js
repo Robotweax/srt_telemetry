@@ -1880,7 +1880,10 @@
           : 'a path alone never pages; the group does';
         const authority = src.send_authority;
         pathsNote.textContent += ' · DATA activity: packet-counter inference.';
-        if (authority?.availability === 'available') {
+        if (authority?.availability === 'available' && src.role === 'receiver'
+            && authority.state === 'unselected' && authority.authority_revision === '0') {
+          pathsNote.textContent += ' Local sender authority: none, this group receives and has never sent.';
+        } else if (authority?.availability === 'available') {
           const who = (member) => member ? (member.path || `socket ${member.socket}`) : 'none';
           pathsNote.textContent += ` Local sender authority: ${who(authority.active)}. Probe: ${who(authority.probe)}.`;
           pathsNote.textContent += ` Snapshot ${fmtAge(authority.capture_age_seconds)} ago; revision ${authority.authority_revision}.`;
