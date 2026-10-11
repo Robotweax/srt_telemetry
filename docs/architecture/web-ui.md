@@ -203,3 +203,7 @@ source. The peer's measurement age remains unknown. Path RTT tooltips describe
 current metadata beside the window estimate. Missing/read-failed metadata never
 labels a 100 ms value as initial or measured. Initial is shown only when a
 successful V1 snapshot explicitly reports no accepted observation.
+
+A receiving group whose authority snapshot is unselected at revision 0 reads
+**Local sender authority: none, this group receives and has never sent**
+instead of an empty active/probe pair.

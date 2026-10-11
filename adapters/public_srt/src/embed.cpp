@@ -1268,13 +1268,18 @@ void poll_authority(Embed &embed, Endpoint &endpoint, std::uint64_t wall, std::u
                           path_of(link, state.probe_member).c_str());
         const bool same_group =
             link.authority_seen && state.group_generation == link.authority.group_generation;
-        if (!same_group || state.authority_revision != link.authority.authority_revision)
+        /* A group that has never selected a member (a receiving group, or a
+         * sender before its first send) has nothing to report: its baseline
+         * is taken silently, and the first selection reports changes=1. */
+        const bool never_selected = state.state == 0 && state.authority_revision == 0;
+        if ((!same_group && !never_selected) ||
+            (same_group && state.authority_revision != link.authority.authority_revision))
         {
             const auto changes = state.authority_revision - link.authority.authority_revision;
             std::string detail =
                 "observed; local_sender; revision=" + std::to_string(state.authority_revision) +
                 "; changes=" + (same_group ? std::to_string(changes) : "baseline") +
-                "; generation=" + std::to_string(state.active_generation) +
+                "; member_generation=" + std::to_string(state.active_generation) +
                 "; path=" + std::string(state.active_path);
             journal(embed, endpoint.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_SEND_AUTHORITY_CHANGED,
                     ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO,

@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <set>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -335,6 +336,21 @@ void backup_scenario()
                   "data-path changes disclose inference before potentially truncated names");
         }
     }
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+    {
+        std::set<std::uint64_t> authority_sources;
+        for (const auto &e : journal.events)
+        {
+            if (e.kind != ROBOTWEAX_SRT_TELEMETRY_EVENT_SEND_AUTHORITY_CHANGED)
+                continue;
+            authority_sources.insert(e.source_id);
+            check(has(e.detail, "; member_generation=") && !has(e.detail, "revision=0;"),
+                  "authority events name the member generation and never report an empty baseline");
+        }
+        check(authority_sources.size() == 1,
+              "only the sending group journals authority; the receiving group never selected a member");
+    }
+#endif
     for (const auto &e : journal.events)
     {
         if (e.kind == ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED)

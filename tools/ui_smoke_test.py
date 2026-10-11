@@ -173,6 +173,14 @@ def main():
             else:
                 check("Local sender authority: unavailable." in gdom,
                       "unqualified provider preserves actual-authority absence")
+            rx_group = next(s for s in data["sources"] if s["labels"].get("stream") == "bonded-1"
+                            and s["role"] == "receiver" and "path" not in s["labels"])
+            rx_authority = rx_group.get("send_authority", {})
+            if (rx_authority.get("availability") == "available" and rx_authority.get("state") == "unselected"
+                    and rx_authority.get("authority_revision") == "0"):
+                rdom = dump_dom(args.browser, f"{base}#/source/{rx_group['id']}")
+                check("Local sender authority: none, this group receives and has never sent." in rdom,
+                      "receiving group says it has no local sender authority")
             path = next(s for s in data["sources"] if s["labels"].get("path") == "sat" and s["role"] == "sender")
             pdom = dump_dom(args.browser, f"{base}#/source/{path['id']}")
             check(f'href="#/source/{group["id"]}"' in pdom and "connection group" in pdom
