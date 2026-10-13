@@ -35,8 +35,9 @@ statistics session. The group fields are limited to
 `CAP_GROUP_MEMBERS_V1`; it is copied into every group and member sample, so it
 is set exactly when a group session produced the sample.
 
-The group type is declared by the host (`group_type`): Robotweax SRT 0.2.8
-refuses `SRTO_GROUPTYPE` on an accepted group, while Haivision SRT returns it.
+The group type is declared by the host (`group_type`): Robotweax SRT 0.2.8 and
+older refuse `SRTO_GROUPTYPE` on an accepted group, while Haivision SRT and
+Robotweax SRT 0.2.9 return it.
 
 `<robotweax/srt_telemetry_public_srt_host.h>` fills the injected functions
 (`robotweax_srt_telemetry_host_group_functions`). Haivision SRT built without
@@ -143,8 +144,8 @@ enables the optional path getter, the sources, in order, are:
 
 On older Robotweax and Haivision providers the optional getter is unavailable;
 the host leaves it disabled and naming follows host → token → addresses.
-Robotweax development `main` after protocol PR #298 offers the versioned getter;
-published v0.2.8 artifacts do not. Configure labeled transport in the host,
+Robotweax SRT 0.2.9 (and development `main` after protocol PR #298) offers the
+versioned getter; v0.2.8 and older do not. Configure labeled transport in the host,
 explicitly enabling the protocol on both peers. Telemetry does not change socket
 options, negotiate extensions or reconnect a member.
 
@@ -195,16 +196,19 @@ Live loopback, two members, application sending 500 packets/s; Haivision SRT
 v1.5.7 with `ENABLE_BONDING=ON` and Robotweax SRT v0.2.8. Closing the primary
 member on the caller side:
 
-| | Haivision SRT 1.5.7 | Robotweax SRT 0.2.8 |
-| --- | --- | --- |
-| Token on the accepting side | −1 | −1 |
-| Weight on the accepting side | the caller's weight | the caller's weight |
-| `SRTO_GROUPTYPE` on an accepted group | readable | fails ("Operation not supported") |
-| Caller member local address once connected | `127.0.0.1:port` | `0.0.0.0:port` (bound wildcard) |
-| Receiver `memberstate`, Broadcast | RUNNING on every member that receives | RUNNING only on the member that delivered last; others IDLE while receiving |
-| Receiver `memberstate`, Backup standby | IDLE, RUNNING after failover | IDLE, RUNNING after failover |
-| Broken member on the accepting side | listed BROKEN about 1 s, then removed; `srt_bistats` fails at once | stays listed BROKEN (`sockstate` BROKEN); `srt_bistats` keeps answering |
-| Backup failover after a clean member close | receiver drops 57–60 packets (about 120 ms) | no drops |
+| | Haivision SRT 1.5.7 | Robotweax SRT 0.2.8 | Robotweax SRT 0.2.9 |
+| --- | --- | --- | --- |
+| Token on the accepting side | −1 | −1 | not re-checked (optional path labels add a name) |
+| Weight on the accepting side | the caller's weight | the caller's weight | not re-checked |
+| `SRTO_GROUPTYPE` on an accepted group | readable | fails ("Operation not supported") | readable |
+| Caller member local address once connected | `127.0.0.1:port` | `0.0.0.0:port` (bound wildcard) | `127.0.0.1:port` (captured at setup) |
+| Receiver `memberstate`, Broadcast | RUNNING on every member that receives | RUNNING only on the member that delivered last; others IDLE while receiving | RUNNING on every member that receives |
+| Receiver `memberstate`, Backup standby | IDLE, RUNNING after failover | IDLE, RUNNING after failover | IDLE while the other member carries |
+| Broken member on the accepting side | listed BROKEN about 1 s, then removed; `srt_bistats` fails at once | stays listed BROKEN (`sockstate` BROKEN); `srt_bistats` keeps answering | not re-checked |
+| Backup failover after a clean member close | receiver drops 57–60 packets (about 120 ms) | no drops | not re-checked |
+
+The 0.2.9 column comes from a loopback probe against the v0.2.9 tag
+(13.10.2026): two members at 500 packets/s, one run per group type.
 
 In every run, the caller group's unique sent count equalled the messages the
 application sent, and the listener group's unique received count equalled the
