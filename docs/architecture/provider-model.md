@@ -58,8 +58,9 @@ Haivision surface. Extensions must:
 `robotweax.groups.path-identifiers.v1` qualifies the optional 44-byte
 `robotweax_srt_group_path_data_v1` contract at an exact development revision/build.
 It requires explicit injection from the library that owns the handles; neither
-provider text nor header presence enables it. Published Robotweax v0.2.8 and
-Haivision v1.5.7 leave it unavailable. See [group path names](public-srt-group.md#path-names).
+provider text nor header presence enables it. Robotweax v0.2.8 and older and
+Haivision v1.5.7 leave it unavailable; Robotweax v0.2.9 is the first release
+that declares it. See [group path names](public-srt-group.md#path-names).
 
 Private Robotweax C++ implementation objects are not an integration boundary.
 

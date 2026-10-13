@@ -228,8 +228,9 @@ Each adapter/provider version must record:
 | group member `path`, `path_source = PATH_SOURCE_IDENTIFIER` | `robotweax_srt_group_path_data_v1`: `member_id`, `flags`, `identifier_length`, `identifier` | both sides; once negotiated, cached per member socket until removal/session destruction | Exact 1–32 bytes rendered as `pathid-` plus hex; `CAP_GROUP_PATH_IDENTIFIERS_V1` plus explicit getter injection required. Not a counter, timestamp or authenticated identity. |
 | group member `MEMBER_PATH_PENDING` | unavailable, malformed or provisional getter record | connected unnamed member; retried each tick | Unknown metadata stays unknown; counters still sample. A confirmed zero-length/zero-flags record uses the existing fallback. |
 
-Haivision v1.5.7 and published Robotweax v0.2.8 have no such getter; their host,
-token and address naming remains available. Qualification is revision/build
+Haivision v1.5.7 and Robotweax v0.2.8 and older have no such getter; their host,
+token and address naming remains available. Robotweax v0.2.9 is the first
+release that declares it (still default-off on the wire). Qualification is revision/build
 specific. See [group sessions](public-srt-group.md#path-names) for snapshot races,
 binary encoding, scope, resets and retained BROKEN-member behavior.
 

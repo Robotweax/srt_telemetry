@@ -170,8 +170,7 @@ broken or gone. That happens with duplicate names, and with a reconnect under
 the same name before the broken member leaves the list; Robotweax SRT keeps
 broken members listed until they are closed.
 
-**Negotiated path labels** (Robotweax SRT with protocol PR #298, not
-v0.2.8): the caller labels each path in the handshake, so the accepting side
+**Negotiated path labels** (Robotweax SRT 0.2.9 or later, not 0.2.8): the caller labels each path in the handshake, so the accepting side
 can use the same names without host code. The host enables labels on both
 peers and passes the provider's getter to the embed:
 

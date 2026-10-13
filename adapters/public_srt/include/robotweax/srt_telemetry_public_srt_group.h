@@ -39,8 +39,8 @@ extern "C"
                                                                      int *length);
 
 /* Group types follow SRT_GROUP_TYPE. The host declares it: SRTO_GROUPTYPE is
- * not readable on every provider (Robotweax SRT 0.2.8 refuses it on an
- * accepted group). */
+ * not readable on every provider (Robotweax SRT 0.2.8 and older refuse it on
+ * an accepted group; 0.2.9 returns it). */
 #define ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_UNKNOWN 0u
 #define ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST 1u
 #define ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP 2u
