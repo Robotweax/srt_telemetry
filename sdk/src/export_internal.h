@@ -28,6 +28,8 @@ struct ExportSource
     robotweax_srt_telemetry_window_summary_v1 window{};
     bool has_metrics = false;
     robotweax_srt_telemetry_metric_sample_v1 metrics{};
+    robotweax_srt_telemetry_standby_rtt_metadata_v1 standby_rtt_metadata{};
+    double standby_rtt_capture_age_seconds = 0;
     robotweax_srt_telemetry_rtt_metadata_v1 rtt_metadata{};
     double rtt_capture_age_seconds = 0;
     robotweax_srt_telemetry_group_send_metadata_v1 group_send_metadata{};

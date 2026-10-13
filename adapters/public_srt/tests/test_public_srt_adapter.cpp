@@ -550,12 +550,121 @@ void test_optional_rtt_metadata()
     check(read() == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "short result rejected");
 }
 
+/* Synthetic versioned wire fixture; does not qualify a provider. */
+struct StandbyWire
+{
+    std::uint32_t size = 48, version = 1, flags = 0, outcome = 0;
+    std::uint64_t rtt = 0, age = UINT64_MAX, samples = 0;
+    std::uint32_t reserved[2] = {};
+};
+static_assert(sizeof(StandbyWire) == 48);
+StandbyWire standby_wire;
+int standby_result = 0;
+int fake_standby(std::int32_t, ROBOTWEAX_SRT_StandbyRttDataV1_ *output, std::size_t size)
+{
+    check(size == 48, "standby receives exact writable capacity");
+    std::memcpy(output, &standby_wire, sizeof(standby_wire));
+    return standby_result;
+}
+void test_optional_standby_metadata()
+{
+    robotweax_srt_telemetry_standby_rtt_metadata_v1 out{};
+    out.struct_size = sizeof(out);
+    out.abi_version = 1;
+    const auto read = [&]
+    {
+        return robotweax_srt_telemetry_public_srt_read_standby_rtt_metadata_v1(42, fake_standby,
+                                                                               123, &out);
+    };
+    check(robotweax_srt_telemetry_public_srt_read_standby_rtt_metadata_v1(42, nullptr, 123, &out) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              out.availability == 0 && out.age_microseconds == UINT64_MAX,
+          "absent standby extension is unavailable");
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.availability == 2 && out.flags == 0,
+          "callable getter can report disabled connection");
+    standby_wire.flags = 1;
+    standby_wire.outcome = 7;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.outcome == 7 && out.samples == 0,
+          "capacity pressure does not manufacture sample");
+    standby_wire.flags = 3;
+    standby_wire.outcome = 1;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.age_microseconds == UINT64_MAX,
+          "pending without observation has absent age");
+    standby_wire = {48, 1, 15, 2, 17, 3'000'000, UINT64_MAX, {0, 0}};
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.rtt_microseconds == 17 &&
+              out.samples == UINT64_MAX && out.sampled_monotonic_nano == 123,
+          "positive sample and saturated count preserved at freshness boundary");
+    for (std::uint32_t outcome = 1; outcome <= 6; ++outcome)
+    {
+        standby_wire.outcome = outcome;
+        check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.rtt_microseconds == 17,
+              "all admitted last outcomes retain measured history");
+    }
+    standby_wire.flags = 23; // negotiated/admitted/observed/terminal, stale
+    standby_wire.age = 3'000'001;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.flags == 23,
+          "stale retained terminal sample is readable");
+    standby_wire.age = UINT64_MAX;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.samples == UINT64_MAX,
+          "backward-clock age absent with retained observation allowed");
+    const auto valid = standby_wire;
+    const auto malformed = [&](StandbyWire wire)
+    {
+        standby_wire = wire;
+        check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE && out.availability == 1 &&
+                  out.flags == 0 && out.rtt_microseconds == 0 && out.age_microseconds == UINT64_MAX,
+              "malformed standby read clears previous values");
+    };
+    auto bad = valid;
+    bad.flags |= 32;
+    malformed(bad);
+    bad = valid;
+    bad.version = 2;
+    malformed(bad);
+    bad = valid;
+    bad.size = 47;
+    malformed(bad);
+    bad = valid;
+    bad.reserved[1] = 1;
+    malformed(bad);
+    bad = valid;
+    bad.flags |= 8;
+    malformed(bad);
+    bad = valid;
+    bad.samples = 0;
+    malformed(bad);
+    bad = valid;
+    bad.rtt = 0;
+    malformed(bad);
+    bad = valid;
+    bad.outcome = 8;
+    malformed(bad);
+    bad = valid;
+    bad.outcome = 7;
+    malformed(bad);
+    bad = valid;
+    bad.flags &= ~1u;
+    malformed(bad);
+    standby_wire = valid;
+    standby_result = -1;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE && out.native_result == -1 &&
+              out.samples == 0,
+          "native failure drops retained value");
+    standby_result = 0;
+    standby_wire = {};
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_OK && out.samples == 0 && out.flags == 0,
+          "new connection resets standby history");
+    out.abi_version = 2;
+    check(read() == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT, "unknown telemetry version rejected");
+}
+
 } // namespace
 
 int main()
 {
     test_optional_send_authority();
     test_optional_rtt_metadata();
+    test_optional_standby_metadata();
     test_non_destructive_mapping_and_delta();
     test_provider_failure_is_explicit();
     test_capability_and_provider_validation();

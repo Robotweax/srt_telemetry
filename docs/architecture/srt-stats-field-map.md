@@ -304,3 +304,58 @@ for independent trace comparison, without inventing an exact transition time.
 The JSON contract is `schema/snapshot-send-authority-v1.schema.json`; existing
 C sample/config layouts, counter windows and Prometheus metric semantics remain
 unchanged. The SDK adds a separate metadata structure/setter and event value.
+
+
+## Optional Standby RTT observation
+
+Operator question: what was the last accepted local round trip on this Backup
+member, how old is it, and what happened to the last monitoring attempt?
+The source is the explicitly injected `robotweax_srt_standby_rtt_data_v1` V1
+member getter (48 bytes) from a qualified selected Robotweax build. Provider
+name alone never enables it. Haivision, older and unqualified builds remain
+`unavailable`; a callable getter failure or malformed snapshot is `read_failed`
+and discards the previous observation. A successful disabled connection read is
+`available` with `negotiated=false`, without a fabricated zero measurement.
+Group aggregate handles have no Standby RTT; read members individually.
+
+The independent 64-byte telemetry metadata V1 preserves negotiated, admitted,
+observed, fresh-at-capture and retained-terminal flags; the positive single RTT
+in microseconds; age in microseconds (`UINT64_MAX` absent); accepted sample count
+(saturating); and last attempt outcome. This is instantaneous metadata, not an
+estimator, RTT window, counter delta, alert or health input. Admission/capacity
+is local monitoring resource availability, not packet loss or DATA health.
+`outcome` is historical. A DATA pause may leave `MEASURED` unchanged, as observed
+in the qualified fleet v2 run; `PAUSED` does not prove current ineligibility.
+Reads and statistics resets do not change measurement history. New connections
+and removed/re-added sources start new histories. Getter replacement/null clears
+all active and retained observations. Closed/invalid handle reads fail; a still
+readable BROKEN handle may retain terminal measurements.
+
+`standby_rtt` in runtime JSON is governed by
+[`snapshot-standby-rtt-v1.schema.json`](../../schema/snapshot-standby-rtt-v1.schema.json).
+RTT/age use seconds; no observation has null RTT and age. An observed sample can
+have null age after a backward provider-clock read. Counts, exact microseconds
+and monotonic timestamps are decimal strings to preserve uint64 precision.
+`age_seconds` is the provider age at capture; `capture_age_seconds` adds time
+since telemetry accepted it, using the local steady clock. `fresh_at_capture`
+retains the provider flag, while `fresh` additionally requires total age <= 3 s;
+stopped sampling cannot keep an old observation fresh. Fleet scheduling may
+legitimately produce stale observations at the 32/s process budget.
+
+Where monitoring was negotiated (or a read failed), the built-in UI shows a
+separate Standby RTT column/tile, total age, freshness,
+retained terminal status and **last attempt**. Normal DATA RTT, health grades,
+active-member authority, counter activity, old JSONL/history, Prometheus and
+OTLP metrics are unchanged. This metadata never selects a path or proves DATA
+health, reachability, failback eligibility or remote clock accuracy.
+
+Runtime evidence for the selected own source
+[`c915a507`](https://github.com/Robotweax/srt/commit/c915a507fc5bdcb58965851a0dad4bb8930df8c2):
+[single-group 5/5 Lab run](https://github.com/Robotweax/srt_network_lab/actions/runs/38152172314)
+and [fleet v2 run 38170983400](https://github.com/Robotweax/srt_network_lab/actions/runs/38170983400)
+(3/3 capacity, fairness and DATA-pause cases). The run qualifies plain own-to-own
+loopback runtime behavior, not this telemetry adapter or WAN/mixed-provider/
+encrypted-control behavior. The optional native embed test additionally checks
+positive observations reach all four member rows on plain own-to-own loopback,
+and clearing after getter disable. Other adapter/UI fixtures are synthetic
+contract tests, not additional provider qualification.

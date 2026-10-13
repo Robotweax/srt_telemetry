@@ -36,6 +36,24 @@ void check(const bool condition, const std::string_view message)
     }
 }
 
+/* Synthetic display fixture on real group-member discovery. Not RTT qualification. */
+struct StandbyFixture
+{
+    std::uint32_t size = 48, version = 1, flags = 15, outcome = 2;
+    std::uint64_t rtt = 25'000, age = 42, samples = 5;
+    std::uint32_t reserved[2] = {};
+};
+std::atomic<int> standby_fixture_result{0};
+int fixture_standby_getter(std::int32_t socket, ROBOTWEAX_SRT_StandbyRttDataV1_ *out,
+                           std::size_t size)
+{
+    check(size == sizeof(StandbyFixture), "embed standby exact capacity");
+    check((socket & SRTGROUP_MASK) == 0, "group aggregate never sent to standby getter");
+    const StandbyFixture wire;
+    std::memcpy(out, &wire, sizeof(wire));
+    return standby_fixture_result;
+}
+
 void sleep_ms(const int ms)
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
@@ -363,6 +381,57 @@ void backup_scenario()
     }
 
     check(journal.count(ROBOTWEAX_SRT_TELEMETRY_EVENT_SOURCE_FAILED) == 0, "no failed statistics reads");
+
+#if defined(ROBOTWEAX_SRT_STANDBY_RTT_VERSION) && ROBOTWEAX_SRT_STANDBY_RTT_VERSION == 1
+    check(robotweax_srt_telemetry_host_embed_standby_rtt_data(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "explicit native standby getter opt-in");
+    check(wait_for(
+              [&]
+              {
+                  return count_with(sources(embed),
+                                    {"\"path\":", "\"standby_rtt\":{\"version\":1,\"availability\":"
+                                                  "\"available\",\"negotiated\":false"}) == 4;
+              },
+              2000),
+          "native disabled connections read available without invented observation");
+#endif
+    check(robotweax_srt_telemetry_embed_set_standby_rtt_data_v1(embed, fixture_standby_getter) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "inject synthetic standby display fixture");
+    check(wait_for(
+              [&]
+              {
+                  return count_with(sources(embed), {"\"path\":", "\"last_outcome\":\"measured\"",
+                                                     "\"samples\":\"5\""}) == 4;
+              },
+              2000),
+          "all group members carry independent standby observations");
+    check(count_with(sources(embed),
+                     {"\"path\":", "\"reason\":\"standby\"", "\"verdict\":\"ok\""}) == 2,
+          "standby observation does not change DATA-health grade");
+    check(has(group_row(sources(embed), "cam-tx"),
+              "\"standby_rtt\":{\"version\":1,\"availability\":\"unavailable\"}"),
+          "group aggregate has no invented RTT observation");
+    standby_fixture_result = -1;
+    check(
+        wait_for(
+            [&]
+            {
+                return count_with(
+                           sources(embed),
+                           {"\"path\":",
+                            "\"standby_rtt\":{\"version\":1,\"availability\":\"read_failed\"}"}) ==
+                       4;
+            },
+            2000),
+        "failed member getters remove old observation");
+    standby_fixture_result = 0;
+    check(robotweax_srt_telemetry_embed_set_standby_rtt_data_v1(embed, nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "disable standby getter");
+    check(count_with(sources(embed),
+                     {"\"standby_rtt\":{\"version\":1,\"availability\":\"unavailable\"}"}) == 6,
+          "disable immediately clears all member and aggregate snapshots");
 
     /* Cut the primary path on the caller. */
     srt_close(primary);
@@ -1011,6 +1080,86 @@ void negotiated_labels_scenario()
 }
 #endif
 
+#if defined(ROBOTWEAX_SRT_STANDBY_RTT_VERSION) && ROBOTWEAX_SRT_STANDBY_RTT_VERSION == 1
+/* Plain own-to-own loopback integration of the opt-in getter into member JSON.
+ * No DATA is sent. This is not fleet, WAN or encrypted-control qualification. */
+void native_standby_observation_scenario()
+{
+    const auto listener = srt_create_socket();
+    const auto caller = srt_create_group(SRT_GTYPE_BACKUP);
+    bool yes = true;
+    check(srt_setsockflag(listener, SRTO_GROUPCONNECT, &yes, sizeof(yes)) == 0,
+          "standby group listener");
+    for (const auto socket : {listener, caller})
+    {
+        check(srt_setsockflag(socket, SRTO_ROBOTWEAX_STANDBYRTT_REQUIRED, &yes, sizeof(yes)) == 0,
+              "bilateral explicit standby setup");
+        int timeout = 2000;
+        check(srt_setsockflag(socket, SRTO_RCVTIMEO, &timeout, sizeof(timeout)) == 0,
+              "bounded accept");
+    }
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(0x7f000001);
+    int length = sizeof(address);
+    check(srt_bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0 &&
+              srt_listen(listener, 4) == 0 &&
+              srt_getsockname(listener, reinterpret_cast<sockaddr *>(&address), &length) == 0,
+          "standby native loopback listen");
+    std::vector<SRT_SOCKGROUPCONFIG> endpoints;
+    for (int i = 0; i < 2; ++i)
+        endpoints.push_back(
+            srt_prepare_endpoint(nullptr, reinterpret_cast<sockaddr *>(&address), sizeof(address)));
+    check(srt_connect_group(caller, endpoints.data(), 2) != SRT_INVALID_SOCK,
+          "standby group connect");
+    const auto receiver = srt_accept(listener, nullptr, nullptr);
+    check(receiver != SRT_INVALID_SOCK, "standby group accept");
+    robotweax_srt_telemetry_embed_config_v1 config{};
+    robotweax_srt_telemetry_embed_config_default(&config);
+    robotweax_srt_telemetry_host_embed_functions(&config);
+    config.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "standby native embed start");
+    check(robotweax_srt_telemetry_host_embed_standby_rtt_data(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "standby native opt-in");
+    robotweax_srt_telemetry_embed_group_v1 group{};
+    robotweax_srt_telemetry_embed_group_default(&group);
+    group.group = caller;
+    group.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
+    group.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &group) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "standby attach caller");
+    group.group = receiver;
+    group.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &group) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "standby attach receiver");
+    check(wait_for(
+              [&]
+              {
+                  return count_with(
+                             sources(embed),
+                             {"\"path\":",
+                              "\"standby_rtt\":{\"version\":1,\"availability\":\"available\","
+                              "\"negotiated\":true,\"admitted\":true,\"observed\":true",
+                              "\"rtt_microseconds\":\"", "\"fresh_at_capture\":true"}) == 4;
+              },
+              7000),
+          "native positive measurements reach all four member JSON rows");
+    check(robotweax_srt_telemetry_embed_set_standby_rtt_data_v1(embed, nullptr) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "native getter disable");
+    check(count_with(sources(embed),
+                     {"\"standby_rtt\":{\"version\":1,\"availability\":\"unavailable\"}"}) == 6,
+          "native observations clear immediately");
+    robotweax_srt_telemetry_embed_stop(embed);
+    srt_close(caller);
+    if (receiver != SRT_INVALID_SOCK)
+        srt_close(receiver);
+    srt_close(listener);
+}
+#endif
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -1025,6 +1174,9 @@ int main(int argc, char **argv)
         return require ? 1 : 77;
     }
     srt_close(probe);
+#if defined(ROBOTWEAX_SRT_STANDBY_RTT_VERSION) && ROBOTWEAX_SRT_STANDBY_RTT_VERSION == 1
+    native_standby_observation_scenario();
+#endif
     backup_scenario();
     broadcast_scenario();
     duplicate_names_scenario();

@@ -35,6 +35,15 @@ extern "C"
         int32_t group, robotweax_srt_telemetry_public_srt_group_send_state_v1_fn getter,
         uint64_t sampled_monotonic_nano, robotweax_srt_telemetry_group_send_metadata_v1 *output);
 
+    struct ROBOTWEAX_SRT_StandbyRttDataV1_;
+    /* Explicit optional getter, never inferred from provider identity. */
+    typedef int (*robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn)(
+        int32_t socket, struct ROBOTWEAX_SRT_StandbyRttDataV1_ *output, size_t output_size);
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_public_srt_read_standby_rtt_metadata_v1(
+        int32_t socket, robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn getter,
+        uint64_t sampled_monotonic_nano, robotweax_srt_telemetry_standby_rtt_metadata_v1 *output);
+
     struct CBytePerfMon;
     struct ROBOTWEAX_SRT_RttDataV1_;
     /* Explicitly injected, qualified optional extension from the selected

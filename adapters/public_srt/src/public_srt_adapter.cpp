@@ -1,4 +1,5 @@
 #include "public_srt_internal.hpp"
+#include "standby_metadata_internal.h"
 
 #if defined(ROBOTWEAX_SRT_TELEMETRY_USE_FLAT_SRT_HEADER)
 #include <srt.h>
@@ -35,6 +36,16 @@ struct ROBOTWEAX_SRT_GroupSendStateV1_
 };
 #endif
 static_assert(sizeof(ROBOTWEAX_SRT_GroupSendStateV1_) == 80);
+
+#ifndef ROBOTWEAX_SRT_STANDBY_RTT_VERSION
+struct ROBOTWEAX_SRT_StandbyRttDataV1_
+{
+    std::uint32_t struct_size, abi_version, flags, outcome;
+    std::uint64_t rtt_microseconds, age_microseconds, samples;
+    std::uint32_t reserved[2];
+};
+#endif
+static_assert(sizeof(ROBOTWEAX_SRT_StandbyRttDataV1_) == 48);
 
 struct robotweax_srt_telemetry_public_srt_session
 {
@@ -680,5 +691,41 @@ robotweax_srt_telemetry_public_srt_read_group_send_metadata_v1(
     output->authority_revision = data.authority_revision;
     output->active_age_microseconds = data.active_age_microseconds;
     output->probe_age_microseconds = data.probe_age_microseconds;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_public_srt_read_standby_rtt_metadata_v1(
+    const std::int32_t socket, robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn getter,
+    const std::uint64_t mono, robotweax_srt_telemetry_standby_rtt_metadata_v1 *output)
+{
+    if (output == nullptr || output->struct_size < sizeof(*output) ||
+        output->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION || socket < 0)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    *output = {};
+    output->struct_size = sizeof(*output);
+    output->abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    output->sampled_monotonic_nano = mono;
+    output->age_microseconds = UINT64_MAX;
+    if (getter == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    ROBOTWEAX_SRT_StandbyRttDataV1_ data{};
+    data.struct_size = sizeof(data);
+    data.abi_version = 1;
+    output->availability = 1;
+    output->native_result = getter(socket, &data, sizeof(data));
+    if (output->native_result != 0 || data.struct_size != sizeof(data) || data.abi_version != 1 ||
+        data.reserved[0] || data.reserved[1])
+        return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    auto candidate = *output;
+    candidate.availability = 2;
+    candidate.flags = data.flags;
+    candidate.outcome = data.outcome;
+    candidate.rtt_microseconds = data.rtt_microseconds;
+    candidate.age_microseconds = data.age_microseconds;
+    candidate.samples = data.samples;
+    if (!robotweax_srt_telemetry_internal::valid_standby_metadata(candidate))
+        return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    *output = candidate;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

@@ -164,6 +164,8 @@ def main():
             names = re.findall(r'<td class="path-name">([^<]*)</td>', gdom)
             check(sorted(names) == ["lte", "sat"], f"group view lists its paths ({names})")
             check("<h2>Paths</h2>" in gdom and "Own grade" in gdom, "group view: paths section with own grades")
+            check("Standby RTT observation" not in gdom and 'class="paths-table no-standby-rtt"' in gdom,
+                  "no Standby RTT tile or column without negotiated monitoring")
             check("DATA activity: packet-counter inference." in gdom,
                   "group view labels DATA activity as inferred")
             if group.get("send_authority", {}).get("availability") == "available":

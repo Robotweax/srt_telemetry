@@ -50,6 +50,26 @@ extern "C"
         uint32_t reserved[2];
     } robotweax_srt_telemetry_rtt_metadata_v1;
 
+    /* Optional Standby RTT observation, separate from normal DATA RTT/health.
+     * availability: 0 unsupported/disabled, 1 read failed, 2 snapshot.
+     * flags: 1 negotiated, 2 admitted, 4 observed, 8 fresh at capture,
+     * 16 retained terminal. outcome: 0 none, 1 pending, 2 measured,
+     * 3 timeout, 4 send skipped, 5 paused, 6 ID exhausted, 7 capacity.
+     * Outcome is the LAST attempt, not current eligibility/pause/health.
+     * RTT is one positive local round trip; samples saturates at UINT64_MAX.
+     * UINT64_MAX age is absent (including a backward provider clock read).
+     * Freshness is age <= 3 seconds at capture, never DATA-health evidence.
+     * Reads/statistics resets do not reset history; new sources forget it. */
+    typedef struct robotweax_srt_telemetry_standby_rtt_metadata_v1
+    {
+        uint32_t struct_size, abi_version, availability, flags;
+        uint32_t outcome;
+        int32_t native_result;
+        uint64_t rtt_microseconds, age_microseconds, samples;
+        uint64_t sampled_monotonic_nano;
+        uint32_t reserved[2];
+    } robotweax_srt_telemetry_standby_rtt_metadata_v1;
+
     /* Optional local Backup sender snapshot, independent of counter activity.
      * availability: 0 disabled/unsupported, 1 read failed, 2 available.
      * state: 0 unselected, 1 selected. IDs plus generations identify members.
@@ -352,6 +372,13 @@ extern "C"
     robotweax_srt_telemetry_sampler_set_rtt_metadata_v1(
         robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
         const robotweax_srt_telemetry_rtt_metadata_v1 *metadata);
+
+    /* Copies validated instantaneous Standby RTT metadata; NULL clears.
+     * Thread-safe, forbidden from sampler callbacks. Removal forgets it. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_set_standby_rtt_metadata_v1(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
+        const robotweax_srt_telemetry_standby_rtt_metadata_v1 *metadata);
 
     /* Copies the latest optional group observation; NULL clears. Thread-safe,
      * forbidden from sampler callbacks. Existing source/sample ABI unchanged. */

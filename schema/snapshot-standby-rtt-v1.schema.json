@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Optional instantaneous Standby RTT observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "availability"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "availability": {
+      "enum": [
+        "available",
+        "read_failed",
+        "unavailable"
+      ]
+    },
+    "negotiated": {
+      "type": "boolean"
+    },
+    "admitted": {
+      "type": "boolean"
+    },
+    "observed": {
+      "type": "boolean"
+    },
+    "terminal": {
+      "type": "boolean"
+    },
+    "fresh_at_capture": {
+      "type": "boolean"
+    },
+    "fresh": {
+      "type": "boolean"
+    },
+    "last_outcome": {
+      "enum": [
+        "none",
+        "pending",
+        "measured",
+        "timeout",
+        "send_skipped",
+        "paused",
+        "id_exhausted",
+        "capacity"
+      ],
+      "description": "Last attempt outcome; not current pause, eligibility, DATA health or send authority."
+    },
+    "rtt_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0
+    },
+    "rtt_microseconds": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "age_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Provider age at capture; null is absent, including backward-clock reads with retained samples."
+    },
+    "samples": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "description": "Exact uint64 decimal, avoiding JavaScript precision loss."
+    },
+    "sampled_monotonic_nano": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "description": "Exact uint64 decimal, avoiding JavaScript precision loss."
+    },
+    "capture_age_seconds": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "version",
+          "availability",
+          "negotiated",
+          "admitted",
+          "observed",
+          "terminal",
+          "fresh_at_capture",
+          "fresh",
+          "last_outcome",
+          "rtt_seconds",
+          "rtt_microseconds",
+          "age_seconds",
+          "samples",
+          "sampled_monotonic_nano",
+          "capture_age_seconds"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "observed": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "rtt_seconds": {
+                  "type": "null"
+                },
+                "rtt_microseconds": {
+                  "type": "null"
+                },
+                "age_seconds": {
+                  "type": "null"
+                },
+                "samples": {
+                  "const": "0"
+                },
+                "fresh_at_capture": {
+                  "const": false
+                },
+                "fresh": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "observed": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "rtt_seconds": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "rtt_microseconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "samples": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "admitted": {
+                  "const": true
+                },
+                "negotiated": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "fresh": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "fresh_at_capture": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "fresh_at_capture": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "observed": {
+                  "const": true
+                },
+                "age_seconds": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 3
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "negotiated": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "admitted": {
+                  "const": false
+                },
+                "observed": {
+                  "const": false
+                },
+                "terminal": {
+                  "const": false
+                },
+                "last_outcome": {
+                  "const": "none"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "last_outcome": {
+                  "const": "capacity"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "negotiated": {
+                  "const": true
+                },
+                "admitted": {
+                  "const": false
+                },
+                "observed": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "last_outcome": {
+                  "const": "measured"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "observed": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "terminal": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "negotiated": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "admitted": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "negotiated": {
+                  "const": true
+                },
+                "last_outcome": {
+                  "enum": [
+                    "none",
+                    "pending",
+                    "measured",
+                    "timeout",
+                    "send_skipped",
+                    "paused",
+                    "id_exhausted"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "negotiated": {
+                  "const": true
+                },
+                "admitted": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "observed": {
+                  "const": false
+                },
+                "last_outcome": {
+                  "const": "capacity"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "else": {
+        "maxProperties": 2
+      }
+    }
+  ]
+}

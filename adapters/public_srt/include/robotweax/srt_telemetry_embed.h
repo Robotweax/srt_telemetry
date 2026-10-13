@@ -288,6 +288,15 @@ extern "C"
         robotweax_srt_telemetry_embed *embed,
         robotweax_srt_telemetry_public_srt_rtt_data_v1_fn getter);
 
+    /* Opt-in after qualifying the selected provider build. NULL disables and
+     * clears all observations. Read-only member metadata, never DATA health.
+     * Serializes with sampling; forbidden from embed/sampler callbacks.
+     * The selected provider library must remain loaded. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_embed_set_standby_rtt_data_v1(
+        robotweax_srt_telemetry_embed *embed,
+        robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn getter);
+
 #ifdef __cplusplus
 }
 #endif

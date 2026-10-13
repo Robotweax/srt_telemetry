@@ -386,6 +386,7 @@ struct robotweax_srt_telemetry_embed
 {
     robotweax_srt_telemetry_embed_config_v1 config{};
     Labels labels;
+    robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn standby_rtt_getter = nullptr;
     robotweax_srt_telemetry_public_srt_rtt_data_v1_fn rtt_getter = nullptr;
     robotweax_srt_telemetry_public_srt_group_send_state_v1_fn authority_getter = nullptr;
     std::string service_name;
@@ -1017,6 +1018,8 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
         member->socket = entry.socket;
         /* The old socket's RTT history says nothing about the new one. */
         member->rtt_fresh = false;
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_standby_rtt_metadata_v1(
+            embed.sampler, member->source_id, nullptr));
         journal(embed, group.source_id, ROBOTWEAX_SRT_TELEMETRY_EVENT_MEMBER_ADDED,
                 ROBOTWEAX_SRT_TELEMETRY_SEVERITY_INFO, 0, 0, entry.socket, "path=" + path, wall, mono);
     }
@@ -1324,6 +1327,24 @@ void poll_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
         embed.sampler, endpoint.source_id, &metadata));
 }
 
+void poll_standby_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
+{
+    /* SRT negotiates Standby RTT only on Backup group members: a group
+     * aggregate has none, and a standalone socket can only answer "not
+     * negotiated", so neither is read. */
+    if (endpoint.kind != EndpointKind::member)
+        return;
+    robotweax_srt_telemetry_standby_rtt_metadata_v1 metadata{};
+    metadata.struct_size = sizeof(metadata);
+    metadata.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    metadata.age_microseconds = UINT64_MAX;
+    if (!endpoint.retired && endpoint.socket >= 0)
+        static_cast<void>(robotweax_srt_telemetry_public_srt_read_standby_rtt_metadata_v1(
+            endpoint.socket, embed.standby_rtt_getter, mono, &metadata));
+    static_cast<void>(robotweax_srt_telemetry_sampler_set_standby_rtt_metadata_v1(
+        embed.sampler, endpoint.source_id, &metadata));
+}
+
 void run(Embed &embed)
 {
     const auto period = std::chrono::nanoseconds(embed.period_nano);
@@ -1343,12 +1364,16 @@ void run(Embed &embed)
         {
             poll(embed, *endpoint, wall, mono);
             poll_rtt(embed, *endpoint, mono);
+            poll_standby_rtt(embed, *endpoint, mono);
             if (endpoint->kind == EndpointKind::group)
             {
                 poll_group(embed, *endpoint, wall, mono);
                 poll_authority(embed, *endpoint, wall, mono);
                 for (auto &[path, member] : endpoint->group->members)
+                {
                     poll_rtt(embed, *member, mono);
+                    poll_standby_rtt(embed, *member, mono);
+                }
             }
         }
         for (auto it = embed.retired.begin(); it != embed.retired.end();)
@@ -1361,6 +1386,7 @@ void run(Embed &embed)
             else
             {
                 poll_rtt(embed, **it, mono);
+                poll_standby_rtt(embed, **it, mono);
                 poll_authority(embed, **it, wall, mono);
                 ++it;
             }
@@ -2307,6 +2333,31 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_group
     };
     for (auto &[socket, endpoint] : embed->active)
         clear(*endpoint);
+    for (auto &endpoint : embed->retired)
+        clear(*endpoint);
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_standby_rtt_data_v1(
+    robotweax_srt_telemetry_embed *embed,
+    robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn getter)
+{
+    if (embed == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(embed->mutex);
+    embed->standby_rtt_getter = getter;
+    const auto clear = [&](const Endpoint &endpoint)
+    {
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_standby_rtt_metadata_v1(
+            embed->sampler, endpoint.source_id, nullptr));
+    };
+    for (auto &[socket, endpoint] : embed->active)
+    {
+        clear(*endpoint);
+        if (endpoint->group)
+            for (auto &[path, member] : endpoint->group->members)
+                clear(*member);
+    }
     for (auto &endpoint : embed->retired)
         clear(*endpoint);
     return ROBOTWEAX_SRT_TELEMETRY_OK;
