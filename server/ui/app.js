@@ -374,6 +374,8 @@
     generatedMs: 0,
     lastDataAt: 0,
     lastSnapshotSteadyMs: 0,
+    /* The last render showed an observed Standby RTT, whose age must keep moving. */
+    standbyAging: false,
     series: new Map(),
     events: [],
     eventSequences: new Set(),
@@ -940,6 +942,7 @@
 
   function render() {
     if (!state.started) return;
+    state.standbyAging = false;
     const route = parseRoute();
     if (!view || view.kind !== route.view || (route.view === 'source' && view.id !== route.id)) {
       if (view && view.destroy) view.destroy();
@@ -1693,6 +1696,12 @@
     return parts.join(' · ');
   }
 
+  // Shown only where monitoring was negotiated; elsewhere it would be noise.
+  function standbyRttShown(src) {
+    const m = src?.standby_rtt;
+    return m?.availability === 'read_failed' || (m?.availability === 'available' && m.negotiated === true);
+  }
+
   // Last attempt outcome is history; it cannot identify a current DATA pause.
   function standbyRttDisplay(src) {
     const m = src.standby_rtt;
@@ -1764,7 +1773,8 @@
       if (fec) list.push(tile('FEC rebuilt', fmtPacketRate(fec), `${fmtPacketRate(windowStat(src, 'srt.receiver.fec_unrecovered.packet_rate', 'rate'))} not rebuilt`));
     }
     list.push(tile('Current RTT estimate', src.rtt_metadata?.availability === 'available' ? fmtDuration(src.rtt_metadata.smoothed_seconds) : '—', rttNote));
-    if (!src.labels?.group || src.labels?.path) {
+    if ((!src.labels?.group || src.labels?.path) && standbyRttShown(src)) {
+      if (src.standby_rtt.observed) state.standbyAging = true;
       const standby = standbyRttDisplay(src);
       list.push(tile('Standby RTT observation', standby.value, standby.note));
     }
@@ -1779,7 +1789,7 @@
     const pathsNote = h('span', { class: 'faint' });
     const pathsSection = h('section', { class: 'section hidden' },
       h('div', { class: 'section-head' }, h('h2', { text: 'Paths' }), pathsNote),
-      h('div', { class: 'card' }, h('table', { class: 'paths-table' },
+      h('div', { class: 'card' }, h('table', { class: 'paths-table no-standby-rtt' },
         h('thead', {}, h('tr', {},
           h('th', { text: 'Path' }),
           h('th', { text: 'Own grade' }),
@@ -1958,6 +1968,7 @@
           if (row.tr.getAttribute('aria-label') !== label) row.tr.setAttribute('aria-label', label);
           row.cells[4].title = `Window estimate. Current metadata: ${rttProvenance(m)}`;
           const standbyRtt = standbyRttDisplay(m);
+          if (m.standby_rtt?.observed && standbyRttShown(m)) state.standbyAging = true;
           row.cells[7].title = standbyRtt.note;
           const texts = [pathName(m), null, `${m.connection || 'unreported'}${m.up ? '' : ' · read failing'}`,
             fmtBitrate(windowStat(m, primaryBitrateKey(m.role), 'rate')),
@@ -1972,6 +1983,7 @@
             put(row.cells[1], verdictBadge(own, 12), standby ? h('span', { class: 'faint', text: ' standby' }) : null);
           }
         }
+        pathsBody.parentNode.classList.toggle('no-standby-rtt', !members.some(standbyRttShown));
         const pathOrder = members.map((m) => m.id).join(',');
         if (pathsBody.dataset.order !== pathOrder || pathsBody.children.length !== Math.max(members.length, 1)) {
           pathsBody.dataset.order = pathOrder;
@@ -2127,8 +2139,10 @@
     });
     setInterval(() => {
       renderBanner();
-      // Age retained observations even if the live feed stops delivering.
-      if (state.lastDataAt && performance.now() - state.lastSnapshotSteadyMs > 2000) render();
+      // Age shown Standby RTT observations even if the live feed stops
+      // delivering; views without one are not re-rendered.
+      if (state.standbyAging && state.lastDataAt &&
+          performance.now() - state.lastSnapshotSteadyMs > 2000) render();
     }, 1000);
     setInterval(watchdog, 1000);
     start();

@@ -341,7 +341,8 @@ retains the provider flag, while `fresh` additionally requires total age <= 3 s;
 stopped sampling cannot keep an old observation fresh. Fleet scheduling may
 legitimately produce stale observations at the 32/s process budget.
 
-The built-in UI shows a separate Standby RTT column/tile, total age, freshness,
+Where monitoring was negotiated (or a read failed), the built-in UI shows a
+separate Standby RTT column/tile, total age, freshness,
 retained terminal status and **last attempt**. Normal DATA RTT, health grades,
 active-member authority, counter activity, old JSONL/history, Prometheus and
 OTLP metrics are unchanged. This metadata never selects a path or proves DATA

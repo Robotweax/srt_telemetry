@@ -1095,3 +1095,9 @@ details.card[open] > summary {
     border-color: CanvasText;
   }
 }
+
+/* The Standby RTT column appears only when a path negotiated monitoring. */
+.paths-table.no-standby-rtt th:nth-child(8),
+.paths-table.no-standby-rtt td:nth-child(8) {
+  display: none;
+}

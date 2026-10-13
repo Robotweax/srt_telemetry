@@ -1329,7 +1329,10 @@ void poll_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
 
 void poll_standby_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
 {
-    if (endpoint.kind == EndpointKind::group)
+    /* SRT negotiates Standby RTT only on Backup group members: a group
+     * aggregate has none, and a standalone socket can only answer "not
+     * negotiated", so neither is read. */
+    if (endpoint.kind != EndpointKind::member)
         return;
     robotweax_srt_telemetry_standby_rtt_metadata_v1 metadata{};
     metadata.struct_size = sizeof(metadata);

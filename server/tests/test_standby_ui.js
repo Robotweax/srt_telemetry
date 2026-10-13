@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../ui/app.js'), 'utf8');
-const start = source.indexOf('  function standbyRttDisplay(src) {');
+const start = source.indexOf('  function standbyRttShown(src) {');
 const end = source.indexOf('  function tilesFor(src) {', start);
 assert(start >= 0 && end > start);
 const context = vm.createContext({state: {lastSnapshotSteadyMs: 0}, performance: {now: () => 0}, fmtAge: s => `${s}s`, fmtDuration: s => `${s}s`});
@@ -34,4 +34,11 @@ assert.equal(display({availability: 'available', negotiated: true, admitted: tru
 
 context.performance.now = () => 1500;
 assert.match(display(measured).note, /3.5s old · stale/);
+const shown = m => context.standbyRttShown({standby_rtt: m});
+assert.equal(shown(), false, 'no metadata: hidden');
+assert.equal(shown({availability: 'unavailable'}), false, 'getter disabled: hidden');
+assert.equal(shown({availability: 'available', negotiated: false}), false, 'not negotiated: hidden');
+assert.equal(shown({availability: 'available', negotiated: true, admitted: false}), true, 'capacity limited: shown');
+assert.equal(shown(measured), true, 'measured: shown');
+assert.equal(shown({availability: 'read_failed'}), true, 'read failure: shown');
 console.log('Standby RTT display contract passed');

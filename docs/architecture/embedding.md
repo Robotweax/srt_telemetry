@@ -355,8 +355,11 @@ Alternatively inject the exact compatible getter using
 `robotweax_srt_telemetry_embed_set_standby_rtt_data_v1`; the library must remain
 loaded. Null disables and clears observations. The setter serializes with
 sampling and must not run from callbacks. Each group member is polled separately;
-group aggregate rows remain unavailable. Ordinary disabled connected sockets
-can report an available getter with monitoring not negotiated.
+group aggregate rows and standalone sockets are not read and remain unavailable
+(SRT negotiates Standby RTT only on Backup group members). A member without
+negotiated monitoring reads available with `negotiated=false`. The built-in UI
+shows the Standby RTT tile and paths column only where monitoring was
+negotiated (or a read failed).
 
 The independent metadata and snapshot JSON carry a single measured RTT, its
 age/freshness and **last attempt** outcome. Neither `MEASURED` nor `PAUSED`
