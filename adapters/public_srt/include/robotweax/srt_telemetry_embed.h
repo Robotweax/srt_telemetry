@@ -134,11 +134,12 @@ extern "C"
          * 36000 s; 488 bytes per sample, allocated at attach. The oldest
          * samples are overwritten and counted in the recording header. */
         uint32_t recording_seconds;
-        /* Recording schema: 0 or ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1
-         * (default) or ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2: adds the
-         * group type and row, each member's state per sample and the health
-         * transitions (docs/architecture/embedding.md#recordings). Write 1alpha2
-         * only for readers that accept it (SRT Doctor rule set 0.1.11 or later). */
+        /* Recording schema: 0 or ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2
+         * (default): the group type and row, each member's state per sample
+         * and the health transitions (docs/architecture/embedding.md#recordings),
+         * read by SRT Doctor from rule set 0.1.11. Or
+         * ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1 for a reader that
+         * accepts only 1alpha1 (the default before srt_telemetry#47 closed). */
         uint32_t recording_schema;
         /* Recording header metadata, printable ASCII: the SRT library version
          * (robotweax_srt_telemetry_host_embed_functions fills it from srt.h)
