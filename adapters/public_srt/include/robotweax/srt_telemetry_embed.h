@@ -252,8 +252,74 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_sampler *
     robotweax_srt_telemetry_embed_sampler(robotweax_srt_telemetry_embed *embed);
 
+/* recording_event_v1.flags */
+/* A new version of the file was written (renamed into place). */
+#define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_WRITTEN UINT32_C(1)
+/* The source took no samples since its last written version, so the file
+ * was left as it is (not rewritten). */
+#define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_UNCHANGED (UINT32_C(1) << 1)
+/* The write failed (directory gone, disk full); the previous version, if
+ * any, stays. */
+#define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_FAILED (UINT32_C(1) << 2)
+/* The source never sampled (an attempt that never connected): no file. */
+#define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_EMPTY (UINT32_C(1) << 3)
+/* The source is gone (removed after its linger, or at stop): the embed
+ * never writes this file again. Set on exactly one event per recording
+ * (none only if queueing the final request runs out of memory, which also
+ * counts as a failed write). */
+#define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_FINAL (UINT32_C(1) << 4)
+
+    /* One handled write request of a source's recording. */
+    typedef struct robotweax_srt_telemetry_embed_recording_event_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        uint64_t source_id;
+        uint32_t flags;
+        uint32_t reserved;
+        /* Samples in the file (WRITTEN or UNCHANGED), else 0. */
+        uint64_t record_count;
+        /* The recording's file path; valid during the callback only. */
+        const char *path;
+    } robotweax_srt_telemetry_embed_recording_event_v1;
+
+    /* Called on the embed's writer thread after each handled write, in
+     * order per source; requests still waiting for the same recording are
+     * merged into one write (and one event). It must return quickly and must
+     * not call robotweax_srt_telemetry_embed_stop or
+     * robotweax_srt_telemetry_embed_set_recording_callback; other embed calls
+     * are allowed. Once stop has begun, attach and write_recording return
+     * INVALID_STATE and detach does nothing (stop forgets every socket). */
+    typedef void (*robotweax_srt_telemetry_embed_recording_callback)(
+        void *user_data, const robotweax_srt_telemetry_embed_recording_event_v1 *event);
+
+    /* Sets (NULL clears) the recording callback. When it returns, the
+     * previous callback is not running and is not called again, so its
+     * user data may be freed. Thread-safe; never from the callback itself
+     * (it would wait for itself), nor while holding a lock the callback
+     * takes. INVALID_ARGUMENT for a NULL embed. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_embed_set_recording_callback(robotweax_srt_telemetry_embed *embed,
+                                                         robotweax_srt_telemetry_embed_recording_callback callback,
+                                                         void *user_data);
+
+    /* Writes an attached socket's recording now, without ending its source:
+     * the same file and format a detach writes, holding the samples so far.
+     * For a group, the group's and every current member's recording (a
+     * lingering former member was written when it left). The write runs on
+     * the writer thread; the recording callback reports it (not FINAL,
+     * unless it merged with the source's removal).
+     * Later writes replace the file with longer versions. NOT_FOUND for a
+     * socket that is not attached, INVALID_STATE without recordings
+     * (recording_directory empty) or once stop has begun. Thread-safe; from
+     * the recording callback too, not from sampler callbacks. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_embed_write_recording(robotweax_srt_telemetry_embed *embed, int32_t socket);
+
     /* Recording file writes done and failed so far (either may be NULL); a
-     * source is written up to three times (detach, removal, stop). A failed
+     * source is written at detach, at removal and at stop, and whenever
+     * embed_write_recording asks. A write of a source without new samples
+     * since its last version is skipped (UNCHANGED, not counted). A failed
      * write (directory gone, disk full) leaves the previous version; the
      * source's next write, if any, tries again. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API void

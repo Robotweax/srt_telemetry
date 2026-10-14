@@ -271,7 +271,14 @@ the format SRT Doctor and the Flight Recorder read:
   recording; on Linux a completed write normally survives a power loss too
   (macOS `fsync` does not flush the drive cache). Files get mode 0644 within
   the process umask read at `start`. A reconnection that
-  continues the source continues its recording;
+  continues the source continues its recording. A write that finds no new
+  sample since the source's last written version leaves the file as it is
+  (a lingering source takes no samples), so a file the host pruned after the
+  detach write does not come back at the end of the linger or at `stop`;
+- on request while the source goes on: `robotweax_srt_telemetry_embed_write_recording(embed, socket)`
+  queues the same write a detach makes (for a group: the group and every
+  current member) and returns at once. Later writes replace the file with longer
+  versions, so one session stays one recording;
 - as `srt-telemetry-<UTC start>-<stream>-<role>-<random>.jsonl`: sorted by
   start, unique also across containers and hosts that share a directory;
 - with header `streamId` from the `stream` label (`name=`), `flowId` from a
@@ -290,8 +297,29 @@ JSONL, so 600 s make an 11.6 MB file; a write holds a copy of the ring and
 64 KiB of text, not the file. That copy is taken under the recorder's lock,
 which the next sample waits for: a few ms at the default, up to about 150 ms
 (a gap-flagged window) for a 36,000 s ring, as does allocating such a ring at
-attach. Keep rings short where every 100 ms sample matters. `robotweax_srt_telemetry_embed_recordings` counts
-file writes done and failed (a source is written up to three times). The
+attach. Keep rings short where every 100 ms sample matters, and do not request
+live writes of long rings more often than such a pause is acceptable.
+`robotweax_srt_telemetry_embed_recordings` counts file writes done and failed
+(unchanged, skipped writes are not counted).
+
+`robotweax_srt_telemetry_embed_set_recording_callback` reports every handled
+write on the writer thread, in order per source (requests still waiting for
+the same recording merge into one write and one event):
+`embed_recording_event_v1` carries the `source_id`, the file path, the samples
+in the file and flags `WRITTEN`, `UNCHANGED`, `FAILED` or `EMPTY` (no sample
+yet, no file). `FINAL` is set on exactly one event per recording, when the
+source is gone (removed after its linger, or at `stop`, which returns after
+the event): the embed never writes that file again, so a host can prune,
+pack or analyse it without waiting for the linger to pass a second time. A
+live-write request reports without `FINAL` unless it merged with the
+source's removal. Only running out of memory while queueing the final
+request loses that event (the failure counter counts it); a source whose
+attach failed gets no events. The callback must return quickly and must not
+call `embed_stop` or `set_recording_callback`; other embed calls are allowed,
+and once `stop` has begun `attach`/`write_recording` return `INVALID_STATE`
+and `detach` does nothing. Clearing or replacing the callback waits for a
+running call, so its user data may be freed afterwards; with no callback set,
+events are dropped. The
 directory must exist and be writable at `start` (else `IO_FAILURE`); nothing
 removes old files, so retention is the host's job. Recordings keep only the
 common v1 statistics, not the provider-specific extended fields, and samples
@@ -309,7 +337,8 @@ thresholds, callbacks or rendering. The embed ticks it, so do not start,
 stop, tick or destroy it; its callbacks run on the embed thread under the
 embed's lock, so they must not call `attach` or `detach`.
 
-`stop` must not overlap `attach` or `detach` on another thread. It stops the
+`stop` must not overlap `attach` or `detach` on another host thread (the
+recording callback, which `stop` waits for, may call them; see above). It stops the
 threads, waits for the final recordings, forgets every socket (the host still closes them)
 and frees the embed. Call it before `srt_cleanup`.
 
