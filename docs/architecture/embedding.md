@@ -271,7 +271,9 @@ the format SRT Doctor and the Flight Recorder read:
 
 - by the embed's writer thread, never on the sampling thread or the host's
   thread: when the socket is detached (a host may exit right after it, so
-  call `stop`, which waits for every write), again when the source is removed
+  call `stop`, which waits for every write; a `1alpha2` recording is queued
+  after the next tick, which records the source's loss as its last health
+  line), again when the source is removed
   after the linger, and at `stop`. Each write streams into a new temporary
   file (`mkstemp`) in the same directory, syncs it, renames it over the
   previous version and syncs the directory, so a reader never sees a partial
@@ -279,8 +281,8 @@ the format SRT Doctor and the Flight Recorder read:
   (macOS `fsync` does not flush the drive cache). Files get mode 0644 within
   the process umask read at `start`. A reconnection that
   continues the source continues its recording. A write that finds no new
-  sample since the source's last written version leaves the file as it is
-  (a lingering source takes no samples), so a file the host pruned after the
+  sample or health line since the source's last written version leaves the
+  file as it is (a lingering source takes no samples), so a file the host pruned after the
   detach write does not come back at the end of the linger or at `stop`;
 - on request while the source goes on: `robotweax_srt_telemetry_embed_write_recording(embed, socket)`
   queues the same write a detach makes (for a group: the group and every
@@ -295,8 +297,9 @@ the format SRT Doctor and the Flight Recorder read:
   `capacity`/`overwrittenCount` when the ring was full;
 - not at all for a source that never produced a sample (an attempt that never
   connected);
-- in schema `1alpha1` by default, or `1alpha2` with `jsonl_schema=1alpha2`
-  (config `recording_schema`): every recording then names its group type and
+- in schema `1alpha2` by default (`jsonl_schema=1alpha1`, config
+  `recording_schema`, selects `1alpha1` for a reader that accepts only that):
+  every recording names its group type and
   row (`group` for a group's own source, `member` for a path, `null` for a
   plain socket), member rows carry each sample's member state (SRT's member
   state, the standby decision that feeds `HEALTH_STATUS_STANDBY`, and the local
@@ -306,9 +309,8 @@ the format SRT Doctor and the Flight Recorder read:
   path counts is written after the sample it was graded on (a lingering
   source's loss too, which counts as a change for the next write). A tick
   whose sample failed grades the source's last good sample again, so its
-  transition follows that sample. Use it only
-  where the reader accepts `1alpha2` (SRT Doctor rule set 0.1.11 or later);
-  see [schema 1alpha2](bounded-recorder.md#schema-1alpha2).
+  transition follows that sample. SRT Doctor reads `1alpha2` from rule set
+  0.1.11; see [schema 1alpha2](bounded-recorder.md#schema-1alpha2).
 
 Label both ends of one stream with the same `flow` so a sender and a receiver
 recording are recognised as one path. The ring holds 488 bytes per sample

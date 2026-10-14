@@ -511,33 +511,47 @@ std::vector<std::filesystem::path> recordings_in(const std::filesystem::path &di
     return files;
 }
 
-/* A recording is a complete recorder export: header, then exactly
- * recordCount samples of the same stream, oldest first. */
+/* A recording is a complete recorder export: a 1alpha2 header (the embed's
+ * default), then exactly recordCount samples of the same stream, oldest
+ * first, and healthCount health lines, each after the sample it was graded
+ * on. */
 bool complete_recording(const std::vector<std::string> &lines, const std::string &role, std::size_t &samples)
 {
     if (lines.empty() || json_field(lines[0], "kind") != "robotweax-srt-telemetry-recording" ||
-        json_field(lines[0], "role") != role || json_field(lines[0], "streamId") != "cam-9" ||
-        json_field(lines[0], "flowId") != "studio-link")
+        json_field(lines[0], "schemaVersion") != "1alpha2" || json_field(lines[0], "role") != role ||
+        json_field(lines[0], "streamId") != "cam-9" || json_field(lines[0], "flowId") != "studio-link" ||
+        json_field(lines[0], "groupRow") != "null" || json_field(lines[0], "healthLines") != "true")
     {
         return false;
     }
-    samples = lines.size() - 1;
-    if (json_field(lines[0], "recordCount") != std::to_string(samples))
-    {
-        return false;
-    }
+    samples = 0;
+    std::size_t health = 0;
     std::uint64_t previous = 0;
     for (std::size_t i = 1; i < lines.size(); ++i)
     {
+        if (json_field(lines[i], "kind") == "robotweax-srt-telemetry-health")
+        {
+            /* After its sample: sampleIndex names a sample already written. */
+            if (samples == 0 || std::stoull(json_field(lines[i], "sampleIndex")) >= samples ||
+                json_field(lines[i], "streamId") != "cam-9")
+            {
+                return false;
+            }
+            ++health;
+            continue;
+        }
         const auto observed = std::stoull(json_field(lines[i], "observed_at_unix_nano"));
         if (json_field(lines[i], "kind") != "robotweax-srt-telemetry-sample" ||
-            json_field(lines[i], "streamId") != "cam-9" || observed < previous)
+            json_field(lines[i], "streamId") != "cam-9" || observed < previous ||
+            json_field(lines[i], "member") != "null")
         {
             return false;
         }
         previous = observed;
+        ++samples;
     }
-    return true;
+    return json_field(lines[0], "recordCount") == std::to_string(samples) &&
+           json_field(lines[0], "healthCount") == std::to_string(health);
 }
 
 void test_recordings()
@@ -614,9 +628,20 @@ void test_recordings()
                   json_field(lines[0], "overwrittenCount") == "0",
               std::string("header metadata: ") + role);
         const auto counter = std::string(role) == "sender" ? "unique_sent_packet_total" : "unique_received_packet_total";
-        check(lines.size() > 1 && json_field(lines.back(), counter) != "null" &&
-                  std::stoull(json_field(lines.back(), counter)) > 100,
+        /* The last sample: health lines (1alpha2) may follow it. */
+        std::string last_sample;
+        for (const auto &line : lines)
+        {
+            if (json_field(line, "kind") == "robotweax-srt-telemetry-sample")
+                last_sample = line;
+        }
+        const auto total = json_field(last_sample, counter);
+        check(!total.empty() && total != "null" && std::stoull(total) > 100,
               std::string("traffic recorded: ") + counter);
+        /* The detach write already holds the source's loss, its last line. */
+        check(json_field(lines.back(), "kind") == "robotweax-srt-telemetry-health" &&
+                  json_field(lines.back(), "reason") == "connection_lost",
+              std::string("the detach write ends with the loss: ") + role);
         detached_samples[role] = samples;
     }
     stream.stop();
@@ -669,6 +694,49 @@ void test_recordings()
                   json_field(lines[0], "capacity") == "10" && std::stoull(json_field(lines[0], "overwrittenCount")) > 0,
               "a full ring keeps the newest 10 samples and counts the overwritten");
     }
+
+    /* The default is 1alpha2; jsonl_schema=1alpha1 keeps the old schema for
+     * a reader that accepts only that: no group fields, no health lines. */
+    auto old = base_config();
+    check(old.recording_schema == 0, "the default config leaves the schema to the library (1alpha2)");
+    const auto old_spec = "off,name=cam-9,jsonl=" + directory.string() + ",linger_s=0,jsonl_schema=1alpha1";
+    check(robotweax_srt_telemetry_embed_config_parse(&old, old_spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              old.recording_schema == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1,
+          "jsonl_schema=1alpha1 parses");
+    robotweax_srt_telemetry_embed *legacy = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&old, &legacy) == ROBOTWEAX_SRT_TELEMETRY_OK, "start with 1alpha1");
+    Stream third;
+    check(third.open(nullptr) && robotweax_srt_telemetry_embed_attach(legacy, third.sender,
+                                                                      ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                                      flow, 1) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "attach to the 1alpha1 embed");
+    third.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    check(robotweax_srt_telemetry_embed_detach(legacy, third.sender) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "detach from the 1alpha1 embed");
+    third.stop();
+    robotweax_srt_telemetry_embed_stop(legacy);
+    bool legacy_found = false;
+    for (const auto &file : recordings_in(directory))
+    {
+        if (std::find(all.begin(), all.end(), file) != all.end())
+        {
+            continue;
+        }
+        legacy_found = true;
+        const auto lines = read_lines(file);
+        bool plain = !lines.empty() && json_field(lines[0], "schemaVersion") == "1alpha1" &&
+                     lines[0].find("\"groupRow\"") == std::string::npos && lines.size() > 1;
+        for (std::size_t i = 1; i < lines.size(); ++i)
+        {
+            plain = plain && json_field(lines[i], "kind") == "robotweax-srt-telemetry-sample" &&
+                    json_field(lines[i], "schemaVersion") == "1alpha1" &&
+                    lines[i].find("\"member\"") == std::string::npos;
+        }
+        check(plain && json_field(lines[0], "recordCount") == std::to_string(lines.size() - 1),
+              "jsonl_schema=1alpha1 writes 1alpha1: samples only");
+    }
+    check(legacy_found, "the 1alpha1 recording was written");
     std::filesystem::remove_all(directory);
 }
 
@@ -898,7 +966,8 @@ void test_live_recording()
     const auto last = events.at(3);
     check(last.flags == (ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_UNCHANGED | ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_FINAL) &&
               last.source_id == first.source_id && last.record_count == events.at(2).record_count,
-          "the final event: unchanged, final, same source");
+          "the final event: unchanged, final, same source: flags " + std::to_string(last.flags) + ", " +
+              std::to_string(last.record_count) + " vs " + std::to_string(events.at(2).record_count) + " samples");
     check(!std::filesystem::exists(file), "the pruned file does not come back");
 
     /* A source that never sampled: one final event, no file. */

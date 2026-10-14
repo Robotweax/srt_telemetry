@@ -423,6 +423,10 @@ struct robotweax_srt_telemetry_embed
     std::thread thread;
     std::map<std::int32_t, std::unique_ptr<Endpoint>> active;
     std::vector<std::unique_ptr<Endpoint>> retired;
+    /* 1alpha2 recordings of sources retired this tick: written after the
+     * next tick has recorded their loss, so that the detach write is
+     * complete and an unchanged removal stays unchanged. */
+    std::vector<std::uint64_t> detach_writes;
 
     /* Recordings by source ID, guarded by mutex; on_sample runs inside a
      * tick, which the embed thread only calls with mutex held. */
@@ -763,7 +767,7 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
         }
         recording->role = endpoint.role;
         recording->directory = embed.config.recording_directory;
-        recording->v2 = embed.config.recording_schema == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2;
+        recording->v2 = embed.config.recording_schema != ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1;
         recording->group_type = group_type;
         recording->group_row = group_row;
         recording->member.struct_size = sizeof(recording->member);
@@ -931,8 +935,26 @@ void retire(Embed &embed, std::unique_ptr<Endpoint> endpoint)
         return;
     }
     /* Its recording so far is written now (by the writer thread): a host may
-     * exit soon after detaching and stop. */
-    queue_recording(embed, endpoint->source_id, false);
+     * exit soon after detaching and stop. A 1alpha2 recording waits for the
+     * next tick, which records the source's loss as its last health line
+     * (stop writes it in any case). */
+    const auto recording = embed.recordings.find(endpoint->source_id);
+    bool deferred = false;
+    if (recording != embed.recordings.end() && recording->second->v2)
+    {
+        try
+        {
+            embed.detach_writes.push_back(endpoint->source_id);
+            deferred = true;
+        }
+        catch (const std::bad_alloc &)
+        {
+        }
+    }
+    if (!deferred)
+    {
+        queue_recording(embed, endpoint->source_id, false);
+    }
     endpoint->retired = true;
     endpoint->context.connection = ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST;
     apply_context(embed, *endpoint);
@@ -1632,6 +1654,11 @@ void run(Embed &embed)
         }
         static_cast<void>(robotweax_srt_telemetry_sampler_tick(embed.sampler, wall, mono));
         record_health(embed);
+        for (const auto source_id : embed.detach_writes)
+        {
+            queue_recording(embed, source_id, false);
+        }
+        embed.detach_writes.clear();
         /* Fixed cadence; after an overrun, continue from now (the windows
          * flag the gap). */
         next += period;
