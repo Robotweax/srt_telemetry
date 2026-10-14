@@ -97,6 +97,7 @@ struct Observed
     std::map<std::uint64_t, std::string> site_label;
     robotweax_srt_telemetry_sampler *sampler = nullptr;
     robotweax_srt_telemetry_error reentrant_result = ROBOTWEAX_SRT_TELEMETRY_OK;
+    robotweax_srt_telemetry_error reentrant_labels = ROBOTWEAX_SRT_TELEMETRY_OK;
 };
 
 void on_sample(void *user, const robotweax_srt_telemetry_source_info_v1 *source,
@@ -115,6 +116,9 @@ void on_sample(void *user, const robotweax_srt_telemetry_source_info_v1 *source,
     if (observed.sampler != nullptr)
     {
         observed.reentrant_result = robotweax_srt_telemetry_sampler_tick(observed.sampler, 0, 0);
+        std::size_t count = 0;
+        observed.reentrant_labels = robotweax_srt_telemetry_sampler_source_labels(
+            observed.sampler, source->source_id, nullptr, nullptr, 0, &count);
     }
 }
 
@@ -237,6 +241,16 @@ void test_manual_ticks()
                                                            second + 28 * second / 10));
     check(observed.reentrant_result == ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE,
           "re-entrant tick from a callback is INVALID_STATE");
+    check(observed.reentrant_labels == ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE,
+          "a label lookup from a callback is INVALID_STATE");
+    {
+        robotweax_srt_telemetry_endpoint_role role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+        std::size_t count = 7;
+        check(robotweax_srt_telemetry_sampler_source_labels(sampler, id_a, &role, nullptr, 0, &count) ==
+                      ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND &&
+                  count == 0 && role == ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+              "a removed source's labels are NOT_FOUND, role untouched");
+    }
     observed.sampler = nullptr;
 
     const auto windows_b = observed.windows[id_b].size();

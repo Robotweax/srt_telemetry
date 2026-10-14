@@ -328,16 +328,19 @@ remains open.
 
 ## Threading
 
-One embed thread (named `srt-tel-embed`; the writer is `srt-tel-writer`, the
-HTTP server `srt-tel-http`, the OTLP exporter `srt-tel-otlp`, so none shows
-the name of the host thread that started it) polls the connection monitors
-and ticks the sampler every 100 ms; `attach` and `detach` take the same lock, so they never race a tick.
+One embed thread polls the connection monitors and ticks the sampler every
+100 ms; `attach` and `detach` take the same lock, so they never race a tick.
 The HTTP server and the OTLP exporter have their own threads and read the
 sampler under its lock. With recordings a writer thread writes the files; it
 takes the recorder's snapshot without the embed's lock. `embed_sampler` gives access to the sampler for
 thresholds, callbacks or rendering. The embed ticks it, so do not start,
 stop, tick or destroy it; its callbacks run on the embed thread under the
 embed's lock, so they must not call `attach` or `detach`.
+
+Every SDK thread names itself (Linux, macOS), so none shows the name of the
+host thread that started it: `srt-tel-embed`, `srt-tel-writer` (recordings),
+`srt-tel-http`, `srt-tel-otlp` and its short-lived `srt-tel-dns` lookups,
+and `srt-tel-sampler` for a sampler started on its own thread.
 
 `stop` must not overlap `attach` or `detach` on another host thread (the
 recording callback, which `stop` waits for, may call them; see above). It stops the
