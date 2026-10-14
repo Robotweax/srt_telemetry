@@ -9,13 +9,16 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
+#include <mutex>
 #include <set>
 #include <string>
 #include <string_view>
@@ -175,9 +178,33 @@ struct Journal
     }
 };
 
+/* Recording events of the group scenario, written on the embed's writer. */
+struct GroupRecordingEvents
+{
+    std::mutex mutex;
+    std::vector<robotweax_srt_telemetry_embed_recording_event_v1> events;
+    static void callback(void *user, const robotweax_srt_telemetry_embed_recording_event_v1 *event)
+    {
+        auto &self = *static_cast<GroupRecordingEvents *>(user);
+        std::lock_guard lock(self.mutex);
+        self.events.push_back(*event);
+        self.events.back().path = nullptr;
+    }
+    std::vector<robotweax_srt_telemetry_embed_recording_event_v1> copy()
+    {
+        std::lock_guard lock(mutex);
+        return events;
+    }
+};
+
 /* Main/Backup on both sides: rows, events, cut, reconnect, detach. */
 void backup_scenario()
 {
+    const auto recordings = std::filesystem::temp_directory_path() /
+                            ("srt-telemetry-group-recordings-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(recordings);
+    std::filesystem::create_directories(recordings);
+    GroupRecordingEvents recording_events;
     const SRTSOCKET caller_group = srt_create_group(SRT_GTYPE_BACKUP);
 
     robotweax_srt_telemetry_embed_config_v1 config;
@@ -185,8 +212,12 @@ void backup_scenario()
     robotweax_srt_telemetry_host_embed_functions(&config);
     config.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
     config.linger_seconds = 30;
+    std::snprintf(config.recording_directory, sizeof(config.recording_directory), "%s", recordings.c_str());
     robotweax_srt_telemetry_embed *embed = nullptr;
     check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "embed start");
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, GroupRecordingEvents::callback,
+                                                               &recording_events) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "group recording callback");
 #if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
     check(robotweax_srt_telemetry_host_embed_group_send_state(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
           "explicitly enable qualified group sender observation");
@@ -328,6 +359,25 @@ void backup_scenario()
               6000),
           "the sending group is graded through its paths: OK, 2 of 2 paths");
     check(has(group_row(all, "cam-rx"), "\"verdict\":\"ok\""), "the receiving group is graded OK");
+
+    /* A live write of a group writes the group's and each member's
+     * recording; nothing is final while they go on. */
+    check(robotweax_srt_telemetry_embed_write_recording(embed, caller_group) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "live write of the caller group");
+    check(wait_for([&] { return recording_events.copy().size() >= 3; }, 5000), "group live write reported");
+    {
+        const auto events = recording_events.copy();
+        std::set<std::uint64_t> sources;
+        bool all_written = true;
+        for (const auto &event : events)
+        {
+            sources.insert(event.source_id);
+            all_written = all_written && event.flags == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_WRITTEN &&
+                          event.record_count > 0;
+        }
+        check(events.size() == 3 && sources.size() == 3 && all_written,
+              "group and both members written live, none final");
+    }
 
 #if defined(ROBOTWEAX_SRT_RTTDATA_VERSION) && ROBOTWEAX_SRT_RTTDATA_VERSION == 1
     check(has(find_source(all, {"\"stream\":\"cam-tx\"", "\"path\":\"" + primary_path + "\""}),
@@ -549,6 +599,7 @@ void backup_scenario()
     srt_close(accepted);
     srt_close(listener);
     robotweax_srt_telemetry_embed_stop(embed);
+    std::filesystem::remove_all(recordings);
 }
 
 /* Host path names by weight: the caller's paths are "lte" and "sat". */
