@@ -462,6 +462,30 @@ void test_render()
                   ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL &&
               count == 1,
           "source ids: too small");
+    {
+        robotweax_srt_telemetry_label_copy_v1 copies[ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS]{};
+        robotweax_srt_telemetry_endpoint_role role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_UNKNOWN;
+        check(robotweax_srt_telemetry_sampler_source_labels(sampler, sender_id, &role, copies,
+                                                            ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS, &count) ==
+                      ROBOTWEAX_SRT_TELEMETRY_OK &&
+                  count == 3 && role == ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER &&
+                  std::string(copies[0].key) == "site" && std::string(copies[0].value) == "studio \"2\" \\ west" &&
+                  std::string(copies[2].key) == "host_role" && std::string(copies[2].value) == "backup",
+              "source labels: role and labels in order, copied");
+        check(robotweax_srt_telemetry_sampler_source_labels(sampler, sender_id, nullptr, copies, 1, &count) ==
+                      ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL &&
+                  count == 1 && std::string(copies[0].key) == "site",
+              "source labels: too small copies what fits");
+        check(robotweax_srt_telemetry_sampler_source_labels(sampler, receiver_id, &role, nullptr, 0, &count) ==
+                      ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL &&
+                  count == 0 && role == ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER,
+              "source labels: role alone");
+        check(robotweax_srt_telemetry_sampler_source_labels(sampler, 999, &role, copies, 1, &count) ==
+                      ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND &&
+                  robotweax_srt_telemetry_sampler_source_labels(sampler, sender_id, &role, nullptr, 1, &count) ==
+                      ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+              "source labels: unknown source, bad buffer");
+    }
     robotweax_srt_telemetry_window_summary_v1 window{};
     check(robotweax_srt_telemetry_sampler_window_read(sampler, receiver_id, 0, &window) == ROBOTWEAX_SRT_TELEMETRY_OK &&
               window.window_nano == 10 * second && window.start_unix_nano == base_unix,

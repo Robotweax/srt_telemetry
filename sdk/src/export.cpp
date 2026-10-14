@@ -884,7 +884,7 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
                     return;
                 }
                 out += "{\"socket\":";
-                integer(out, id);
+                integer(out, static_cast<std::uint64_t>(id)); /* id >= 0 here */
                 out += ",\"generation\":";
                 json_string(out, std::to_string(generation));
                 out += ",\"path\":";

@@ -67,7 +67,9 @@ health engine per source; see [Health engine](health-engine.md).
 
 ## Snapshots and export
 
-`sampler_source_ids`, `sampler_window_read` (the latest closed window of a
+`sampler_source_ids`, `sampler_source_labels` (a source's role and a copy of
+its labels, so a host can map a `source_id` back to its stream without
+keeping its own table), `sampler_window_read` (the latest closed window of a
 configured length) and `sampler_latest_metrics` read the current state.
 `sampler_render_to` / `sampler_render` format every source as Prometheus text
 or as the JSON snapshot; see [Metric names](metric-names.md). Rendering copies

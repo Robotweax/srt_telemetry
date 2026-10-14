@@ -1,6 +1,7 @@
 #include <robotweax/srt_telemetry_http.h>
 
 #include "ui_assets.h"
+#include "thread_name.h"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -1970,7 +1971,10 @@ robotweax_srt_telemetry_http_server_start(const robotweax_srt_telemetry_http_ser
     try
     {
         auto *raw = created.get();
-        created->thread = std::thread([raw] { run(*raw); });
+        created->thread = std::thread([raw] {
+            robotweax_srt_telemetry_internal::name_current_thread("srt-tel-http");
+            run(*raw);
+        });
     }
     catch (...)
     {

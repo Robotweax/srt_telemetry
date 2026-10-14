@@ -337,6 +337,11 @@ thresholds, callbacks or rendering. The embed ticks it, so do not start,
 stop, tick or destroy it; its callbacks run on the embed thread under the
 embed's lock, so they must not call `attach` or `detach`.
 
+Every SDK thread names itself (Linux, macOS), so none shows the name of the
+host thread that started it: `srt-tel-embed`, `srt-tel-writer` (recordings),
+`srt-tel-http`, `srt-tel-otlp` and its short-lived `srt-tel-dns` lookups,
+and `srt-tel-sampler` for a sampler started on its own thread.
+
 `stop` must not overlap `attach` or `detach` on another host thread (the
 recording callback, which `stop` waits for, may call them; see above). It stops the
 threads, waits for the final recordings, forgets every socket (the host still closes them)

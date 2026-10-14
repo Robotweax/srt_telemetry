@@ -103,7 +103,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_HTTP_SERVER)
         COMMENT "Embedding the web UI"
         VERBATIM)
     add_library(robotweax_srt_telemetry_http server/src/http_server.cpp server/src/otlp_exporter.cpp "${ui_generated}")
-    target_include_directories(robotweax_srt_telemetry_http PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/server/src")
+    target_include_directories(robotweax_srt_telemetry_http PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/server/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/sdk/src")
     add_library(RobotweaxSRTTelemetry::http ALIAS robotweax_srt_telemetry_http)
     target_compile_features(robotweax_srt_telemetry_http PUBLIC cxx_std_20)
     target_include_directories(robotweax_srt_telemetry_http
@@ -196,6 +197,7 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
         add_library(robotweax_srt_telemetry_embed adapters/public_srt/src/embed.cpp)
         add_library(RobotweaxSRTTelemetry::embed ALIAS robotweax_srt_telemetry_embed)
         target_compile_features(robotweax_srt_telemetry_embed PUBLIC cxx_std_20)
+        target_include_directories(robotweax_srt_telemetry_embed PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/sdk/src")
         target_link_libraries(robotweax_srt_telemetry_embed
             PUBLIC RobotweaxSRTTelemetry::public_srt_adapter RobotweaxSRTTelemetry::http)
         find_package(Threads REQUIRED)

@@ -2,6 +2,8 @@
 
 #include <robotweax/srt_telemetry_export.h>
 
+#include "thread_name.h"
+
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -333,6 +335,7 @@ addrinfo *resolve(const Exporter &x, const Clock::time_point deadline, bool &sto
     try
     {
         std::thread([lookup, host = x.endpoint.host, port = x.endpoint.port] {
+            robotweax_srt_telemetry_internal::name_current_thread("srt-tel-dns");
             addrinfo name_hints{};
             name_hints.ai_family = AF_UNSPEC;
             name_hints.ai_socktype = SOCK_STREAM;
@@ -760,7 +763,10 @@ robotweax_srt_telemetry_otlp_exporter_start(const robotweax_srt_telemetry_otlp_e
     }
     try
     {
-        created->thread = std::thread([x = created.get()] { run(*x); });
+        created->thread = std::thread([x = created.get()] {
+            robotweax_srt_telemetry_internal::name_current_thread("srt-tel-otlp");
+            run(*x);
+        });
     }
     catch (...)
     {
