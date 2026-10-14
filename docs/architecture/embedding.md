@@ -225,6 +225,13 @@ and the pending state while a label is not negotiated yet.
   usable path. A path waiting as standby never counts, and while a usable
   path is still ungraded, a Broadcast group takes no path grade worse than
   OK (the ungraded one may be delivering).
+- Backup's active path is the one SRT's send authority selected
+  (`host_embed_group_send_state`, Robotweax SRT). Without it: when several
+  members carried data in the tick, the best of them, Unknown while one of
+  them is ungraded; otherwise the member inferred from the packet counters.
+  While a failing path still takes packets, SRT sends on both during the
+  switch, and the inferred member can flip between them every tick; the
+  group no longer takes the failing path's grade then (srt_telemetry#38).
 - A broken group reads lost (Failing) through the connection monitor on the
   group handle.
 - Before its first connection a group has no statistics. Its row then gets

@@ -1240,14 +1240,51 @@ void apply_group_health(Embed &embed, Endpoint &group)
 
     /* The path(s) carrying the stream. A standby carries nothing and never
      * counts; nor does a status from before a path took over (still
-     * standby). Backup: the active path, Unknown when it has no row yet.
+     * standby). Backup: the path SRT's send authority selected, when the
+     * host provides it; otherwise the path(s) that carried this tick (while a
+     * failing path still takes packets both do, and the best of them carries
+     * the stream: srt_telemetry#38; Unknown while one of them is ungraded),
+     * else the inferred active path, Unknown when it has no row yet.
      * Broadcast, or before any path carried: the best usable path, Unknown
      * while a usable path is ungraded and the best graded one is not OK
      * (that path may be the one delivering). */
     robotweax_srt_telemetry_health_status_v1 status{};
     status.struct_size = sizeof(status);
     status.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
-    const bool backup_active = link.type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP && link.result.active_member >= 0;
+    const bool backup = link.type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
+    std::int32_t selected = -1;
+    if (backup && link.authority_seen && link.authority.availability == 2 && link.authority.active_member >= 0)
+    {
+        for (const auto &[path, member] : link.members)
+        {
+            if (member->socket == link.authority.active_member)
+            {
+                selected = member->socket;
+            }
+        }
+    }
+    std::vector<std::int32_t> carried;
+    if (backup && selected < 0)
+    {
+        for (std::uint32_t i = 0; i < std::min<std::uint32_t>(link.result.member_count,
+                                                              static_cast<std::uint32_t>(link.entries.size()));
+             ++i)
+        {
+            if ((link.entries[i].flags & ROBOTWEAX_SRT_TELEMETRY_MEMBER_CARRYING) != 0)
+            {
+                carried.push_back(link.entries[i].socket);
+            }
+        }
+    }
+    const auto carrying = [&](const std::int32_t socket)
+    {
+        if (selected >= 0)
+            return socket == selected;
+        if (carried.size() >= 2)
+            return std::find(carried.begin(), carried.end(), socket) != carried.end();
+        return socket == link.result.active_member;
+    };
+    const bool backup_active = backup && (selected >= 0 || link.result.active_member >= 0);
     bool found = false;
     bool ungraded = false;
     /* Backup: the active path's status is from before it took over. */
@@ -1256,7 +1293,7 @@ void apply_group_health(Embed &embed, Endpoint &group)
     for (const auto &[path, member] : link.members)
     {
         if (!member->added || member->context.connection != ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED ||
-            (backup_active && member->socket != link.result.active_member) ||
+            (backup_active && !carrying(member->socket)) ||
             robotweax_srt_telemetry_sampler_health_read(embed.sampler, member->source_id, &status) !=
                 ROBOTWEAX_SRT_TELEMETRY_OK)
         {
@@ -1279,7 +1316,11 @@ void apply_group_health(Embed &embed, Endpoint &group)
             found = true;
         }
     }
-    if (found && !(ungraded && best.uncapped_verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK))
+    /* Backup paths that carried together are a switch in progress: the one
+     * SRT moves to may be ungraded while the one it leaves still reads OK
+     * (an outage not yet detected), so OK needs every one of them graded. */
+    const bool switching = backup && selected < 0 && carried.size() >= 2;
+    if (found && !(ungraded && (switching || best.uncapped_verdict > ROBOTWEAX_SRT_TELEMETRY_HEALTH_OK)))
     {
         input.paths_verdict = best.uncapped_verdict;
         input.paths_reason = best.reason;

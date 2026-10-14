@@ -274,7 +274,7 @@ worst of:
 | Part | From | Grade |
 | --- | --- | --- |
 | Own counters | the group's unique counters | what the application got: a receiver's unrecovered loss (a sender group has no buffer metric and stays ungraded) |
-| Carrying path | Backup: the active path; Broadcast: the best usable path (graded beats ungraded, OK beats Watch...) | that path's own, uncapped verdict, with its reason and advice |
+| Carrying path | Backup: the active path (see [embedding](embedding.md): SRT's send authority, else the paths that carried together, else the inferred one); Broadcast: the best usable path (graded beats ungraded, OK beats Watch...) | that path's own, uncapped verdict, with its reason and advice |
 | Redundancy | usable vs expected paths, with the enter and leave holds | Watch / `path_lost` while some paths are down; At risk / `redundancy_lost` on the last usable path of a group meant for several |
 | No path | no usable path, with `expected_paths` > 0 | Failing / `connection_lost`, at once; the first path back is then At risk at once (on a group meant for several) |
 
