@@ -11,6 +11,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -1028,6 +1029,47 @@ void test_recording_callback_reentry()
     std::filesystem::remove_all(directory);
 }
 
+/* Thread names of this process (Linux), from /proc. */
+std::vector<std::string> thread_names()
+{
+    std::vector<std::string> names;
+#if defined(__linux__)
+    for (const auto &task : std::filesystem::directory_iterator("/proc/self/task"))
+    {
+        std::ifstream comm(task.path() / "comm");
+        std::string name;
+        std::getline(comm, name);
+        names.push_back(name);
+    }
+#endif
+    return names;
+}
+
+void test_thread_names()
+{
+#if defined(__linux__)
+    /* A host thread with its own name starts the embed: the embed's threads
+     * do not inherit it. */
+    pthread_setname_np(pthread_self(), "rwx-main");
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-names-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(directory);
+    auto config = base_config();
+    const auto spec = "127.0.0.1:0,name=cam-9,jsonl=" + directory.string();
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK, "names spec");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "names start");
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    const auto names = thread_names();
+    const auto has = [&](const char *name) { return std::find(names.begin(), names.end(), name) != names.end(); };
+    check(has("srt-tel-embed") && has("srt-tel-writer") && has("srt-tel-http"),
+          "embed, writer and HTTP threads carry their own names");
+    check(std::count(names.begin(), names.end(), "rwx-main") == 1, "only the host thread is named rwx-main");
+    robotweax_srt_telemetry_embed_stop(embed);
+    std::filesystem::remove_all(directory);
+#endif
+}
+
 void test_recording_failure_counter()
 {
     const auto directory = std::filesystem::temp_directory_path() /
@@ -1075,6 +1117,7 @@ int main()
     test_recording_failure_counter();
     test_live_recording();
     test_recording_callback_reentry();
+    test_thread_names();
     srt_cleanup();
     if (failures != 0)
     {

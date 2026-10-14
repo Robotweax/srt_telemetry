@@ -328,6 +328,23 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_source_ids(
         robotweax_srt_telemetry_sampler *sampler, uint64_t *ids, size_t capacity, size_t *count);
 
+    /* One label copied out of the sampler (NUL-terminated). */
+    typedef struct robotweax_srt_telemetry_label_copy_v1
+    {
+        char key[ROBOTWEAX_SRT_TELEMETRY_LABEL_KEY_CAPACITY];
+        char value[ROBOTWEAX_SRT_TELEMETRY_LABEL_VALUE_CAPACITY];
+    } robotweax_srt_telemetry_label_copy_v1;
+
+    /* A source's role (role may be NULL) and up to capacity of its labels,
+     * in the order they were added; count receives the number copied. At
+     * most ROBOTWEAX_SRT_TELEMETRY_MAX_LABELS labels exist, so a buffer of
+     * that size always suffices. BUFFER_TOO_SMALL when more labels exist,
+     * NOT_FOUND for an unknown (or removed) source, INVALID_STATE from a
+     * sampler callback (where source_info_v1 carries them already). */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_source_labels(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id, robotweax_srt_telemetry_endpoint_role *role,
+        robotweax_srt_telemetry_label_copy_v1 *labels, size_t capacity, size_t *count);
+
     /* The latest closed window of a configured length (0: 10 s if
      * configured, otherwise the shortest). NOT_FOUND before the first one
      * closes; INVALID_ARGUMENT for a length that is not configured. */

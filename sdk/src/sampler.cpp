@@ -3,6 +3,7 @@
 #include "export_internal.h"
 #include "health_internal.h"
 #include "history_internal.h"
+#include "thread_name.h"
 #include "standby_metadata_internal.h"
 
 #include <algorithm>
@@ -1125,7 +1126,10 @@ robotweax_srt_telemetry_sampler_start(robotweax_srt_telemetry_sampler *sampler)
     sampler->stop_requested = false;
     try
     {
-        sampler->thread = std::thread([sampler] { run_thread(*sampler); });
+        sampler->thread = std::thread([sampler] {
+            robotweax_srt_telemetry_internal::name_current_thread("srt-tel-sampler");
+            run_thread(*sampler);
+        });
     }
     catch (...)
     {
@@ -1622,6 +1626,41 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_source_
     }
     *count = copied;
     return copied < sampler->sources.size() ? ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL : ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_source_labels(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id, robotweax_srt_telemetry_endpoint_role *role,
+    robotweax_srt_telemetry_label_copy_v1 *labels, const std::size_t capacity, std::size_t *count)
+{
+    if (sampler == nullptr || count == nullptr || (labels == nullptr && capacity > 0))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    *count = 0;
+    if (in_callback_of(sampler))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    }
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    }
+    const auto &source = *found->second;
+    if (role != nullptr)
+    {
+        *role = source.role;
+    }
+    std::size_t copied = 0;
+    for (; copied < capacity && copied < source.keys.size(); ++copied)
+    {
+        /* Validated at add_source: both fit their capacity with the NUL. */
+        std::snprintf(labels[copied].key, sizeof(labels[copied].key), "%s", source.keys[copied].c_str());
+        std::snprintf(labels[copied].value, sizeof(labels[copied].value), "%s", source.values[copied].c_str());
+    }
+    *count = copied;
+    return copied < source.keys.size() ? ROBOTWEAX_SRT_TELEMETRY_BUFFER_TOO_SMALL : ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
 extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_window_read(

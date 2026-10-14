@@ -4,6 +4,8 @@
 #include <robotweax/srt_telemetry_otlp.h>
 #include <robotweax/srt_telemetry_sampler.h>
 
+#include "thread_name.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <atomic>
@@ -1877,9 +1879,15 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
         {
             if (config->recording_directory[0] != '\0')
             {
-                created->writer = std::thread([created] { writer_loop(*created); });
+                created->writer = std::thread([created] {
+                    robotweax_srt_telemetry_internal::name_current_thread("srt-tel-writer");
+                    writer_loop(*created);
+                });
             }
-            created->thread = std::thread([created] { run(*created); });
+            created->thread = std::thread([created] {
+                robotweax_srt_telemetry_internal::name_current_thread("srt-tel-embed");
+                run(*created);
+            });
         }
         catch (const std::exception &)
         {

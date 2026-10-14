@@ -328,8 +328,10 @@ remains open.
 
 ## Threading
 
-One embed thread polls the connection monitors and ticks the sampler every
-100 ms; `attach` and `detach` take the same lock, so they never race a tick.
+One embed thread (named `srt-tel-embed`; the writer is `srt-tel-writer`, the
+HTTP server `srt-tel-http`, the OTLP exporter `srt-tel-otlp`, so none shows
+the name of the host thread that started it) polls the connection monitors
+and ticks the sampler every 100 ms; `attach` and `detach` take the same lock, so they never race a tick.
 The HTTP server and the OTLP exporter have their own threads and read the
 sampler under its lock. With recordings a writer thread writes the files; it
 takes the recorder's snapshot without the embed's lock. `embed_sampler` gives access to the sampler for
