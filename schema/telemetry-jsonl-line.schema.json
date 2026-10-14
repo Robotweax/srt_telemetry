@@ -1,21 +1,44 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://robotweax.com/schemas/srt-telemetry/telemetry-jsonl-line-v1alpha1.json",
-  "title": "Robotweax SRT telemetry JSONL line",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/telemetry-jsonl-line-v1alpha2.json",
+  "title": "Robotweax SRT telemetry JSONL line (1alpha1 and 1alpha2)",
   "oneOf": [
-    { "$ref": "#/$defs/recording" },
-    { "$ref": "#/$defs/sample" }
+    {
+      "$ref": "#/$defs/recording"
+    },
+    {
+      "$ref": "#/$defs/sample"
+    },
+    {
+      "$ref": "#/$defs/recording2"
+    },
+    {
+      "$ref": "#/$defs/sample2"
+    },
+    {
+      "$ref": "#/$defs/health"
+    }
   ],
   "$defs": {
     "provider": {
-      "enum": ["unknown", "haivision-srt", "robotweax-srt"]
+      "enum": [
+        "unknown",
+        "haivision-srt",
+        "robotweax-srt"
+      ]
     },
     "nullableUnsigned": {
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "minimum": 0
     },
     "nullableNumber": {
-      "type": ["number", "null"]
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "recording": {
       "type": "object",
@@ -36,19 +59,65 @@
         "overwrittenCount"
       ],
       "properties": {
-        "schemaVersion": { "const": "1alpha1" },
-        "kind": { "const": "robotweax-srt-telemetry-recording" },
-        "streamId": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "flowId": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "role": { "enum": ["sender", "receiver"] },
-        "configuredProvider": { "enum": ["haivision-srt", "robotweax-srt"] },
-        "providerVersion": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "providerRevision": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "buildProfile": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "telemetryVersion": { "const": "0.1.0-alpha.0" },
-        "recordCount": { "type": "integer", "minimum": 0 },
-        "capacity": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "overwrittenCount": { "type": "integer", "minimum": 0 }
+        "schemaVersion": {
+          "const": "1alpha1"
+        },
+        "kind": {
+          "const": "robotweax-srt-telemetry-recording"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "flowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "role": {
+          "enum": [
+            "sender",
+            "receiver"
+          ]
+        },
+        "configuredProvider": {
+          "enum": [
+            "haivision-srt",
+            "robotweax-srt"
+          ]
+        },
+        "providerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "providerRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "buildProfile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "telemetryVersion": {
+          "const": "0.1.0-alpha.0"
+        },
+        "recordCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "overwrittenCount": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "raw": {
@@ -89,41 +158,107 @@
         "receiver_tsbpd_delay_seconds"
       ],
       "properties": {
-        "provider": { "$ref": "#/$defs/provider" },
-        "capabilities": { "type": "integer", "minimum": 0 },
-        "available_fields": { "type": "integer", "minimum": 0 },
-        "observed_at_unix_nano": { "type": "integer", "minimum": 0 },
-        "sample_monotonic_nano": { "type": "integer", "minimum": 0 },
-        "sent_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "received_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "unique_sent_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "unique_received_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "sender_loss_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "receiver_loss_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "retransmitted_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
+        "provider": {
+          "$ref": "#/$defs/provider"
+        },
+        "capabilities": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "available_fields": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed_at_unix_nano": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sample_monotonic_nano": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sent_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "received_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "unique_sent_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "unique_received_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "sender_loss_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "receiver_loss_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "retransmitted_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
         "sender_drop_packet_total": {
           "$ref": "#/$defs/nullableUnsigned",
           "description": "Local send/retransmission-buffer removals due to message TTL or TLPKTDROP; not proof of network loss or application payload loss."
         },
-        "receiver_drop_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "receiver_undecryptable_packet_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "sent_wire_byte_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "received_wire_byte_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "unique_sent_wire_byte_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "unique_received_wire_byte_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "retransmitted_wire_byte_total": { "$ref": "#/$defs/nullableUnsigned" },
-        "rtt_seconds": { "$ref": "#/$defs/nullableNumber" },
-        "flight_size_packets": { "$ref": "#/$defs/nullableUnsigned" },
-        "flow_window_packets": { "$ref": "#/$defs/nullableUnsigned" },
-        "congestion_window_packets": { "$ref": "#/$defs/nullableUnsigned" },
-        "available_send_buffer_bytes": { "$ref": "#/$defs/nullableUnsigned" },
-        "available_receive_buffer_bytes": { "$ref": "#/$defs/nullableUnsigned" },
-        "send_buffer_bytes": { "$ref": "#/$defs/nullableUnsigned" },
-        "receive_buffer_bytes": { "$ref": "#/$defs/nullableUnsigned" },
-        "send_buffer_seconds": { "$ref": "#/$defs/nullableNumber" },
-        "receive_buffer_seconds": { "$ref": "#/$defs/nullableNumber" },
-        "sender_tsbpd_delay_seconds": { "$ref": "#/$defs/nullableNumber" },
-        "receiver_tsbpd_delay_seconds": { "$ref": "#/$defs/nullableNumber" }
+        "receiver_drop_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "receiver_undecryptable_packet_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "sent_wire_byte_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "received_wire_byte_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "unique_sent_wire_byte_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "unique_received_wire_byte_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "retransmitted_wire_byte_total": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "rtt_seconds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "flight_size_packets": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "flow_window_packets": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "congestion_window_packets": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "available_send_buffer_bytes": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "available_receive_buffer_bytes": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "send_buffer_bytes": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "receive_buffer_bytes": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "send_buffer_seconds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "receive_buffer_seconds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sender_tsbpd_delay_seconds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "receiver_tsbpd_delay_seconds": {
+          "$ref": "#/$defs/nullableNumber"
+        }
       }
     },
     "delta": {
@@ -156,46 +291,457 @@
         "unique_received_wire_bits_per_second"
       ],
       "properties": {
-        "quality_flags": { "type": "integer", "minimum": 0 },
-        "interval_nano": { "type": "integer", "minimum": 0 },
-        "available_delta_fields": { "type": "integer", "minimum": 0 },
-        "counter_reset_fields": { "type": "integer", "minimum": 0 },
-        "available_rates": { "type": "integer", "minimum": 0 },
-        "sent_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "received_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "unique_sent_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "unique_received_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "sender_loss_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "receiver_loss_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "retransmitted_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
+        "quality_flags": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "interval_nano": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "available_delta_fields": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "counter_reset_fields": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "available_rates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sent_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "received_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "unique_sent_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "unique_received_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "sender_loss_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "receiver_loss_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "retransmitted_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
         "sender_drop_packet_delta": {
           "$ref": "#/$defs/nullableUnsigned",
           "description": "Interval change in sender_drop_packet_total; counts local buffer removals, not proven application payload loss."
         },
-        "receiver_drop_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "receiver_undecryptable_packet_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "sent_wire_byte_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "received_wire_byte_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "unique_sent_wire_byte_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "unique_received_wire_byte_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "retransmitted_wire_byte_delta": { "$ref": "#/$defs/nullableUnsigned" },
-        "sent_wire_bits_per_second": { "$ref": "#/$defs/nullableNumber" },
-        "received_wire_bits_per_second": { "$ref": "#/$defs/nullableNumber" },
-        "unique_sent_wire_bits_per_second": { "$ref": "#/$defs/nullableNumber" },
-        "unique_received_wire_bits_per_second": { "$ref": "#/$defs/nullableNumber" }
+        "receiver_drop_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "receiver_undecryptable_packet_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "sent_wire_byte_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "received_wire_byte_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "unique_sent_wire_byte_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "unique_received_wire_byte_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "retransmitted_wire_byte_delta": {
+          "$ref": "#/$defs/nullableUnsigned"
+        },
+        "sent_wire_bits_per_second": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "received_wire_bits_per_second": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "unique_sent_wire_bits_per_second": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "unique_received_wire_bits_per_second": {
+          "$ref": "#/$defs/nullableNumber"
+        }
       }
     },
     "sample": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "kind", "streamId", "sampleIndex", "raw", "delta"],
+      "required": [
+        "schemaVersion",
+        "kind",
+        "streamId",
+        "sampleIndex",
+        "raw",
+        "delta"
+      ],
       "properties": {
-        "schemaVersion": { "const": "1alpha1" },
-        "kind": { "const": "robotweax-srt-telemetry-sample" },
-        "streamId": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "sampleIndex": { "type": "integer", "minimum": 0 },
-        "raw": { "$ref": "#/$defs/raw" },
-        "delta": { "$ref": "#/$defs/delta" }
+        "schemaVersion": {
+          "const": "1alpha1"
+        },
+        "kind": {
+          "const": "robotweax-srt-telemetry-sample"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sampleIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "raw": {
+          "$ref": "#/$defs/raw"
+        },
+        "delta": {
+          "$ref": "#/$defs/delta"
+        }
+      }
+    },
+    "recording2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "streamId",
+        "flowId",
+        "role",
+        "configuredProvider",
+        "providerVersion",
+        "providerRevision",
+        "buildProfile",
+        "telemetryVersion",
+        "recordCount",
+        "capacity",
+        "overwrittenCount",
+        "groupType",
+        "groupRow",
+        "healthLines",
+        "healthCount",
+        "healthOverwrittenCount"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1alpha2"
+        },
+        "kind": {
+          "const": "robotweax-srt-telemetry-recording"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "flowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "role": {
+          "enum": [
+            "sender",
+            "receiver"
+          ]
+        },
+        "configuredProvider": {
+          "enum": [
+            "haivision-srt",
+            "robotweax-srt"
+          ]
+        },
+        "providerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "providerRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "buildProfile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "telemetryVersion": {
+          "const": "0.1.0-alpha.0"
+        },
+        "recordCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "overwrittenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "groupType": {
+          "enum": [
+            "backup",
+            "broadcast",
+            "unknown",
+            null
+          ]
+        },
+        "groupRow": {
+          "enum": [
+            "group",
+            "member",
+            null
+          ]
+        },
+        "healthLines": {
+          "type": "boolean"
+        },
+        "healthCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "healthOverwrittenCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "groupType": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "groupRow": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "groupRow": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "healthLines": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "healthCount": {
+                "const": 0
+              },
+              "healthOverwrittenCount": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "member": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "standby",
+        "authority"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "pending",
+            "idle",
+            "running",
+            "broken",
+            "unknown"
+          ]
+        },
+        "standby": {
+          "type": "boolean"
+        },
+        "authority": {
+          "enum": [
+            "active",
+            "probe",
+            "none",
+            null
+          ]
+        }
+      }
+    },
+    "sample2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "streamId",
+        "sampleIndex",
+        "raw",
+        "delta",
+        "member"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1alpha2"
+        },
+        "kind": {
+          "const": "robotweax-srt-telemetry-sample"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sampleIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "raw": {
+          "$ref": "#/$defs/raw"
+        },
+        "delta": {
+          "$ref": "#/$defs/delta"
+        },
+        "member": {
+          "$ref": "#/$defs/member"
+        }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "unknown",
+        "ok",
+        "watch",
+        "at_risk",
+        "failing"
+      ]
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "streamId",
+        "sampleIndex",
+        "observedAtUnixNano",
+        "verdict",
+        "reason",
+        "knob",
+        "knobDirection",
+        "suggestedValue",
+        "capped",
+        "uncappedVerdict",
+        "standby",
+        "usablePaths",
+        "expectedPaths",
+        "verdictSinceUnixNano",
+        "carried"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1alpha2"
+        },
+        "kind": {
+          "const": "robotweax-srt-telemetry-health"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sampleIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "verdict": {
+          "$ref": "#/$defs/verdict"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "knob": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "knobDirection": {
+          "enum": [
+            "none",
+            "increase",
+            "decrease",
+            "check"
+          ]
+        },
+        "suggestedValue": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "capped": {
+          "type": "boolean"
+        },
+        "uncappedVerdict": {
+          "$ref": "#/$defs/verdict"
+        },
+        "standby": {
+          "type": "boolean"
+        },
+        "usablePaths": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "expectedPaths": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "observedAtUnixNano": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "verdictSinceUnixNano": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "carried": {
+          "type": "boolean"
+        }
       }
     }
   }

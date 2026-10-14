@@ -66,6 +66,10 @@ extern "C"
  * groups group and path, within the sampler's 10 labels. */
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_MAX_HOST_LABELS 5u
 
+/* embed_config_v1.recording_schema */
+#define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1 1u
+#define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2 2u
+
 /* embed_config_v1.flags */
 /* No HTTP server (OTLP only, or a host that serves the sampler itself). */
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP UINT32_C(1)
@@ -127,10 +131,15 @@ extern "C"
          * at stop, which waits for the writes. Empty: no recordings. */
         char recording_directory[ROBOTWEAX_SRT_TELEMETRY_EMBED_TEXT_CAPACITY];
         /* Ring length per source, default 600 s (0 also means 600), at most
-         * 36000 s; 472 bytes per sample, allocated at attach. The oldest
+         * 36000 s; 488 bytes per sample, allocated at attach. The oldest
          * samples are overwritten and counted in the recording header. */
         uint32_t recording_seconds;
-        uint32_t reserved2;
+        /* Recording schema: 0 or ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1
+         * (default) or ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2: adds the
+         * group type and row, each member's state per sample and the health
+         * transitions (docs/architecture/embedding.md#recordings). Write 1alpha2
+         * only for readers that accept it (SRT Doctor rule set 0.1.11 or later). */
+        uint32_t recording_schema;
         /* Recording header metadata, printable ASCII: the SRT library version
          * (robotweax_srt_telemetry_host_embed_functions fills it from srt.h)
          * and its source revision, e.g. a commit. Empty: "unknown". */
@@ -165,7 +174,7 @@ extern "C"
      * line, trimmed), host=NAME (allowed host name; repeatable), otlp=URL,
      * otlp_interval_ms=N, history_s=N, linger_s=N, stream_id (label sources
      * with their stream ID), no_ui, jsonl=DIR (recordings), jsonl_s=N
-     * (recording ring), provider_revision=REV.
+     * (recording ring), jsonl_schema=1alpha1|1alpha2, provider_revision=REV.
      * A bare port binds 127.0.0.1, ":port" every interface; "off" needs
      * otlp= or jsonl=. INVALID_ARGUMENT names nothing; the spec
      * is short enough to check by eye. */

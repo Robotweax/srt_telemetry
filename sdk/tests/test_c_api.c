@@ -15,6 +15,8 @@ _Static_assert(offsetof(robotweax_srt_telemetry_standby_rtt_metadata_v1, rtt_mic
                "standby RTT offset");
 _Static_assert(sizeof(robotweax_srt_telemetry_rtt_metadata_v1) == 64, "RTT metadata ABI");
 _Static_assert(sizeof(robotweax_srt_telemetry_label_copy_v1) == 320, "label copy ABI");
+_Static_assert(sizeof(robotweax_srt_telemetry_recorder_member_v1) == 24, "recorder member ABI");
+_Static_assert(sizeof(robotweax_srt_telemetry_jsonl_export_v2_options) == 24, "JSONL v2 options ABI");
 _Static_assert(offsetof(robotweax_srt_telemetry_rtt_metadata_v1, local_ackack_age_microseconds) ==
                    32,
                "RTT age offset");

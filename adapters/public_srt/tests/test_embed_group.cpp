@@ -15,8 +15,10 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <set>
@@ -600,6 +602,169 @@ void backup_scenario()
     srt_close(listener);
     robotweax_srt_telemetry_embed_stop(embed);
     std::filesystem::remove_all(recordings);
+}
+
+/* Recording schema 1alpha2 on a live Backup group: group context in every
+ * header, member state per sample, health transitions. */
+void recording_1alpha2_scenario()
+{
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-group-1alpha2-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    robotweax_srt_telemetry_embed_config_v1 config;
+    robotweax_srt_telemetry_embed_config_default(&config);
+    robotweax_srt_telemetry_host_embed_functions(&config);
+    config.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
+    const auto spec = "off,jsonl=" + directory.string() + ",jsonl_schema=1alpha2";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              config.recording_schema == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2,
+          "jsonl_schema=1alpha2 parses");
+    auto refused = config;
+    check(robotweax_srt_telemetry_embed_config_parse(&refused, "off,jsonl=/tmp,jsonl_schema=2") ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "an unknown recording schema is refused");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "1alpha2 embed start");
+    if (embed == nullptr)
+    {
+        return;
+    }
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+    static_cast<void>(robotweax_srt_telemetry_host_embed_group_send_state(embed));
+#endif
+    GroupRecordingEvents events;
+    static_cast<void>(robotweax_srt_telemetry_embed_set_recording_callback(embed, GroupRecordingEvents::callback, &events));
+
+    const SRTSOCKET caller = srt_create_group(SRT_GTYPE_BACKUP);
+    const SRTSOCKET listener = srt_create_socket();
+    int yes = 1;
+    srt_setsockflag(listener, SRTO_GROUPCONNECT, &yes, sizeof(yes));
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+    int length = sizeof(address);
+    check(srt_bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0 &&
+              srt_listen(listener, 4) == 0 &&
+              srt_getsockname(listener, reinterpret_cast<sockaddr *>(&address), &length) == 0,
+          "1alpha2 listen");
+    std::atomic<bool> stop{false};
+    std::thread receiver([&] {
+        const SRTSOCKET socket = srt_accept(listener, nullptr, nullptr);
+        if (socket == SRT_INVALID_SOCK)
+            return;
+        int timeout = 100;
+        srt_setsockflag(socket, SRTO_RCVTIMEO, &timeout, sizeof(timeout));
+        char buffer[1500];
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_recvmsg2(socket, buffer, sizeof(buffer), &control));
+        }
+        srt_close(socket);
+    });
+    std::vector<SRT_SOCKGROUPCONFIG> endpoints;
+    for (const std::uint16_t weight : {20, 10})
+    {
+        endpoints.push_back(srt_prepare_endpoint(nullptr, reinterpret_cast<sockaddr *>(&address), sizeof(address)));
+        endpoints.back().weight = weight;
+    }
+    check(srt_connect_group(caller, endpoints.data(), 2) != SRT_ERROR, "1alpha2 connect group");
+    std::thread sender([&] {
+        char payload[1316] = {};
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_sendmsg2(caller, payload, sizeof(payload), &control));
+            sleep_ms(2);
+        }
+    });
+    robotweax_srt_telemetry_label_v1 labels[] = {{"stream", "cam-v2"}};
+    robotweax_srt_telemetry_embed_group_v1 tx;
+    robotweax_srt_telemetry_embed_group_default(&tx);
+    tx.group = caller;
+    tx.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    tx.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
+    tx.labels = labels;
+    tx.label_count = 1;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &tx) == ROBOTWEAX_SRT_TELEMETRY_OK, "1alpha2 attach");
+    sleep_ms(3000); /* settle: grades, standby, a transition or two */
+    check(robotweax_srt_telemetry_embed_write_recording(embed, caller) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              wait_for([&] { return events.copy().size() >= 3; }, 5000),
+          "1alpha2 group and members written live");
+
+    std::string group_file;
+    std::vector<std::string> member_files;
+    for (const auto &entry : std::filesystem::directory_iterator(directory))
+    {
+        std::ifstream in(entry.path());
+        std::string header;
+        std::getline(in, header);
+        if (has(header, "\"groupRow\":\"group\""))
+            group_file = entry.path().string();
+        else if (has(header, "\"groupRow\":\"member\""))
+            member_files.push_back(entry.path().string());
+        check(has(header, "\"schemaVersion\":\"1alpha2\"") && has(header, "\"groupType\":\"backup\"") &&
+                  has(header, "\"healthLines\":true"),
+              "1alpha2 header: " + header);
+    }
+    check(!group_file.empty() && member_files.size() == 2, "one group row and two member rows written");
+    int standby_samples = 0;
+    int running_samples = 0;
+    int health_lines = 0;
+    bool active_seen = false;
+    for (const auto &file : member_files)
+    {
+        std::ifstream in(file);
+        std::string line;
+        std::getline(in, line);
+        while (std::getline(in, line))
+        {
+            if (has(line, "robotweax-srt-telemetry-health"))
+            {
+                ++health_lines;
+                check(has(line, "\"usablePaths\":null,\"expectedPaths\":null"), "member health lines carry no paths");
+                continue;
+            }
+            check(has(line, ",\"member\":{\"state\":"), "every member sample has its state: " + line.substr(0, 80));
+            standby_samples += has(line, "\"standby\":true") ? 1 : 0;
+            running_samples += has(line, "\"state\":\"running\"") ? 1 : 0;
+            active_seen = active_seen || has(line, "\"authority\":\"active\"");
+        }
+    }
+    check(standby_samples > 0 && running_samples > 0, "a standby and a running member: " +
+                                                          std::to_string(standby_samples) + " standby, " +
+                                                          std::to_string(running_samples) + " running samples");
+    check(health_lines >= 2, "member health transitions recorded: " + std::to_string(health_lines));
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+    check(active_seen, "the sending member carries sender authority");
+#endif
+    {
+        std::ifstream in(group_file);
+        std::string line;
+        bool paths = false;
+        std::getline(in, line);
+        while (std::getline(in, line))
+        {
+            if (has(line, "robotweax-srt-telemetry-health"))
+                paths = paths || has(line, "\"expectedPaths\":2");
+            else
+                check(has(line, ",\"member\":null}"), "group samples carry no member state");
+        }
+        check(paths, "group health lines carry the path counts");
+    }
+    stop = true;
+    sender.join();
+    srt_close(caller);
+    receiver.join();
+    srt_close(listener);
+    robotweax_srt_telemetry_embed_stop(embed);
+    if (const char *keep = std::getenv("SRT_TELEMETRY_KEEP_1ALPHA2"); keep != nullptr)
+    {
+        std::filesystem::copy(directory, keep, std::filesystem::copy_options::recursive |
+                                                   std::filesystem::copy_options::overwrite_existing);
+    }
+    std::filesystem::remove_all(directory);
 }
 
 /* Host path names by weight: the caller's paths are "lte" and "sat". */
@@ -1229,6 +1394,7 @@ int main(int argc, char **argv)
     native_standby_observation_scenario();
 #endif
     backup_scenario();
+    recording_1alpha2_scenario();
     broadcast_scenario();
     duplicate_names_scenario();
     listener_names_reconnect_scenario();

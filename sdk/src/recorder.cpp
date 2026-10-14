@@ -1,6 +1,8 @@
 #include <robotweax/srt_telemetry.h>
+#include <robotweax/srt_telemetry_health.h>
 
 #include <cmath>
+#include <deque>
 #include <iomanip>
 #include <limits>
 #include <locale>
@@ -11,15 +13,57 @@
 #include <string_view>
 #include <vector>
 
+namespace
+{
+/* A sample's member state (1alpha2), kept beside its record. */
+struct MemberCell
+{
+    bool present = false;
+    std::uint32_t state = ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_UNKNOWN;
+    bool standby = false;
+    std::uint32_t authority = ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_UNKNOWN;
+};
+
+/* A health transition (1alpha2), graded on the sample with this push number:
+ * only what a health line carries (64 bytes, not the 464 of a status). */
+struct HealthCell
+{
+    std::uint64_t sample = 0;
+    std::uint64_t observed_at_unix_nano = 0;
+    std::uint64_t verdict_since_unix_nano = 0;
+    double suggested_value = 0;
+    std::int32_t verdict = 0;
+    std::int32_t uncapped_verdict = 0;
+    std::int32_t reason = 0;
+    std::int32_t knob = 0;
+    std::int32_t knob_direction = 0;
+    std::uint16_t usable_paths = 0;
+    std::uint16_t expected_paths = 0;
+    bool capped = false;
+    bool standby = false;
+};
+} // namespace
+
 struct robotweax_srt_telemetry_recorder
 {
-    explicit robotweax_srt_telemetry_recorder(const std::size_t capacity) : records(capacity) {}
+    explicit robotweax_srt_telemetry_recorder(const std::size_t capacity)
+        : records(capacity), members(capacity)
+    {
+    }
 
     mutable std::mutex mutex;
     std::vector<robotweax_srt_telemetry_record_v1> records;
+    std::vector<MemberCell> members;
     std::size_t write_index = 0;
     std::size_t size = 0;
     std::uint64_t overwritten_count = 0;
+    /* Samples pushed since creation or clear: the latest is pushed - 1. */
+    std::uint64_t pushed = 0;
+    /* Health transitions, oldest first: the one in force at the first kept
+     * sample and those graded on kept samples (at most health_limit), and
+     * how many were dropped from the front. */
+    std::deque<HealthCell> health;
+    std::uint64_t health_dropped = 0;
 };
 
 namespace
@@ -158,11 +202,12 @@ bool append_nullable_double(std::ostream &output, const std::string_view name,
 
 std::string serialize_header(const robotweax_srt_telemetry_jsonl_export_config_v1 &config,
                              const std::size_t record_count, const std::size_t capacity,
-                             const std::uint64_t overwritten_count)
+                             const std::uint64_t overwritten_count, const std::string_view version = "1alpha1",
+                             const std::string_view extra = {})
 {
     std::ostringstream output;
     output.imbue(std::locale::classic());
-    output << "{\"schemaVersion\":\"1alpha1\",\"kind\":"
+    output << "{\"schemaVersion\":\"" << version << "\",\"kind\":"
               "\"robotweax-srt-telemetry-recording\",\"streamId\":";
     append_json_string(output, config.stream_id);
     output << ",\"flowId\":";
@@ -179,20 +224,22 @@ std::string serialize_header(const robotweax_srt_telemetry_jsonl_export_config_v
     append_json_string(output, config.build_profile);
     output << ",\"telemetryVersion\":\"" << ROBOTWEAX_SRT_TELEMETRY_VERSION
            << "\",\"recordCount\":" << record_count << ",\"capacity\":" << capacity
-           << ",\"overwrittenCount\":" << overwritten_count << "}\n";
+           << ",\"overwrittenCount\":" << overwritten_count << extra << "}\n";
     return output.str();
 }
 
 bool serialize_record(const robotweax_srt_telemetry_jsonl_export_config_v1 &config,
                       const robotweax_srt_telemetry_record_v1 &record,
-                      const std::size_t sample_index, std::string &line)
+                      const std::size_t sample_index, std::string &line,
+                      const std::string_view version = "1alpha1", const std::string_view extra = {})
 {
     const auto &raw = record.raw;
     const auto &delta = record.delta;
     std::ostringstream output;
     output.imbue(std::locale::classic());
     output << std::setprecision(std::numeric_limits<double>::max_digits10)
-           << "{\"schemaVersion\":\"1alpha1\",\"kind\":"
+           << "{\"schemaVersion\":\"" << version
+           << "\",\"kind\":"
               "\"robotweax-srt-telemetry-sample\",\"streamId\":";
     append_json_string(output, config.stream_id);
     output << ",\"sampleIndex\":" << sample_index << ",\"raw\":{\"provider\":";
@@ -341,7 +388,7 @@ bool serialize_record(const robotweax_srt_telemetry_jsonl_export_config_v1 &conf
     {
         return false;
     }
-    output << "}}\n";
+    output << "}" << extra << "}\n";
     line = output.str();
     return true;
 }
@@ -349,9 +396,52 @@ bool serialize_record(const robotweax_srt_telemetry_jsonl_export_config_v1 &conf
 struct RecorderSnapshot final
 {
     std::vector<robotweax_srt_telemetry_record_v1> records;
+    std::vector<MemberCell> members;
     std::size_t capacity = 0;
     std::uint64_t overwritten_count = 0;
+    /* Push number of records[0]. */
+    std::uint64_t first_sample = 0;
+    std::vector<HealthCell> health;
+    std::uint64_t health_dropped = 0;
 };
+
+/* Drops transitions no export can write: those superseded before the first
+ * kept sample (the one in force there stays). Several transitions can be
+ * graded on one sample (a source whose samples fail), so a hard limit of
+ * 2 x capacity + 2 bounds memory too, dropping the oldest. */
+void prune_health(robotweax_srt_telemetry_recorder &recorder)
+{
+    const auto first = recorder.pushed - recorder.size;
+    while (recorder.health.size() >= 2 && recorder.health[0].sample < first &&
+           recorder.health[1].sample <= first)
+    {
+        recorder.health.pop_front();
+        ++recorder.health_dropped;
+    }
+    while (recorder.health.size() > 2 * recorder.records.size() + 2)
+    {
+        recorder.health.pop_front();
+        ++recorder.health_dropped;
+    }
+}
+
+void push_locked(robotweax_srt_telemetry_recorder &recorder, const robotweax_srt_telemetry_raw_sample_v1 &raw,
+                 const robotweax_srt_telemetry_delta_v1 &delta, const MemberCell &member)
+{
+    recorder.records[recorder.write_index] = make_record(raw, delta);
+    recorder.members[recorder.write_index] = member;
+    recorder.write_index = (recorder.write_index + 1) % recorder.records.size();
+    if (recorder.size < recorder.records.size())
+    {
+        ++recorder.size;
+    }
+    else if (recorder.overwritten_count != std::numeric_limits<std::uint64_t>::max())
+    {
+        ++recorder.overwritten_count;
+    }
+    ++recorder.pushed;
+    prune_health(recorder);
+}
 
 RecorderSnapshot snapshot(const robotweax_srt_telemetry_recorder &recorder)
 {
@@ -362,10 +452,15 @@ RecorderSnapshot snapshot(const robotweax_srt_telemetry_recorder &recorder)
     result.overwritten_count = recorder.overwritten_count;
     const auto oldest =
         recorder.size == recorder.records.size() ? recorder.write_index : std::size_t{0};
+    result.members.reserve(recorder.size);
     for (std::size_t index = 0; index < recorder.size; ++index)
     {
         result.records.push_back(recorder.records[(oldest + index) % recorder.records.size()]);
+        result.members.push_back(recorder.members[(oldest + index) % recorder.records.size()]);
     }
+    result.first_sample = recorder.pushed - recorder.size;
+    result.health.assign(recorder.health.begin(), recorder.health.end());
+    result.health_dropped = recorder.health_dropped;
     return result;
 }
 
@@ -411,16 +506,99 @@ robotweax_srt_telemetry_recorder_push(robotweax_srt_telemetry_recorder *recorder
     }
 
     std::lock_guard lock(recorder->mutex);
-    recorder->records[recorder->write_index] = make_record(*raw, *delta);
-    recorder->write_index = (recorder->write_index + 1) % recorder->records.size();
-    if (recorder->size < recorder->records.size())
+    push_locked(*recorder, *raw, *delta, MemberCell{});
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_push_member_v1(
+    robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_raw_sample_v1 *raw,
+    const robotweax_srt_telemetry_delta_v1 *delta, const robotweax_srt_telemetry_recorder_member_v1 *member)
+{
+    if (recorder == nullptr || raw == nullptr || delta == nullptr)
     {
-        ++recorder->size;
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
-    else if (recorder->overwritten_count != std::numeric_limits<std::uint64_t>::max())
+    if (!valid_raw(raw) || !valid_delta(delta) ||
+        (member != nullptr && (member->struct_size < sizeof(*member) ||
+                               member->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)))
     {
-        ++recorder->overwritten_count;
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
     }
+    MemberCell cell;
+    if (member != nullptr)
+    {
+        if (member->state > ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_UNKNOWN || member->standby > 1 ||
+            member->authority > ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_NONE || member->reserved != 0)
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+        }
+        cell = {true, member->state, member->standby != 0, member->authority};
+    }
+    std::lock_guard lock(recorder->mutex);
+    push_locked(*recorder, *raw, *delta, cell);
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_recorder_push_health_v1(robotweax_srt_telemetry_recorder *recorder,
+                                                const robotweax_srt_telemetry_health_status_v1 *status)
+{
+    if (recorder == nullptr || status == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (status->struct_size < sizeof(*status) || status->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    /* Refused here, so that every later export can write the line. */
+    const auto named = [](const char *name) { return std::string_view(name) != "invalid"; };
+    if (!named(robotweax_srt_telemetry_health_verdict_name(status->verdict)) ||
+        !named(robotweax_srt_telemetry_health_verdict_name(status->uncapped_verdict)) ||
+        !named(robotweax_srt_telemetry_health_reason_name(status->reason)) ||
+        !named(robotweax_srt_telemetry_health_knob_name(status->knob)) ||
+        static_cast<std::int64_t>(status->knob_direction) < ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_NONE ||
+        static_cast<std::int64_t>(status->knob_direction) > ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK ||
+        !std::isfinite(status->suggested_value))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    HealthCell cell;
+    cell.observed_at_unix_nano = status->observed_at_unix_nano;
+    /* The verdict's start on the wall clock, from the sample's two clocks. */
+    const auto since = status->verdict_since_monotonic_nano <= status->sample_monotonic_nano
+                           ? status->sample_monotonic_nano - status->verdict_since_monotonic_nano
+                           : 0;
+    cell.verdict_since_unix_nano = status->observed_at_unix_nano >= since ? status->observed_at_unix_nano - since : 0;
+    cell.suggested_value =
+        status->knob != ROBOTWEAX_SRT_TELEMETRY_KNOB_NONE ? status->suggested_value : 0.0;
+    cell.verdict = static_cast<std::int32_t>(status->verdict);
+    cell.uncapped_verdict = static_cast<std::int32_t>(status->uncapped_verdict);
+    cell.reason = static_cast<std::int32_t>(status->reason);
+    cell.knob = static_cast<std::int32_t>(status->knob);
+    cell.knob_direction = static_cast<std::int32_t>(status->knob_direction);
+    cell.capped = (status->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED) != 0;
+    cell.standby = (status->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY) != 0;
+    if ((status->flags & ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_GROUP) != 0)
+    {
+        cell.usable_paths = status->group_usable_paths;
+        cell.expected_paths = status->group_expected_paths;
+    }
+    std::lock_guard lock(recorder->mutex);
+    if (recorder->pushed == 0)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_OK; /* no sample to grade yet */
+    }
+    cell.sample = recorder->pushed - 1;
+    try
+    {
+        recorder->health.push_back(cell);
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    prune_health(*recorder);
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
@@ -487,6 +665,9 @@ extern "C" void robotweax_srt_telemetry_recorder_clear(robotweax_srt_telemetry_r
     recorder->write_index = 0;
     recorder->size = 0;
     recorder->overwritten_count = 0;
+    recorder->pushed = 0;
+    recorder->health.clear();
+    recorder->health_dropped = 0;
 }
 
 extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl(
@@ -527,6 +708,246 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
             if (sink(user_data, line.data(), line.size()) != 0)
             {
                 return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
+            }
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    catch (...)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+namespace
+{
+
+std::string_view member_state_name(const std::uint32_t state)
+{
+    switch (state)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_PENDING:
+        return "pending";
+    case ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_IDLE:
+        return "idle";
+    case ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_RUNNING:
+        return "running";
+    case ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_BROKEN:
+        return "broken";
+    default:
+        return "unknown";
+    }
+}
+
+std::string member_json(const MemberCell &member)
+{
+    std::string out = ",\"member\":{\"state\":\"";
+    out += member_state_name(member.present ? member.state : ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_UNKNOWN);
+    out += "\",\"standby\":";
+    out += member.present && member.standby ? "true" : "false";
+    out += ",\"authority\":";
+    switch (member.present ? member.authority : ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_UNKNOWN)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_ACTIVE:
+        out += "\"active\"";
+        break;
+    case ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_PROBE:
+        out += "\"probe\"";
+        break;
+    case ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_NONE:
+        out += "\"none\"";
+        break;
+    default:
+        out += "null";
+        break;
+    }
+    out += '}';
+    return out;
+}
+
+std::string_view knob_direction_name(const robotweax_srt_telemetry_knob_direction direction)
+{
+    switch (direction)
+    {
+    case ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_INCREASE:
+        return "increase";
+    case ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_DECREASE:
+        return "decrease";
+    case ROBOTWEAX_SRT_TELEMETRY_KNOB_DIRECTION_CHECK:
+        return "check";
+    default:
+        return "none";
+    }
+}
+
+/* One health line; false for a status the schema cannot carry. */
+bool serialize_health(const robotweax_srt_telemetry_jsonl_export_config_v1 &config, const HealthCell &cell,
+                      const std::uint64_t sample_index, const bool carried, const bool group_row, std::string &line)
+{
+    std::ostringstream output;
+    output.imbue(std::locale::classic());
+    output << std::setprecision(std::numeric_limits<double>::max_digits10)
+           << "{\"schemaVersion\":\"1alpha2\",\"kind\":\"robotweax-srt-telemetry-health\",\"streamId\":";
+    append_json_string(output, config.stream_id);
+    output << ",\"sampleIndex\":" << sample_index << ",\"observedAtUnixNano\":" << cell.observed_at_unix_nano
+           << ",\"verdict\":\""
+           << robotweax_srt_telemetry_health_verdict_name(
+                  static_cast<robotweax_srt_telemetry_health_verdict>(cell.verdict))
+           << "\",\"reason\":\""
+           << robotweax_srt_telemetry_health_reason_name(static_cast<robotweax_srt_telemetry_health_reason>(cell.reason))
+           << "\",\"knob\":\""
+           << robotweax_srt_telemetry_health_knob_name(static_cast<robotweax_srt_telemetry_health_knob>(cell.knob))
+           << "\",\"knobDirection\":\""
+           << knob_direction_name(static_cast<robotweax_srt_telemetry_knob_direction>(cell.knob_direction))
+           << "\",\"suggestedValue\":";
+    if (cell.suggested_value != 0)
+    {
+        output << cell.suggested_value;
+    }
+    else
+    {
+        output << "null";
+    }
+    output << ",\"capped\":" << (cell.capped ? "true" : "false") << ",\"uncappedVerdict\":\""
+           << robotweax_srt_telemetry_health_verdict_name(
+                  static_cast<robotweax_srt_telemetry_health_verdict>(cell.uncapped_verdict))
+           << "\",\"standby\":" << (cell.standby ? "true" : "false");
+    if (group_row)
+    {
+        output << ",\"usablePaths\":" << cell.usable_paths << ",\"expectedPaths\":" << cell.expected_paths;
+    }
+    else
+    {
+        output << ",\"usablePaths\":null,\"expectedPaths\":null";
+    }
+    output << ",\"verdictSinceUnixNano\":" << cell.verdict_since_unix_nano
+           << ",\"carried\":" << (carried ? "true" : "false") << "}\n";
+    line = output.str();
+    return true;
+}
+
+} // namespace
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v2(
+    const robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+    const robotweax_srt_telemetry_jsonl_export_v2_options *options, const robotweax_srt_telemetry_jsonl_sink sink,
+    void *user_data)
+{
+    if (recorder == nullptr || config == nullptr || options == nullptr || sink == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (config->struct_size < sizeof(*config) || config->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION ||
+        options->struct_size < sizeof(*options) || options->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    if (!valid_export_config(config) || options->group_type > ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_UNKNOWN ||
+        options->group_row > ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER || options->health_lines > 1 ||
+        options->reserved != 0 ||
+        (options->group_type == ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_NONE) !=
+            (options->group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    static constexpr const char *group_types[] = {"null", "\"broadcast\"", "\"backup\"", "\"unknown\""};
+    static constexpr const char *group_rows[] = {"null", "\"group\"", "\"member\""};
+    const bool member_row = options->group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER;
+    const bool group_row = options->group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_GROUP;
+    try
+    {
+        const auto snap = snapshot(*recorder);
+        const auto first = snap.first_sample;
+        const auto end = first + snap.records.size();
+        /* Health lines to write: the transition in force at the first kept
+         * sample (graded on an older one: carried), then those graded on kept
+         * samples. Transitions older than that one are overwritten. */
+        std::vector<std::pair<const HealthCell *, bool>> lines;
+        std::uint64_t overwritten = snap.health_dropped;
+        if (options->health_lines != 0 && !snap.records.empty())
+        {
+            const HealthCell *in_force = nullptr;
+            for (const auto &cell : snap.health)
+            {
+                if (cell.sample < first)
+                {
+                    if (in_force != nullptr)
+                    {
+                        ++overwritten;
+                    }
+                    in_force = &cell;
+                }
+                else if (cell.sample < end)
+                {
+                    if (in_force != nullptr)
+                    {
+                        /* Superseded on the first kept sample itself: not in
+                         * force there. */
+                        if (cell.sample == first)
+                        {
+                            ++overwritten;
+                        }
+                        else
+                        {
+                            lines.emplace_back(in_force, true);
+                        }
+                        in_force = nullptr;
+                    }
+                    lines.emplace_back(&cell, false);
+                }
+            }
+            if (in_force != nullptr)
+            {
+                lines.emplace_back(in_force, true);
+            }
+        }
+        else
+        {
+            overwritten = 0;
+        }
+        std::string extra = ",\"groupType\":";
+        extra += group_types[options->group_type];
+        extra += ",\"groupRow\":";
+        extra += group_rows[options->group_row];
+        extra += options->health_lines != 0 ? ",\"healthLines\":true" : ",\"healthLines\":false";
+        extra += ",\"healthCount\":" + std::to_string(lines.size()) +
+                 ",\"healthOverwrittenCount\":" + std::to_string(overwritten);
+        const auto header = serialize_header(*config, snap.records.size(), snap.capacity, snap.overwritten_count,
+                                             "1alpha2", extra);
+        if (sink(user_data, header.data(), header.size()) != 0)
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
+        }
+        std::size_t next = 0;
+        for (std::size_t index = 0; index < snap.records.size(); ++index)
+        {
+            std::string line;
+            const std::string member = member_row ? member_json(snap.members[index]) : ",\"member\":null";
+            if (!serialize_record(*config, snap.records[index], index, line, "1alpha2", member))
+            {
+                return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+            }
+            if (sink(user_data, line.data(), line.size()) != 0)
+            {
+                return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
+            }
+            /* Health lines graded on this sample (a carried one at the first). */
+            while (next < lines.size() &&
+                   (lines[next].second ? index == 0 : lines[next].first->sample - first == index))
+            {
+                std::string health;
+                if (!serialize_health(*config, *lines[next].first, index, lines[next].second, group_row, health))
+                {
+                    return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+                }
+                if (sink(user_data, health.data(), health.size()) != 0)
+                {
+                    return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
+                }
+                ++next;
             }
         }
     }

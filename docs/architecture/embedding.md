@@ -287,12 +287,28 @@ the format SRT Doctor and the Flight Recorder read:
   `providerRevision` from `provider_revision=`, `buildProfile` `embed`, and
   `capacity`/`overwrittenCount` when the ring was full;
 - not at all for a source that never produced a sample (an attempt that never
-  connected).
+  connected);
+- in schema `1alpha1` by default, or `1alpha2` with `jsonl_schema=1alpha2`
+  (config `recording_schema`): every recording then names its group type and
+  row (`group` for a group's own source, `member` for a path, `null` for a
+  plain socket), member rows carry each sample's member state (SRT's member
+  state, the standby decision that feeds `HEALTH_STATUS_STANDBY`, and the local
+  sender authority when `embed_set_group_send_state_v1` is enabled, from the
+  previous tick), and every source records its health transitions: after each
+  tick, a change of verdict, reason, knob, uncapped verdict, capped, standby or
+  path counts is written after the sample it was graded on (a lingering
+  source's loss too, which counts as a change for the next write). A tick
+  whose sample failed grades the source's last good sample again, so its
+  transition follows that sample. Use it only
+  where the reader accepts `1alpha2` (SRT Doctor rule set 0.1.11 or later);
+  see [schema 1alpha2](bounded-recorder.md#schema-1alpha2).
 
 Label both ends of one stream with the same `flow` so a sender and a receiver
-recording are recognised as one path. The ring holds 472 bytes per sample,
-allocated when the socket is attached: 600 s (6,000 samples) is 2.8 MB per
-source, the maximum 36,000 s is 170 MB. A written sample takes about 1.9 kB of
+recording are recognised as one path. The ring holds 488 bytes per sample
+(including the member state, written only in `1alpha2`), allocated when the
+socket is attached: 600 s (6,000 samples) is 2.9 MB per source, the maximum
+36,000 s is 176 MB. Health transitions take 64 bytes each as they occur,
+at most 2 × capacity + 2 per source. A written sample takes about 1.9 kB of
 JSONL, so 600 s make an 11.6 MB file; a write holds a copy of the ring and
 64 KiB of text, not the file. That copy is taken under the recorder's lock,
 which the next sample waits for: a few ms at the default, up to about 150 ms

@@ -365,6 +365,15 @@ extern "C"
     ROBOTWEAX_SRT_TELEMETRY_API const char *
     robotweax_srt_telemetry_health_knob_name(robotweax_srt_telemetry_health_knob knob);
 
+    /* Records a health transition for recording schema 1alpha2: graded on
+     * the recorder's latest sample (ignored before the first one). The
+     * recorder keeps capacity + 1 transitions. The caller decides what is a
+     * transition (typically a change of verdict, reason, uncapped verdict,
+     * capped, standby or path counts). */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_recorder_push_health_v1(robotweax_srt_telemetry_recorder *recorder,
+                                                    const robotweax_srt_telemetry_health_status_v1 *status);
+
 #ifdef __cplusplus
 }
 #endif

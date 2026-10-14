@@ -433,6 +433,80 @@ extern "C"
         const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
         robotweax_srt_telemetry_jsonl_sink sink, void *user_data);
 
+    /* ------------------------------------------------ recording schema 1alpha2
+     * Group context, member state per sample and health transitions
+     * (docs/architecture/bounded-recorder.md#schema-1alpha2). A recorder fed
+     * with these still exports 1alpha1 through recorder_export_jsonl, which
+     * leaves them out. */
+
+/* member_v1.state: SRT_MEMBERSTATUS as reported by srt_group_data. */
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_PENDING 0u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_IDLE 1u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_RUNNING 2u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_BROKEN 3u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_UNKNOWN 4u
+/* member_v1.authority: the local Backup sender's selection (sender rows). */
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_UNKNOWN 0u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_ACTIVE 1u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_PROBE 2u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_NONE 3u
+
+    /* A group member's state at one sample. */
+    typedef struct robotweax_srt_telemetry_recorder_member_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        uint32_t state;
+        /* 1: the host graded the member as a waiting Backup standby. */
+        uint32_t standby;
+        /* UNKNOWN on receivers or without a sender authority source. */
+        uint32_t authority;
+        uint32_t reserved;
+    } robotweax_srt_telemetry_recorder_member_v1;
+
+    /* Push with the member state of the sample (member may be NULL: none). */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_recorder_push_member_v1(
+        robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_raw_sample_v1 *raw,
+        const robotweax_srt_telemetry_delta_v1 *delta,
+        const robotweax_srt_telemetry_recorder_member_v1 *member);
+
+/* jsonl_export_v2_options.group_type */
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_NONE 0u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_BROADCAST 1u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_BACKUP 2u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_UNKNOWN 3u
+/* jsonl_export_v2_options.group_row */
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE 0u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_GROUP 1u
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER 2u
+
+    /* What the 1alpha2 header says beyond config_v1. group_type and
+     * group_row are NONE together (a plain socket) or set together. */
+    typedef struct robotweax_srt_telemetry_jsonl_export_v2_options
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        uint32_t group_type;
+        uint32_t group_row;
+        /* 1: health was graded; the recording carries its transitions. */
+        uint32_t health_lines;
+        uint32_t reserved;
+    } robotweax_srt_telemetry_jsonl_export_v2_options;
+
+    /* Exports schema 1alpha2: the 1alpha1 fields, the header's group context
+     * and health counts, member on member rows (unknown state for samples
+     * pushed without one), and health lines after the sample each was graded
+     * on. When the oldest transitions are gone with the samples they were
+     * graded on, the one in force at the first kept sample comes first,
+     * marked carried. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_recorder_export_jsonl_v2(
+        const robotweax_srt_telemetry_recorder *recorder,
+        const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+        const robotweax_srt_telemetry_jsonl_export_v2_options *options,
+        robotweax_srt_telemetry_jsonl_sink sink, void *user_data);
+
 #ifdef __cplusplus
 }
 #endif
