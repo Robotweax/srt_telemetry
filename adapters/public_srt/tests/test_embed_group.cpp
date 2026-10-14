@@ -2,10 +2,13 @@
 // loopback, attached on both sides with embed_attach_group. Checks the
 // group and member sources (labels group and path), the group events in the
 // journal, the member verdict cap after a path is cut, the continuation of
-// the path's row when a member reconnects on it, and detach.
+// the path's row when a member reconnects on it, and detach; and a Main/Backup
+// sender whose primary path goes dark while both members stay connected.
 //
 // Exit code 77 (skipped) without connection groups, unless --require.
 #include <robotweax/srt_telemetry_public_srt_host.h>
+
+#include "impairing_relay.hpp"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -1425,6 +1428,142 @@ void negotiated_labels_scenario()
 }
 #endif
 
+/* Main/Backup sender, paths "lte" (weight 20) and "sat" (weight 10) each
+ * through an impairing relay; "lte" goes dark while both members stay
+ * connected (a long peer idle timeout). SRT moves the stream to "sat" but
+ * keeps putting packets into "lte" until it breaks, so per tick both paths
+ * may carry and the inferred active path flaps. The sending group must not
+ * take the dark path's grade while "sat" carries and both paths are still
+ * usable: no Watch, At risk or Failing (srt_telemetry#38). With the send
+ * authority the group follows SRT's selection; without it, the paths that
+ * carried together. */
+void backup_outage_scenario(const bool authority)
+{
+    using robotweax_srt_telemetry_lab::Impairment;
+    using robotweax_srt_telemetry_lab::Relay;
+    const std::string stream = authority ? "outage-auth" : "outage";
+    const SRTSOCKET listener = srt_create_socket();
+    int yes = 1;
+    srt_setsockflag(listener, SRTO_GROUPCONNECT, &yes, sizeof(yes));
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+    int length = sizeof(address);
+    Relay relays[2];
+    check(srt_bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0 &&
+              srt_listen(listener, 4) == 0 &&
+              srt_getsockname(listener, reinterpret_cast<sockaddr *>(&address), &length) == 0 &&
+              relays[0].start(address) && relays[1].start(address),
+          "outage: listen and relays");
+    Impairment fast;
+    fast.delay_ms = 2;
+    relays[0].set(fast);
+    relays[1].set(fast);
+    std::atomic<bool> stop{false};
+    std::atomic<SRTSOCKET> accepted{SRT_INVALID_SOCK};
+    std::thread receiver([&] {
+        const SRTSOCKET socket = srt_accept(listener, nullptr, nullptr);
+        if (socket == SRT_INVALID_SOCK)
+            return;
+        accepted = socket;
+        int timeout = 100;
+        srt_setsockflag(socket, SRTO_RCVTIMEO, &timeout, sizeof(timeout));
+        char buffer[1500];
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_recvmsg2(socket, buffer, sizeof(buffer), &control));
+        }
+    });
+    const SRTSOCKET group = srt_create_group(SRT_GTYPE_BACKUP);
+    int idle = 30000; /* both members stay usable through the outage */
+    int latency = 250;
+    srt_setsockflag(group, SRTO_PEERIDLETIMEO, &idle, sizeof(idle));
+    srt_setsockflag(group, SRTO_LATENCY, &latency, sizeof(latency));
+    std::vector<SRT_SOCKGROUPCONFIG> endpoints;
+    for (int i = 0; i < 2; ++i)
+    {
+        const auto &relay = relays[i].address();
+        endpoints.push_back(srt_prepare_endpoint(nullptr, reinterpret_cast<const sockaddr *>(&relay), sizeof(relay)));
+        endpoints.back().weight = i == 0 ? 20 : 10;
+    }
+    check(srt_connect_group(group, endpoints.data(), 2) != SRT_ERROR, "outage: connect");
+    std::thread sender([&] {
+        char payload[1316];
+        std::memset(payload, 0x47, sizeof(payload));
+        auto next = std::chrono::steady_clock::now();
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_sendmsg2(group, payload, sizeof(payload), &control));
+            next += std::chrono::milliseconds(2);
+            std::this_thread::sleep_until(next);
+        }
+    });
+    robotweax_srt_telemetry_embed *embed = start_embed(0);
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+    if (authority)
+        check(robotweax_srt_telemetry_host_embed_group_send_state(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "outage: send authority enabled");
+#endif
+    robotweax_srt_telemetry_label_v1 labels[] = {{"stream", stream.c_str()}};
+    robotweax_srt_telemetry_embed_group_v1 tx;
+    robotweax_srt_telemetry_embed_group_default(&tx);
+    tx.group = group;
+    tx.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    tx.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
+    tx.expected_paths = 2;
+    tx.labels = labels;
+    tx.label_count = 1;
+    tx.path_name = name_by_weight;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &tx) == ROBOTWEAX_SRT_TELEMETRY_OK, "outage: attach");
+    const auto row = [&] { return group_row(sources(embed), stream); };
+    const auto path = [&](const char *name)
+    { return find_source(sources(embed), {"\"stream\":\"" + stream + "\"", std::string("\"path\":\"") + name + "\""}); };
+    check(wait_for(
+              [&] {
+                  return has(row(), "\"verdict\":\"ok\"") &&
+                         has(row(), "\"group\":{\"usable_paths\":2,\"expected_paths\":2}") &&
+                         has(path("sat"), "\"standby\":true");
+              },
+              15000),
+          "outage: OK on lte with sat standby before the outage: " + row().substr(0, 0));
+
+    Impairment dark;
+    dark.blackhole = true;
+    relays[0].set(dark);
+    std::string false_grade;
+    bool sat_carried = false;
+    const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(6000);
+    while (std::chrono::steady_clock::now() < end)
+    {
+        const auto all = sources(embed);
+        const auto g = group_row(all, stream);
+        const auto sat = find_source(all, {"\"stream\":\"" + stream + "\"", "\"path\":\"sat\""});
+        sat_carried = sat_carried || (has(sat, "\"standby\":false") && has(sat, "\"verdict\":\"ok\""));
+        if (has(g, "\"group\":{\"usable_paths\":2,\"expected_paths\":2}") &&
+            (has(g, "\"verdict\":\"watch\"") || has(g, "\"verdict\":\"at_risk\"") ||
+             has(g, "\"verdict\":\"failing\"")) &&
+            false_grade.empty())
+        {
+            const auto h = g.find("\"health\"");
+            false_grade = h == std::string::npos ? g : g.substr(h, 120);
+        }
+        sleep_ms(50);
+    }
+    check(sat_carried, "outage: sat took over, graded OK");
+    check(false_grade.empty(), "outage: the sending group never takes the dark path's grade while sat carries: " +
+                                   false_grade);
+    robotweax_srt_telemetry_embed_stop(embed);
+    stop = true;
+    sender.join();
+    srt_close(group);
+    srt_close(listener);
+    receiver.join();
+    if (accepted != SRT_INVALID_SOCK)
+        srt_close(accepted);
+}
+
 #if defined(ROBOTWEAX_SRT_STANDBY_RTT_VERSION) && ROBOTWEAX_SRT_STANDBY_RTT_VERSION == 1
 /* Plain own-to-own loopback integration of the opt-in getter into member JSON.
  * No DATA is sent. This is not fleet, WAN or encrypted-control qualification. */
@@ -1523,6 +1662,10 @@ int main(int argc, char **argv)
     native_standby_observation_scenario();
 #endif
     backup_scenario();
+    backup_outage_scenario(false);
+#if defined(ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION) && ROBOTWEAX_SRT_GROUP_SEND_STATE_VERSION == 1
+    backup_outage_scenario(true);
+#endif
     recording_1alpha2_scenario();
     broadcast_scenario();
     duplicate_names_scenario();
