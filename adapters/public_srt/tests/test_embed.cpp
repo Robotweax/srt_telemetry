@@ -930,6 +930,104 @@ void test_live_recording()
     std::filesystem::remove_all(directory);
 }
 
+/* The recording callback may call into the embed, also while stop runs;
+ * clearing the callback waits for a running call. */
+struct ReentrantCallback
+{
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    std::vector<std::int32_t> sockets;
+    std::atomic<int> finals{0};
+    std::atomic<int> refused{0};
+    std::atomic<bool> slow{false};
+    std::atomic<bool> running{false};
+
+    static void callback(void *user, const robotweax_srt_telemetry_embed_recording_event_v1 *event)
+    {
+        auto &self = *static_cast<ReentrantCallback *>(user);
+        self.running = true;
+        if (self.slow)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        }
+        if ((event->flags & ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_FINAL) != 0)
+        {
+            ++self.finals;
+            for (const auto socket : self.sockets)
+            {
+                const auto write = robotweax_srt_telemetry_embed_write_recording(self.embed, socket);
+                const auto detach = robotweax_srt_telemetry_embed_detach(self.embed, socket);
+                const auto attach = robotweax_srt_telemetry_embed_attach(
+                    self.embed, socket, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER, nullptr, 0);
+                if (write == ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE && detach == ROBOTWEAX_SRT_TELEMETRY_OK &&
+                    attach == ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE)
+                {
+                    ++self.refused;
+                }
+            }
+        }
+        self.running = false;
+    }
+};
+
+void test_recording_callback_reentry()
+{
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-reentry-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    auto config = base_config();
+    const auto spec = "off,name=cam-9,jsonl=" + directory.string() + ",linger_s=30";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "reentry spec");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "reentry start");
+    if (embed == nullptr)
+    {
+        return;
+    }
+    ReentrantCallback state;
+    state.embed = embed;
+    Stream stream;
+    check(stream.open(nullptr), "reentry stream");
+    for (const auto socket : {stream.sender, stream.receiver})
+    {
+        check(robotweax_srt_telemetry_embed_attach(embed, socket,
+                                                   socket == stream.sender ? ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER
+                                                                           : ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER,
+                                                   nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "reentry attach");
+        state.sockets.push_back(socket);
+    }
+    stream.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+
+    /* Clearing waits for a running call: after it returns, the callback is
+     * neither running nor called again. */
+    state.slow = true;
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, ReentrantCallback::callback, &state) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_write_recording(embed, stream.sender) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "slow callback and a live write");
+    check(wait_until([&] { return state.running.load(); }, 5'000), "the slow callback runs");
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, nullptr, nullptr) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              !state.running,
+          "clearing the callback waits until it has returned");
+    state.slow = false;
+
+    /* During stop the final events call write, detach and attach for every
+     * socket: refused or ignored, never a crash. */
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, ReentrantCallback::callback, &state) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "reentrant callback set");
+    robotweax_srt_telemetry_embed_stop(embed);
+    stream.stop();
+    check(state.finals == 2 && state.refused == 4,
+          "stop: two final events, embed calls from them refused (" + std::to_string(state.finals) + ", " +
+              std::to_string(state.refused) + ")");
+    std::filesystem::remove_all(directory);
+}
+
 void test_recording_failure_counter()
 {
     const auto directory = std::filesystem::temp_directory_path() /
@@ -976,6 +1074,7 @@ int main()
     test_recording_lifecycle();
     test_recording_failure_counter();
     test_live_recording();
+    test_recording_callback_reentry();
     srt_cleanup();
     if (failures != 0)
     {

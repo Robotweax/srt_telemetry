@@ -405,6 +405,9 @@ struct robotweax_srt_telemetry_embed
     std::mutex mutex;
     std::condition_variable cv;
     bool running = true;
+    /* stop has begun removing sources: attach, detach and live writes
+     * (e.g. from a recording callback) no longer touch the endpoints. */
+    bool stopping = false;
     std::thread thread;
     std::map<std::int32_t, std::unique_ptr<Endpoint>> active;
     std::vector<std::unique_ptr<Endpoint>> retired;
@@ -429,6 +432,10 @@ struct robotweax_srt_telemetry_embed
     /* Reports each handled request; guarded by writer_mutex. */
     robotweax_srt_telemetry_embed_recording_callback recording_callback = nullptr;
     void *recording_user_data = nullptr;
+    /* The writer is inside the callback (writer_mutex): clearing or
+     * replacing the callback waits until it has returned. */
+    bool in_recording_callback = false;
+    std::condition_variable recording_callback_cv;
     std::thread writer;
     /* The process umask at start, applied to recordings. */
     mode_t file_umask = 022;
@@ -629,10 +636,16 @@ void writer_loop(Embed &embed)
                 std::lock_guard callback_lock(embed.writer_mutex);
                 callback = embed.recording_callback;
                 user_data = embed.recording_user_data;
+                embed.in_recording_callback = callback != nullptr;
             }
             if (callback != nullptr)
             {
                 callback(user_data, &event);
+                {
+                    std::lock_guard callback_lock(embed.writer_mutex);
+                    embed.in_recording_callback = false;
+                }
+                embed.recording_callback_cv.notify_all();
             }
         }
         lock.lock();
@@ -1550,20 +1563,26 @@ void teardown(Embed *embed)
     /* The exporter and the server read the sampler: stop them first. */
     robotweax_srt_telemetry_otlp_exporter_stop(embed->exporter);
     robotweax_srt_telemetry_http_server_stop(embed->server);
-    if (embed->sampler != nullptr)
     {
-        for (auto &[socket, endpoint] : embed->active)
+        /* The writer reports the final writes queued here while this runs;
+         * a recording callback may call into the embed meanwhile. */
+        std::lock_guard lock(embed->mutex);
+        embed->stopping = true;
+        if (embed->sampler != nullptr)
         {
-            remove(*embed, *endpoint);
+            for (auto &[socket, endpoint] : embed->active)
+            {
+                remove(*embed, *endpoint);
+            }
+            for (auto &endpoint : embed->retired)
+            {
+                remove(*embed, *endpoint);
+            }
         }
-        for (auto &endpoint : embed->retired)
-        {
-            remove(*embed, *endpoint);
-        }
+        embed->active.clear();
+        embed->retired.clear();
+        embed->recordings.clear();
     }
-    embed->active.clear();
-    embed->retired.clear();
-    embed->recordings.clear();
     /* Final versions: the sampling thread is gone and every source was
      * queued above; the writer drains its queue and ends. */
     if (embed->writer.joinable())
@@ -1892,7 +1911,7 @@ robotweax_srt_telemetry_embed_attach(robotweax_srt_telemetry_embed *embed, const
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
     std::lock_guard lock(embed->mutex);
-    if (embed->active.count(socket) != 0)
+    if (embed->stopping || embed->active.count(socket) != 0)
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
@@ -2101,7 +2120,7 @@ robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
     std::lock_guard lock(embed->mutex);
-    if (embed->active.count(group->group) != 0)
+    if (embed->stopping || embed->active.count(group->group) != 0)
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     }
@@ -2307,6 +2326,11 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_detach(ro
     }
     {
         std::lock_guard lock(embed->mutex);
+        if (embed->stopping)
+        {
+            /* stop forgets every socket anyway. */
+            return ROBOTWEAX_SRT_TELEMETRY_OK;
+        }
         const auto found = embed->active.find(socket);
         if (found == embed->active.end())
         {
@@ -2437,9 +2461,12 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_recor
 {
     if (embed == nullptr)
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
-    std::lock_guard lock(embed->writer_mutex);
+    std::unique_lock lock(embed->writer_mutex);
     embed->recording_callback = callback;
     embed->recording_user_data = callback != nullptr ? user_data : nullptr;
+    /* After return the previous callback is not running and is not called
+     * again, so its user data may be freed. */
+    embed->recording_callback_cv.wait(lock, [&] { return !embed->in_recording_callback; });
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
@@ -2451,6 +2478,8 @@ robotweax_srt_telemetry_embed_write_recording(robotweax_srt_telemetry_embed *emb
     if (embed->config.recording_directory[0] == '\0')
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     std::lock_guard lock(embed->mutex);
+    if (embed->stopping)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
     const auto found = embed->active.find(socket);
     if (found == embed->active.end())
         return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
