@@ -295,12 +295,22 @@ struct Recording
     std::string path;
     /* Written at least once: later versions are written even when empty. */
     bool written = false;
-    /* Samples pushed so far (sampling thread), and the count the last
-     * written version held (writer thread): equal means nothing new. */
+    /* Samples (and 1alpha2 health transitions) pushed so far (sampling
+     * thread), and the count the last written version held (writer thread):
+     * equal means nothing new. */
     std::atomic<std::uint64_t> pushed{0};
     std::uint64_t written_pushed = 0;
     /* Samples in the last written version (writer thread). */
     std::uint64_t written_records = 0;
+    /* Schema 1alpha2: set at creation, then read-only. */
+    bool v2 = false;
+    std::uint32_t group_type = ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_NONE;
+    std::uint32_t group_row = ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE;
+    /* A member's state, pushed with each sample (embed lock). */
+    robotweax_srt_telemetry_recorder_member_v1 member{};
+    /* The last health transition recorded (embed lock). */
+    bool health_seen = false;
+    robotweax_srt_telemetry_health_status_v1 health{};
 
     ~Recording()
     {
@@ -464,7 +474,10 @@ void on_sample(void *user_data, const robotweax_srt_telemetry_source_info_v1 *so
     const auto found = embed.recordings.find(source->source_id);
     if (found != embed.recordings.end())
     {
-        if (robotweax_srt_telemetry_recorder_push(found->second->recorder, &output->raw, &output->delta) ==
+        auto &recording = *found->second;
+        const bool member = recording.v2 && recording.group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER;
+        if (robotweax_srt_telemetry_recorder_push_member_v1(recording.recorder, &output->raw, &output->delta,
+                                                            member ? &recording.member : nullptr) ==
             ROBOTWEAX_SRT_TELEMETRY_OK)
         {
             found->second->pushed.fetch_add(1, std::memory_order_relaxed);
@@ -479,8 +492,9 @@ struct FileSink
     int fd = -1;
     std::string buffer;
     bool failed = false;
-    /* Lines handed over by the export: the header, then one per sample. */
-    std::uint64_t lines = 0;
+    /* Sample lines handed over by the export (not the header, not 1alpha2
+     * health lines). */
+    std::uint64_t samples = 0;
 
     bool flush()
     {
@@ -512,7 +526,10 @@ int file_sink(void *user_data, const char *line, const std::size_t size)
     try
     {
         sink.buffer.append(line, size);
-        ++sink.lines;
+        if (std::string_view(line, size).find("\"kind\":\"robotweax-srt-telemetry-sample\"") != std::string_view::npos)
+        {
+            ++sink.samples;
+        }
     }
     catch (const std::bad_alloc &)
     {
@@ -558,15 +575,29 @@ bool write_recording(const Embed &embed, Recording &recording)
     {
         ok = false;
     }
-    ok = ok && robotweax_srt_telemetry_recorder_export_jsonl(recording.recorder, &config, file_sink, &sink) ==
-                   ROBOTWEAX_SRT_TELEMETRY_OK;
+    if (recording.v2)
+    {
+        robotweax_srt_telemetry_jsonl_export_v2_options options{};
+        options.struct_size = sizeof(options);
+        options.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        options.group_type = recording.group_type;
+        options.group_row = recording.group_row;
+        options.health_lines = 1; /* the embed always grades health */
+        ok = ok && robotweax_srt_telemetry_recorder_export_jsonl_v2(recording.recorder, &config, &options, file_sink,
+                                                                    &sink) == ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    else
+    {
+        ok = ok && robotweax_srt_telemetry_recorder_export_jsonl(recording.recorder, &config, file_sink, &sink) ==
+                       ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
     ok = ok && sink.flush() && ::fsync(fd) == 0;
     if (::close(fd) != 0 || !ok || std::rename(temporary.c_str(), recording.path.c_str()) != 0)
     {
         ::unlink(temporary.c_str());
         return false;
     }
-    recording.written_records = sink.lines > 0 ? sink.lines - 1 : 0;
+    recording.written_records = sink.samples;
     /* The rename itself survives a power loss only once the directory is
      * synced. */
     const int directory = ::open(recording.directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
@@ -703,8 +734,18 @@ std::string nonce()
     return text;
 }
 
+/* A group type in recording terms (1alpha2 header). */
+std::uint32_t recording_group_type(const std::uint32_t type)
+{
+    return type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP      ? ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_BACKUP
+           : type == ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST ? ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_BROADCAST
+                                                                   : ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_UNKNOWN;
+}
+
 /* Starts a recording for a new source. Lock held. */
-robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endpoint)
+robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endpoint,
+                                              const std::uint32_t group_type = ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_NONE,
+                                              const std::uint32_t group_row = ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE)
 {
     if (embed.config.recording_directory[0] == '\0')
     {
@@ -722,6 +763,12 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
         }
         recording->role = endpoint.role;
         recording->directory = embed.config.recording_directory;
+        recording->v2 = embed.config.recording_schema == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2;
+        recording->group_type = group_type;
+        recording->group_row = group_row;
+        recording->member.struct_size = sizeof(recording->member);
+        recording->member.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        recording->member.state = ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_UNKNOWN;
         for (const auto &[key, value] : endpoint.labels)
         {
             if (key == "stream")
@@ -1009,7 +1056,8 @@ Endpoint *member_endpoint(Embed &embed, Endpoint &group, const std::string &path
             return nullptr;
         }
         slot->added = true;
-        if (start_recording(embed, *slot) != ROBOTWEAX_SRT_TELEMETRY_OK)
+        if (start_recording(embed, *slot, recording_group_type(link.type), ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER) !=
+            ROBOTWEAX_SRT_TELEMETRY_OK)
         {
             remove(embed, *slot);
             link.members.erase(path);
@@ -1145,6 +1193,27 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
                             /* The previous tick's metadata read (members are read after this). */
                             (standby && member->rtt_fresh ? ROBOTWEAX_SRT_TELEMETRY_HEALTH_CONTEXT_RTT_MEASURED : 0u);
     apply_context(embed, *member);
+    /* Recording schema 1alpha2: the member's state for its next samples. */
+    const auto recording = embed.recordings.find(member->source_id);
+    if (recording != embed.recordings.end() && recording->second->v2)
+    {
+        auto &m = recording->second->member;
+        m.state = entry.member_state >= 0 &&
+                          entry.member_state <= static_cast<std::int32_t>(ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_BROKEN)
+                      ? static_cast<std::uint32_t>(entry.member_state)
+                      : ROBOTWEAX_SRT_TELEMETRY_RECORDER_MEMBER_UNKNOWN;
+        m.standby = standby ? 1u : 0u;
+        /* The local sender's selection, on a sender with the authority getter
+         * (from the previous tick: it is read after the members). */
+        m.authority = ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_UNKNOWN;
+        if (group.role == ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER && link.authority_seen &&
+            link.authority.availability == 2)
+        {
+            m.authority = link.authority.active_member == entry.socket  ? ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_ACTIVE
+                          : link.authority.probe_member == entry.socket ? ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_PROBE
+                                                                        : ROBOTWEAX_SRT_TELEMETRY_RECORDER_AUTHORITY_NONE;
+        }
+    }
 }
 
 /* Rank of a path's own grade for "the best path": graded beats ungraded, then
@@ -1428,6 +1497,52 @@ void poll_standby_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono
         embed.sampler, endpoint.source_id, &metadata));
 }
 
+/* Same health for recording schema 1alpha2: a transition is a change of
+ * these (what SRT Doctor reads as context). */
+bool same_health(const robotweax_srt_telemetry_health_status_v1 &a, const robotweax_srt_telemetry_health_status_v1 &b)
+{
+    constexpr auto flags = ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_CAPPED | ROBOTWEAX_SRT_TELEMETRY_HEALTH_STATUS_STANDBY;
+    return a.verdict == b.verdict && a.reason == b.reason && a.uncapped_verdict == b.uncapped_verdict &&
+           a.knob == b.knob && a.knob_direction == b.knob_direction && (a.flags & flags) == (b.flags & flags) &&
+           a.group_usable_paths == b.group_usable_paths && a.group_expected_paths == b.group_expected_paths;
+}
+
+/* After a tick: each 1alpha2 recording records its source's health when it
+ * changed (graded on its latest sample). Lock held, outside callbacks. */
+void record_health(Embed &embed)
+{
+    for (auto &[source_id, recording] : embed.recordings)
+    {
+        if (!recording->v2)
+        {
+            continue;
+        }
+        robotweax_srt_telemetry_health_status_v1 status{};
+        status.struct_size = sizeof(status);
+        status.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        if (robotweax_srt_telemetry_sampler_health_read(embed.sampler, source_id, &status) !=
+                ROBOTWEAX_SRT_TELEMETRY_OK ||
+            (recording->health_seen && same_health(recording->health, status)))
+        {
+            continue;
+        }
+        /* Before the first sample there is nothing to grade: try again. */
+        if (robotweax_srt_telemetry_recorder_size(recording->recorder) == 0)
+        {
+            continue;
+        }
+        if (robotweax_srt_telemetry_recorder_push_health_v1(recording->recorder, &status) ==
+            ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            recording->health_seen = true;
+            recording->health = status;
+            /* A new line for the file (also on a lingering source, whose
+             * last verdict is the loss): the next write is not unchanged. */
+            recording->pushed.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
+
 void run(Embed &embed)
 {
     const auto period = std::chrono::nanoseconds(embed.period_nano);
@@ -1475,6 +1590,7 @@ void run(Embed &embed)
             }
         }
         static_cast<void>(robotweax_srt_telemetry_sampler_tick(embed.sampler, wall, mono));
+        record_health(embed);
         /* Fixed cadence; after an overrun, continue from now (the windows
          * flag the gap). */
         next += period;
@@ -1695,6 +1811,12 @@ robotweax_srt_telemetry_embed_config_parse(robotweax_srt_telemetry_embed_config_
         {
             ok = assign(parsed.recording_directory, value);
         }
+        else if (key == "jsonl_schema" && has_value)
+        {
+            ok = value == "1alpha1" || value == "1alpha2";
+            parsed.recording_schema = value == "1alpha2" ? ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2
+                                                         : ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1;
+        }
         else if (key == "jsonl_s" && has_value)
         {
             ok = parse_number(value, parsed.recording_seconds) && parsed.recording_seconds > 0 &&
@@ -1763,7 +1885,8 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
         !terminated(config->name, sizeof(config->name)) || !printable(config->name) ||
         !terminated(config->recording_directory, sizeof(config->recording_directory)) ||
         config->recording_seconds > maximum_recording_seconds ||
-        config->reserved2 != 0 || !terminated(config->provider_version, sizeof(config->provider_version)) ||
+        config->recording_schema > ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2 ||
+        !terminated(config->provider_version, sizeof(config->provider_version)) ||
         !printable(config->provider_version) ||
         !terminated(config->provider_revision, sizeof(config->provider_revision)) ||
         !printable(config->provider_revision) ||
@@ -2304,7 +2427,7 @@ robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
         return error;
     }
     endpoint->added = true;
-    error = start_recording(*embed, *endpoint);
+    error = start_recording(*embed, *endpoint, recording_group_type(link.type), ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_GROUP);
     if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
     {
         remove(*embed, *endpoint);
