@@ -162,6 +162,12 @@ separate session whose socket is the group ID and qualify
 | `receiver_drop_packet_total` / ext `receiver_drop_wire_byte_total` | dropped on every link: what the application actually lost |
 | ext `connection_age_seconds` | time since the first member connected |
 
+The retransmission counters are not mapped for a group. Robotweax SRT 0.3.0
+fills a group's `pktRetrans*`/`byteRetrans*` with every member's
+retransmissions, including departed members' final drain, where libsrt leaves
+them zero. Mapping them would make the same group row mean different things
+per provider; each member's own row carries its retransmissions.
+
 Group mapping is unit-tested with an injected `srt_bistats`. The group
 session ([connection groups](public-srt-group.md)) reads the group and all its
 members in one call. Its live loopback test shows the group unique counters
