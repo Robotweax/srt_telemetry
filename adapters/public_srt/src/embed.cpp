@@ -236,6 +236,12 @@ struct Endpoint
      * than rtt_fresh_bound: the statistics' RTT is measured, not initial. */
     bool rtt_fresh = false;
     SteadyClock::time_point expires;
+    /* Peer metadata of peer_socket (identity read once it connected, the
+     * admission handshake noted by the host's listen callback). */
+    robotweax_srt_telemetry_peer_metadata_v1 peer{};
+    std::int32_t peer_socket = -1;
+    bool peer_identity_read = false;
+    bool peer_handshake_taken = false;
 
     /* Group endpoints. */
     std::unique_ptr<GroupLink> group;
@@ -407,6 +413,19 @@ struct robotweax_srt_telemetry_embed
     robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn standby_rtt_getter = nullptr;
     robotweax_srt_telemetry_public_srt_rtt_data_v1_fn rtt_getter = nullptr;
     robotweax_srt_telemetry_public_srt_group_send_state_v1_fn authority_getter = nullptr;
+    robotweax_srt_telemetry_public_srt_peer_identity_v1_fn peer_identity_getter = nullptr;
+    /* Admission handshakes noted from the host's listen callback (an SRT
+     * thread), by socket, until that socket's endpoint takes it. Its own
+     * lock, never held with a call into SRT: the listen callback must not
+     * wait for a tick that waits inside SRT. Lock order: mutex, then
+     * peer_mutex. */
+    struct PendingHandshake
+    {
+        robotweax_srt_telemetry_peer_metadata_v1 metadata{};
+        SteadyClock::time_point noted;
+    };
+    std::mutex peer_mutex;
+    std::map<std::int32_t, PendingHandshake> pending_handshakes;
     std::string service_name;
     robotweax_srt_telemetry_sampler *sampler = nullptr;
     robotweax_srt_telemetry_http_server *server = nullptr;
@@ -1542,6 +1561,70 @@ void poll_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
         embed.sampler, endpoint.source_id, &metadata));
 }
 
+/* A noted admission handshake waits this long for its socket's endpoint;
+ * at most this many wait (the oldest go first). */
+constexpr auto pending_handshake_lifetime = std::chrono::seconds(60);
+constexpr std::size_t pending_handshake_capacity = 1024;
+
+/* Peer metadata of one socket or group member: the handshake noted for its
+ * socket, and its identity once connected (read once per socket). A new
+ * socket on the endpoint (a continuation) starts over. Group handles have
+ * neither (SRT refuses them on a group). */
+void poll_peer(Embed &embed, Endpoint &endpoint)
+{
+    if (endpoint.kind == EndpointKind::group || endpoint.socket < 0 || endpoint.retired)
+        return;
+    bool changed = false;
+    if (endpoint.peer_socket != endpoint.socket)
+    {
+        changed = endpoint.peer.identity_availability != 0 || endpoint.peer.handshake_availability != 0;
+        endpoint.peer = {};
+        endpoint.peer.struct_size = sizeof(endpoint.peer);
+        endpoint.peer.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        endpoint.peer_socket = endpoint.socket;
+        endpoint.peer_identity_read = false;
+        endpoint.peer_handshake_taken = false;
+    }
+    if (!endpoint.peer_handshake_taken)
+    {
+        std::lock_guard lock(embed.peer_mutex);
+        const auto found = embed.pending_handshakes.find(endpoint.socket);
+        if (found != embed.pending_handshakes.end() &&
+            SteadyClock::now() - found->second.noted > pending_handshake_lifetime)
+        {
+            embed.pending_handshakes.erase(found); /* too old to be this socket's */
+        }
+        else if (found != embed.pending_handshakes.end())
+        {
+            const auto &noted = found->second.metadata;
+            endpoint.peer.handshake_availability = noted.handshake_availability;
+            endpoint.peer.handshake_srt_version = noted.handshake_srt_version;
+            endpoint.peer.handshake_flags = noted.handshake_flags;
+            endpoint.peer.handshake_receiver_delay_milliseconds = noted.handshake_receiver_delay_milliseconds;
+            endpoint.peer.handshake_sender_delay_milliseconds = noted.handshake_sender_delay_milliseconds;
+            embed.pending_handshakes.erase(found);
+            endpoint.peer_handshake_taken = true;
+            changed = true;
+        }
+    }
+    /* SRT keeps the identity until close: a socket that broke before the
+     * first tick is still read. Not while connecting (nothing exchanged). */
+    const auto connection = endpoint.context.connection;
+    if (embed.peer_identity_getter != nullptr && !endpoint.peer_identity_read &&
+        (connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED ||
+         (connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST && endpoint.socket_connected)))
+    {
+        /* A failed read is shown and tried again next tick. */
+        endpoint.peer_identity_read =
+            robotweax_srt_telemetry_public_srt_read_peer_identity_v1(
+                endpoint.socket, embed.peer_identity_getter, &endpoint.peer) == ROBOTWEAX_SRT_TELEMETRY_OK;
+        changed = true;
+    }
+    if (changed)
+        static_cast<void>(
+            robotweax_srt_telemetry_sampler_set_peer_metadata_v1(embed.sampler, endpoint.source_id, &endpoint.peer));
+}
+
 void poll_standby_rtt(Embed &embed, Endpoint &endpoint, const std::uint64_t mono)
 {
     /* SRT negotiates Standby RTT only on Backup group members: a group
@@ -1626,6 +1709,7 @@ void run(Embed &embed)
             poll(embed, *endpoint, wall, mono);
             poll_rtt(embed, *endpoint, mono);
             poll_standby_rtt(embed, *endpoint, mono);
+            poll_peer(embed, *endpoint);
             if (endpoint->kind == EndpointKind::group)
             {
                 poll_group(embed, *endpoint, wall, mono);
@@ -1634,6 +1718,7 @@ void run(Embed &embed)
                 {
                     poll_rtt(embed, *member, mono);
                     poll_standby_rtt(embed, *member, mono);
+                    poll_peer(embed, *member);
                 }
             }
         }
@@ -2651,6 +2736,79 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_stand
     }
     for (auto &endpoint : embed->retired)
         clear(*endpoint);
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_peer_identity_v1(
+    robotweax_srt_telemetry_embed *embed, robotweax_srt_telemetry_public_srt_peer_identity_v1_fn getter)
+{
+    if (embed == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(embed->mutex);
+    embed->peer_identity_getter = getter;
+    /* Read again with the new getter (active, not retired endpoints: those
+     * make no more SRT calls), or forget what the old one read. */
+    const auto reset = [&](Endpoint &endpoint)
+    {
+        if (endpoint.kind == EndpointKind::group || endpoint.peer_socket < 0)
+            return;
+        endpoint.peer_identity_read = false;
+        if (getter == nullptr && endpoint.peer.identity_availability != 0)
+        {
+            static_cast<void>(robotweax_srt_telemetry_public_srt_read_peer_identity_v1(endpoint.peer_socket, nullptr,
+                                                                                        &endpoint.peer));
+            static_cast<void>(robotweax_srt_telemetry_sampler_set_peer_metadata_v1(embed->sampler, endpoint.source_id,
+                                                                                    &endpoint.peer));
+        }
+    };
+    for (auto &[socket, endpoint] : embed->active)
+    {
+        reset(*endpoint);
+        if (endpoint->group)
+            for (auto &[path, member] : endpoint->group->members)
+                reset(*member);
+    }
+    for (auto &endpoint : embed->retired)
+        reset(*endpoint);
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer_handshake_v1(
+    robotweax_srt_telemetry_embed *embed, const std::int32_t socket,
+    const struct ROBOTWEAX_SRT_PeerHandshakeV1_ *handshake, const size_t size)
+{
+    if (embed == nullptr || socket < 0)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    Embed::PendingHandshake pending;
+    pending.metadata.struct_size = sizeof(pending.metadata);
+    pending.metadata.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    const auto error = robotweax_srt_telemetry_public_srt_peer_handshake_v1(handshake, size, &pending.metadata);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+        return error;
+    if (pending.metadata.handshake_availability == 0)
+        return ROBOTWEAX_SRT_TELEMETRY_OK; /* no decoded HSREQ: nothing to show */
+    pending.noted = SteadyClock::now();
+    try
+    {
+        std::lock_guard lock(embed->peer_mutex);
+        auto &pending_handshakes = embed->pending_handshakes;
+        for (auto it = pending_handshakes.begin(); it != pending_handshakes.end();)
+            it = pending.noted - it->second.noted > pending_handshake_lifetime ? pending_handshakes.erase(it) : ++it;
+        while (pending_handshakes.count(socket) == 0 && pending_handshakes.size() >= pending_handshake_capacity)
+        {
+            auto oldest = pending_handshakes.begin();
+            for (auto it = pending_handshakes.begin(); it != pending_handshakes.end(); ++it)
+                if (it->second.noted < oldest->second.noted)
+                    oldest = it;
+            pending_handshakes.erase(oldest);
+        }
+        /* A socket's later admission attempt replaces an earlier one. */
+        pending_handshakes[socket] = pending;
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 

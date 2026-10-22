@@ -44,6 +44,31 @@ extern "C"
         int32_t socket, robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn getter,
         uint64_t sampled_monotonic_nano, robotweax_srt_telemetry_standby_rtt_metadata_v1 *output);
 
+    struct ROBOTWEAX_SRT_PeerIdentityV1_;
+    /* Reads SRTO_ROBOTWEAX_PEER_IDENTITY of one connected socket (Robotweax
+     * SRT 0.3.0): returns 0 and fills output (output_size bytes) or non-zero.
+     * Explicitly injected by the host, never inferred from provider identity. */
+    typedef int (*robotweax_srt_telemetry_public_srt_peer_identity_v1_fn)(
+        int32_t socket, struct ROBOTWEAX_SRT_PeerIdentityV1_ *output, size_t output_size);
+    /* Fills the identity part of *metadata (struct_size and abi_version set by
+     * the caller; the handshake part is kept): unavailable without a getter,
+     * read_failed when the read or its content is invalid, else the peer's
+     * self-reported name and release (or nothing: unknown). */
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_public_srt_read_peer_identity_v1(
+        int32_t socket, robotweax_srt_telemetry_public_srt_peer_identity_v1_fn getter,
+        robotweax_srt_telemetry_peer_metadata_v1 *metadata);
+
+    struct ROBOTWEAX_SRT_PeerHandshakeV1_;
+    /* Fills the handshake part of *metadata (identity kept) from an
+     * SRTO_ROBOTWEAX_PEER_HANDSHAKE snapshot taken in srt_listen_callback.
+     * size is the snapshot's size. INVALID_ARGUMENT for a malformed snapshot;
+     * a snapshot without a decoded HSREQ leaves the handshake unavailable. */
+    ROBOTWEAX_SRT_TELEMETRY_PUBLIC_SRT_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_public_srt_peer_handshake_v1(
+        const struct ROBOTWEAX_SRT_PeerHandshakeV1_ *handshake, size_t size,
+        robotweax_srt_telemetry_peer_metadata_v1 *metadata);
+
     struct CBytePerfMon;
     struct ROBOTWEAX_SRT_RttDataV1_;
     /* Explicitly injected, qualified optional extension from the selected

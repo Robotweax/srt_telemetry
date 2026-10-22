@@ -365,3 +365,26 @@ encrypted-control behavior. The optional native embed test additionally checks
 positive observations reach all four member rows on plain own-to-own loopback,
 and clearing after getter disable. Other adapter/UI fixtures are synthetic
 contract tests, not additional provider qualification.
+
+## Optional peer metadata (Robotweax SRT 0.3.0)
+
+Operator question: which implementation and release is on the other end, and
+what did a caller ask for in its handshake (TSBPD delays, flags)? Both sources
+are explicit host opt-ins; nothing is read without them.
+
+| Snapshot field | Source | Notes |
+|---|---|---|
+| `peer.identity.availability` | `SRTO_ROBOTWEAX_PEER_IDENTITY` via `embed_set_peer_identity_v1` | `available`, `unknown` (nothing usable advertised), `read_failed`, `unavailable` (no getter, group row, never connected) |
+| `peer.identity.name`, `release` | `ROBOTWEAX_SRT_PeerIdentityV1_` `name`, `release` | Text as advertised; `null` when the peer withholds it |
+| `peer.handshake.availability` | `SRTO_ROBOTWEAX_PEER_HANDSHAKE`, read in the listen callback, `embed_note_peer_handshake_v1` | Accepted sockets only; callers and groups are `unavailable` |
+| `peer.handshake.srt_version_raw` | `srt_version` | Raw word, unvalidated by SRT at this point |
+| `peer.handshake.srt_version` | `srt_version` | Dotted when `0x00XXYYZZ`, else `null` |
+| `peer.handshake.flags_raw`, `flags.*` | `flags` | HSREQ flag bits as sent |
+| `peer.handshake.receiver_delay_seconds`, `sender_delay_seconds` | `receiver_delay_milliseconds`, `sender_delay_milliseconds` | The caller's requested TSBPD delays, not the negotiated latency |
+
+`peer` in runtime JSON is governed by
+[`snapshot-peer-v1.schema.json`](../../schema/snapshot-peer-v1.schema.json).
+It is descriptive metadata: no health grade, alert, Prometheus or OTLP metric
+reads it, and it is not written to JSONL recordings yet. See
+[embedding.md](embedding.md#optional-peer-metadata-robotweax-srt-030) for the
+host wiring and lifetime rules.

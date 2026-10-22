@@ -1173,6 +1173,155 @@ void test_recording_failure_counter()
     robotweax_srt_telemetry_embed_stop(embed);
 }
 
+#if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)
+/* The "peer" object of the source with this stream label and role. */
+std::string peer_json(robotweax_srt_telemetry_embed *embed, const std::string &stream, const std::string &role)
+{
+    robotweax_srt_telemetry_render_options_v1 options{};
+    robotweax_srt_telemetry_render_options_default(ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON, &options);
+    std::vector<char> buffer(1 << 20);
+    std::size_t length = 0;
+    if (robotweax_srt_telemetry_sampler_render(robotweax_srt_telemetry_embed_sampler(embed), &options, buffer.data(),
+                                               buffer.size(), &length) != ROBOTWEAX_SRT_TELEMETRY_OK)
+        return {};
+    const std::string json(buffer.data(), length);
+    for (std::size_t at = json.find("{\"id\":"); at != std::string::npos; at = json.find("{\"id\":", at + 1))
+    {
+        const auto next = json.find("{\"id\":", at + 1);
+        const auto source = json.substr(at, next == std::string::npos ? std::string::npos : next - at);
+        if (source.find("\"role\":\"" + role + "\"") == std::string::npos ||
+            source.find("\"stream\":\"" + stream + "\"") == std::string::npos)
+            continue;
+        const auto start = source.find("\"peer\":");
+        const auto end = source.find("}}", start);
+        return start == std::string::npos || end == std::string::npos ? std::string{}
+                                                                       : source.substr(start, end + 2 - start);
+    }
+    return {};
+}
+
+int note_handshake(void *embed, SRTSOCKET socket, int, const sockaddr *, const char *)
+{
+    /* The host's own admission decision stays its own: noting never rejects. */
+    static_cast<void>(robotweax_srt_telemetry_host_embed_note_peer_handshake(
+        static_cast<robotweax_srt_telemetry_embed *>(embed), socket));
+    return 0;
+}
+
+/* Robotweax SRT 0.3.0 peer metadata, live on loopback: each side's identity
+ * as the other advertises it (the caller its name only, the listener name
+ * and release), the caller's handshake on the accepted socket (its own
+ * configured latencies), and unknown identities without advertisement. */
+void test_peer_metadata()
+{
+    auto config = base_config();
+    config.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
+    config.linger_seconds = 0;
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "peer: start");
+    if (embed == nullptr)
+        return;
+    check(robotweax_srt_telemetry_host_embed_peer_identity(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "peer: identity enabled");
+
+    const auto open = [&](const char *stream, const bool advertise, SRTSOCKET &listener, SRTSOCKET &caller,
+                          SRTSOCKET &accepted)
+    {
+        listener = srt_create_socket();
+        caller = srt_create_socket();
+        if (advertise)
+        {
+            std::int32_t full = ROBOTWEAX_SRT_IDENTITY_NAME_AND_RELEASE;
+            std::int32_t name = ROBOTWEAX_SRT_IDENTITY_NAME;
+            check(srt_setsockflag(listener, SRTO_ROBOTWEAX_IDENTITY_ADVERTISEMENT, &full, sizeof(full)) == 0 &&
+                      srt_setsockflag(caller, SRTO_ROBOTWEAX_IDENTITY_ADVERTISEMENT, &name, sizeof(name)) == 0,
+                  "peer: advertisement set");
+        }
+        int receive = 250;
+        int peer = 180;
+        srt_setsockflag(caller, SRTO_RCVLATENCY, &receive, sizeof(receive));
+        srt_setsockflag(caller, SRTO_PEERLATENCY, &peer, sizeof(peer));
+        srt_listen_callback(listener, note_handshake, embed);
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        int size = sizeof(address);
+        const bool ok = srt_bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0 &&
+                        srt_listen(listener, 1) == 0 &&
+                        srt_getsockname(listener, reinterpret_cast<sockaddr *>(&address), &size) == 0 &&
+                        srt_connect(caller, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != SRT_ERROR;
+        accepted = ok ? srt_accept(listener, nullptr, nullptr) : SRT_INVALID_SOCK;
+        check(accepted != SRT_INVALID_SOCK, std::string("peer: connected ") + stream);
+        const robotweax_srt_telemetry_label_v1 labels[] = {{"stream", stream}};
+        check(robotweax_srt_telemetry_embed_attach(embed, caller, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER, labels,
+                                                   1) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+                  robotweax_srt_telemetry_embed_attach(embed, accepted, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER,
+                                                       labels, 1) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              std::string("peer: attached ") + stream);
+    };
+    SRTSOCKET listener = SRT_INVALID_SOCK, caller = SRT_INVALID_SOCK, accepted = SRT_INVALID_SOCK;
+    SRTSOCKET quiet_listener = SRT_INVALID_SOCK, quiet_caller = SRT_INVALID_SOCK, quiet_accepted = SRT_INVALID_SOCK;
+    open("advertised", true, listener, caller, accepted);
+    open("quiet", false, quiet_listener, quiet_caller, quiet_accepted);
+
+    const std::string release = std::string("\"release\":\"") + ROBOTWEAX_SRT_VERSION_STRING + "\"";
+    check(wait_until(
+              [&] {
+                  return peer_json(embed, "advertised", "sender").find(release) != std::string::npos &&
+                         peer_json(embed, "advertised", "receiver").find("\"release\":null") != std::string::npos;
+              },
+              5'000),
+          "peer: both identities read");
+    const auto sender = peer_json(embed, "advertised", "sender");
+    const auto receiver = peer_json(embed, "advertised", "receiver");
+    check(sender.find("\"identity\":{\"availability\":\"available\",\"name\":\"Robotweax SRT\"," + release + "}") !=
+                  std::string::npos &&
+              sender.find("\"handshake\":{\"availability\":\"unavailable\"}") != std::string::npos,
+          "peer: the caller sees the listener's name and release, no handshake: " + sender);
+    check(receiver.find("\"identity\":{\"availability\":\"available\",\"name\":\"Robotweax SRT\","
+                        "\"release\":null}") != std::string::npos,
+          "peer: the listener sees the caller's name, release withheld: " + receiver);
+    check(receiver.find("\"handshake\":{\"availability\":\"available\",\"srt_version\":\"1.5.7\"") !=
+                  std::string::npos &&
+              receiver.find("\"tsbpd_send\":true") != std::string::npos &&
+              receiver.find("\"receiver_delay_seconds\":0.25,\"sender_delay_seconds\":0.18") != std::string::npos,
+          "peer: the accepted socket shows the caller's handshake and its own latencies: " + receiver);
+
+    check(wait_until(
+              [&] {
+                  return peer_json(embed, "quiet", "sender").find("\"identity\":{\"availability\":\"unknown\"}") !=
+                             std::string::npos &&
+                         peer_json(embed, "quiet", "receiver").find("\"identity\":{\"availability\":\"unknown\"}") !=
+                             std::string::npos;
+              },
+              5'000),
+          "peer: without advertisement both sides read unknown: " + peer_json(embed, "quiet", "receiver"));
+    check(peer_json(embed, "quiet", "receiver").find("\"handshake\":{\"availability\":\"available\"") !=
+              std::string::npos,
+          "peer: the handshake does not need identity advertisement");
+
+    check(robotweax_srt_telemetry_embed_set_peer_identity_v1(embed, nullptr) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              peer_json(embed, "advertised", "sender").find("\"identity\":{\"availability\":\"unavailable\"}") !=
+                  std::string::npos,
+          "peer: disabling clears identities");
+    check(peer_json(embed, "advertised", "receiver").find("\"handshake\":{\"availability\":\"available\"") !=
+              std::string::npos,
+          "peer: disabling identity keeps the handshake");
+
+    check(robotweax_srt_telemetry_embed_note_peer_handshake_v1(embed, 7, nullptr, 24) ==
+              ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "peer: a missing handshake is refused");
+    /* The listeners' callback holds the embed: close them before stop. */
+    for (const auto socket : {listener, quiet_listener})
+        if (socket != SRT_INVALID_SOCK)
+            srt_close(socket);
+    robotweax_srt_telemetry_embed_stop(embed);
+    for (const auto socket : {caller, accepted, quiet_caller, quiet_accepted})
+        if (socket != SRT_INVALID_SOCK)
+            srt_close(socket);
+}
+#endif
+
 } // namespace
 
 int main()
@@ -1187,6 +1336,9 @@ int main()
     test_live_recording();
     test_recording_callback_reentry();
     test_thread_names();
+#if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)
+    test_peer_metadata();
+#endif
     srt_cleanup();
     if (failures != 0)
     {

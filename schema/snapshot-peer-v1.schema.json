@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Optional peer metadata: self-reported identity and admission handshake (Robotweax SRT 0.3.0)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "identity",
+    "handshake"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "identity": {
+      "description": "The implementation name and release the peer reports about itself. A diagnostic claim: never authenticated, never a capability.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability"
+      ],
+      "properties": {
+        "availability": {
+          "enum": [
+            "available",
+            "unknown",
+            "read_failed",
+            "unavailable"
+          ],
+          "description": "available: the peer advertised a name; unknown: read, the peer advertised nothing; read_failed: the read failed; unavailable: not enabled or not supported."
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]([A-Za-z0-9 ._+-]{0,30}[A-Za-z0-9._+-])?$",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "release": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$",
+          "maxLength": 64
+        }
+      },
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "name",
+          "release"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "name"
+              ]
+            },
+            {
+              "required": [
+                "release"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "handshake": {
+      "description": "The peer's HSREQ as the listener saw it during admission. Raw advertisements, not negotiated values.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability"
+      ],
+      "properties": {
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable"
+          ]
+        },
+        "srt_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$",
+          "description": "The advertised SRT version in dotted form; null when the advertised word is not in the 0x00XXYYZZ form."
+        },
+        "flags_raw": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{8}$",
+          "description": "The complete HSREQ flags word, unknown bits included."
+        },
+        "flags": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tsbpd_send",
+            "tsbpd_receive",
+            "crypt",
+            "tlpktdrop",
+            "nak_report",
+            "retransmit_marking",
+            "stream",
+            "packet_filter"
+          ],
+          "properties": {
+            "tsbpd_send": {
+              "type": "boolean"
+            },
+            "tsbpd_receive": {
+              "type": "boolean"
+            },
+            "crypt": {
+              "type": "boolean"
+            },
+            "tlpktdrop": {
+              "type": "boolean"
+            },
+            "nak_report": {
+              "type": "boolean"
+            },
+            "retransmit_marking": {
+              "type": "boolean"
+            },
+            "stream": {
+              "type": "boolean"
+            },
+            "packet_filter": {
+              "type": "boolean"
+            }
+          }
+        },
+        "receiver_delay_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "The peer's own SRTO_RCVLATENCY: its receive delay for data sent to it."
+        },
+        "sender_delay_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "The peer's own SRTO_PEERLATENCY: the minimum delay it asks for data it sends."
+        },
+        "srt_version_raw": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{8}$",
+          "description": "The advertised version word as received, before SRT validated it."
+        }
+      },
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "srt_version",
+          "srt_version_raw",
+          "flags_raw",
+          "flags",
+          "receiver_delay_seconds",
+          "sender_delay_seconds"
+        ]
+      },
+      "else": {
+        "maxProperties": 1
+      }
+    }
+  }
+}

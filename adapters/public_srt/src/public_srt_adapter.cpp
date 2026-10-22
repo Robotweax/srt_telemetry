@@ -1,5 +1,6 @@
 #include "public_srt_internal.hpp"
 #include "standby_metadata_internal.h"
+#include "peer_metadata_internal.h"
 
 #if defined(ROBOTWEAX_SRT_TELEMETRY_USE_FLAT_SRT_HEADER)
 #include <srt.h>
@@ -46,6 +47,27 @@ struct ROBOTWEAX_SRT_StandbyRttDataV1_
 };
 #endif
 static_assert(sizeof(ROBOTWEAX_SRT_StandbyRttDataV1_) == 48);
+
+#ifndef ROBOTWEAX_SRT_PEER_IDENTITY_VERSION
+struct ROBOTWEAX_SRT_PeerIdentityV1_
+{
+    std::uint32_t abi_version, available_fields, name_length, release_length;
+    char name[33];
+    char release[65];
+    std::uint8_t padding[2];
+    std::uint32_t reserved[4];
+};
+#endif
+static_assert(sizeof(ROBOTWEAX_SRT_PeerIdentityV1_) == 132);
+
+#ifndef ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION
+struct ROBOTWEAX_SRT_PeerHandshakeV1_
+{
+    std::uint32_t abi_version, available, srt_version, flags;
+    std::uint32_t receiver_delay_milliseconds, sender_delay_milliseconds;
+};
+#endif
+static_assert(sizeof(ROBOTWEAX_SRT_PeerHandshakeV1_) == 24);
 
 struct robotweax_srt_telemetry_public_srt_session
 {
@@ -727,5 +749,85 @@ robotweax_srt_telemetry_public_srt_read_standby_rtt_metadata_v1(
     if (!robotweax_srt_telemetry_internal::valid_standby_metadata(candidate))
         return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
     *output = candidate;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_read_peer_identity_v1(
+    const std::int32_t socket, robotweax_srt_telemetry_public_srt_peer_identity_v1_fn getter,
+    robotweax_srt_telemetry_peer_metadata_v1 *metadata)
+{
+    if (metadata == nullptr || metadata->struct_size < sizeof(*metadata) ||
+        metadata->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION || socket < 0)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    auto candidate = *metadata;
+    candidate.identity_availability = 0;
+    candidate.identity_fields = 0;
+    candidate.identity_native_result = 0;
+    std::memset(candidate.identity_name, 0, sizeof(candidate.identity_name));
+    std::memset(candidate.identity_release, 0, sizeof(candidate.identity_release));
+    if (getter == nullptr)
+    {
+        *metadata = candidate;
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    ROBOTWEAX_SRT_PeerIdentityV1_ data{};
+    const auto failed = [&](const int result)
+    {
+        auto failure = candidate;
+        failure.identity_availability = 1;
+        failure.identity_native_result = result != 0 ? result : -1;
+        *metadata = failure;
+        return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    };
+    const int result = getter(socket, &data, sizeof(data));
+    /* The provider's contract: version 1, known bits, a release only with a
+     * name, lengths matching NUL-terminated text, zero padding and reserved. */
+    const auto text_length = [](const char *text, const std::size_t capacity)
+    {
+        std::size_t n = 0;
+        while (n < capacity && text[n] != '\0')
+            ++n;
+        return n;
+    };
+    if (result != 0)
+        return failed(result);
+    if (data.abi_version != 1 || (data.available_fields & ~3u) != 0 ||
+        ((data.available_fields & 2u) != 0 && (data.available_fields & 1u) == 0) || data.padding[0] ||
+        data.padding[1] || data.reserved[0] || data.reserved[1] || data.reserved[2] || data.reserved[3] ||
+        data.name_length != text_length(data.name, sizeof(data.name)) ||
+        data.release_length != text_length(data.release, sizeof(data.release)) ||
+        ((data.available_fields & 1u) != 0) != (data.name_length != 0) ||
+        ((data.available_fields & 2u) != 0) != (data.release_length != 0))
+        return failed(0);
+    candidate.identity_availability = 2;
+    candidate.identity_fields = data.available_fields;
+    std::memcpy(candidate.identity_name, data.name, data.name_length);
+    std::memcpy(candidate.identity_release, data.release, data.release_length);
+    if (!robotweax_srt_telemetry_internal::valid_peer_metadata(candidate))
+        return failed(0);
+    *metadata = candidate;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_public_srt_peer_handshake_v1(
+    const ROBOTWEAX_SRT_PeerHandshakeV1_ *handshake, const std::size_t size,
+    robotweax_srt_telemetry_peer_metadata_v1 *metadata)
+{
+    if (handshake == nullptr || size < sizeof(*handshake) || metadata == nullptr ||
+        metadata->struct_size < sizeof(*metadata) || metadata->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION ||
+        handshake->abi_version != 1 || handshake->available > 1 ||
+        (handshake->available == 0 &&
+         (handshake->srt_version != 0 || handshake->flags != 0 || handshake->receiver_delay_milliseconds != 0 ||
+          handshake->sender_delay_milliseconds != 0)))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    auto candidate = *metadata;
+    candidate.handshake_availability = handshake->available == 1 ? 2 : 0;
+    candidate.handshake_srt_version = handshake->srt_version;
+    candidate.handshake_flags = handshake->flags;
+    candidate.handshake_receiver_delay_milliseconds = handshake->receiver_delay_milliseconds;
+    candidate.handshake_sender_delay_milliseconds = handshake->sender_delay_milliseconds;
+    if (!robotweax_srt_telemetry_internal::valid_peer_metadata(candidate))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    *metadata = candidate;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

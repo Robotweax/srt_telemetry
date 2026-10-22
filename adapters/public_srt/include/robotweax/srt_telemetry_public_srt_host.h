@@ -170,6 +170,51 @@ robotweax_srt_telemetry_host_embed_standby_rtt_data(robotweax_srt_telemetry_embe
 }
 #endif
 
+#if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && ROBOTWEAX_SRT_PEER_IDENTITY_VERSION == 1
+/* Robotweax SRT 0.3.0: the peer's self-reported implementation identity of
+ * one connected socket, through srt_getsockflag. */
+static inline int robotweax_srt_telemetry_host_peer_identity(int32_t socket, struct ROBOTWEAX_SRT_PeerIdentityV1_ *output,
+                                                             size_t output_size)
+{
+    int length = (int)output_size;
+    if (srt_getsockflag((SRTSOCKET)socket, SRTO_ROBOTWEAX_PEER_IDENTITY, output, &length) != 0)
+    {
+        return -1;
+    }
+    return length == (int)sizeof(ROBOTWEAX_SRT_PEER_IDENTITY_V1) ? 0 : -1;
+}
+/* Explicit opt-in: shows each connected socket's peer identity in the
+ * snapshot (peer.identity). The peer advertises only when its host set
+ * SRTO_ROBOTWEAX_IDENTITY_ADVERTISEMENT; Telemetry never sets options. */
+static inline robotweax_srt_telemetry_error
+robotweax_srt_telemetry_host_embed_peer_identity(robotweax_srt_telemetry_embed *embed)
+{
+    return robotweax_srt_telemetry_embed_set_peer_identity_v1(embed, robotweax_srt_telemetry_host_peer_identity);
+}
+#endif
+
+#if defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION) && ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION == 1
+/* Robotweax SRT 0.3.0: call from the host's srt_listen_callback with the
+ * provisional socket. Notes the caller's handshake (SRT version, flags, its
+ * own configured latencies) for the snapshot of the socket or group member
+ * attached later with this ID (peer.handshake). The callback's decision is
+ * the host's; a failure here does not reject the caller. Close the listener
+ * before robotweax_srt_telemetry_embed_stop: the callback holds the embed. */
+static inline robotweax_srt_telemetry_error
+robotweax_srt_telemetry_host_embed_note_peer_handshake(robotweax_srt_telemetry_embed *embed, SRTSOCKET socket)
+{
+    ROBOTWEAX_SRT_PEER_HANDSHAKE_V1 handshake;
+    int length = (int)sizeof(handshake);
+    if (srt_getsockflag(socket, SRTO_ROBOTWEAX_PEER_HANDSHAKE, &handshake, &length) != 0 ||
+        length != (int)sizeof(handshake))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    }
+    return robotweax_srt_telemetry_embed_note_peer_handshake_v1(embed, (int32_t)socket, &handshake,
+                                                                sizeof(handshake));
+}
+#endif
+
 /* Starts an embed from a command-line style spec (see
  * robotweax_srt_telemetry_embed_config_parse), e.g. "0.0.0.0:9810" or
  * "9810,token_file=/run/srt/token". service_name names the application in
