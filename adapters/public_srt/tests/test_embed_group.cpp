@@ -1308,16 +1308,30 @@ void path_data_provider_scenario()
 #if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
 /* Robotweax SRT with negotiated labels: both sides name the paths from the
  * caller's labels, so the receiver's rows match the sender's without host
- * code. */
-void negotiated_labels_scenario()
+ * code. if_offered: the listener admits labeled and unlabeled callers
+ * (SRTO_ROBOTWEAX_PATHID_POLICY IF_OFFERED, Robotweax SRT 0.3.0); a
+ * labeled caller is negotiated as with REQUIRED. */
+void negotiated_labels_scenario(const bool if_offered = false)
 {
     const SRTSOCKET listener = srt_create_socket();
     int yes = 1;
     srt_setsockflag(listener, SRTO_GROUPCONNECT, &yes, sizeof(yes));
     const SRTSOCKET group = srt_create_group(SRT_GTYPE_BROADCAST);
-    check(srt_setsockflag(group, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0 &&
-              srt_setsockflag(listener, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0,
-          "labels: both peers require path labels");
+    bool listener_policy = false;
+#if defined(ROBOTWEAX_SRT_EXTENSION_IF_OFFERED)
+    if (if_offered)
+    {
+        int policy = ROBOTWEAX_SRT_EXTENSION_IF_OFFERED;
+        listener_policy = srt_setsockflag(listener, SRTO_ROBOTWEAX_PATHID_POLICY, &policy, sizeof(policy)) == 0;
+    }
+#endif
+    if (!if_offered)
+    {
+        listener_policy = srt_setsockflag(listener, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0;
+    }
+    check(srt_setsockflag(group, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0 && listener_policy,
+          if_offered ? "labels: caller requires, listener admits if offered"
+                     : "labels: both peers require path labels");
     sockaddr_in address{};
     address.sin_family = AF_INET;
     inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
@@ -1675,6 +1689,9 @@ int main(int argc, char **argv)
     path_data_provider_scenario();
 #if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
     negotiated_labels_scenario();
+#if defined(ROBOTWEAX_SRT_EXTENSION_IF_OFFERED)
+    negotiated_labels_scenario(true);
+#endif
 #endif
     srt_cleanup();
     if (failures != 0)

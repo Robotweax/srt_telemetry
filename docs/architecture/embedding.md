@@ -194,6 +194,13 @@ sockets, at a revision with the protocol; the group sessions then carry the
 capability. See [path names](public-srt-group.md#path-names) for the order
 and the pending state while a label is not negotiated yet.
 
+From Robotweax SRT 0.3.0 a listener can admit labelled and unlabelled callers
+alike: `SRTO_ROBOTWEAX_PATHID_POLICY` = `ROBOTWEAX_SRT_EXTENSION_IF_OFFERED`
+instead of `SRTO_ROBOTWEAX_PATHID_REQUIRED` (callers stay strict). A labelled
+caller's members are named from its labels as above; an unlabelled caller's
+members fall back to host, token or address names. The embed group tests run
+both listener forms against 0.3.0.
+
 **Health.**
 - A member path is capped at Watch while the group has another usable path:
   losing or impairing one path is what a group is built to survive. The
@@ -415,7 +422,10 @@ loaded. Null disables and clears observations. The setter serializes with
 sampling and must not run from callbacks. Each group member is polled separately;
 group aggregate rows and standalone sockets are not read and remain unavailable
 (SRT negotiates Standby RTT only on Backup group members). A member without
-negotiated monitoring reads available with `negotiated=false`. The built-in UI
+negotiated monitoring reads available with `negotiated=false`. From Robotweax
+SRT 0.3.0 a listener with `SRTO_ROBOTWEAX_STANDBYRTT_POLICY` =
+`ROBOTWEAX_SRT_EXTENSION_IF_OFFERED` negotiates it per caller, so members of
+one listener can differ. The built-in UI
 shows the Standby RTT tile and paths column only where monitoring was
 negotiated (or a read failed).
 

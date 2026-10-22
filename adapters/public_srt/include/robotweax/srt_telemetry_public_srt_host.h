@@ -123,8 +123,10 @@ static inline int robotweax_srt_telemetry_host_group_path_data(int32_t group,
  * paths from the caller's label on both sides (embed_config_v1.
  * group_path_data). Call it after robotweax_srt_telemetry_host_embed_functions;
  * the peers enable labels themselves (SRTO_ROBOTWEAX_PATHID_REQUIRED on the
- * group and the listener, SRTO_ROBOTWEAX_PATHID per endpoint). Not defined
- * for an srt.h without them. */
+ * group and the listener, or from 0.3.0 SRTO_ROBOTWEAX_PATHID_POLICY
+ * IF_OFFERED on a listener that also admits unlabelled callers;
+ * SRTO_ROBOTWEAX_PATHID per endpoint). Not defined for an srt.h without
+ * them. */
 static inline void robotweax_srt_telemetry_host_embed_path_data(robotweax_srt_telemetry_embed_config_v1 *config)
 {
     config->group_path_data = robotweax_srt_telemetry_host_group_path_data;
