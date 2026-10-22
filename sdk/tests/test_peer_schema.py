@@ -32,12 +32,16 @@ cases = [
     ('identity', 'availability', 'maybe'),
     ('handshake', 'flags_raw', '0xBF'),
     ('handshake', 'srt_version', '1.5'),
+    ('handshake', 'srt_version_raw', '1.5.7'),
     ('handshake', 'receiver_delay_seconds', -1),
 ]
 for part, key, value in cases:
     bad = copy.deepcopy(full)
     bad[part][key] = value
     assert not validator.is_valid(bad), f'{part}.{key}={value!r} accepted'
+ill_formed = copy.deepcopy(full)
+ill_formed['handshake']['srt_version'] = None
+validator.validate(ill_formed)
 missing = copy.deepcopy(full)
 del missing['identity']['release']
 assert not validator.is_valid(missing), 'available identity without release key accepted'

@@ -1311,8 +1311,12 @@ void test_peer_metadata()
     check(robotweax_srt_telemetry_embed_note_peer_handshake_v1(embed, 7, nullptr, 24) ==
               ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
           "peer: a missing handshake is refused");
+    /* The listeners' callback holds the embed: close them before stop. */
+    for (const auto socket : {listener, quiet_listener})
+        if (socket != SRT_INVALID_SOCK)
+            srt_close(socket);
     robotweax_srt_telemetry_embed_stop(embed);
-    for (const auto socket : {caller, accepted, listener, quiet_caller, quiet_accepted, quiet_listener})
+    for (const auto socket : {caller, accepted, quiet_caller, quiet_accepted})
         if (socket != SRT_INVALID_SOCK)
             srt_close(socket);
 }

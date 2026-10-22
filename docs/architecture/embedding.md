@@ -458,8 +458,9 @@ implementation name and release the peer reports about itself, read once per
 socket after it connects. Group members are read one by one; a group's own
 row has none (SRT refuses the option on a group handle). `availability` is
 `available` (with `name` and `release`, `null` when the peer withholds it),
-`unknown` (read, the peer advertised nothing: its host did not enable
-`SRTO_ROBOTWEAX_IDENTITY_ADVERTISEMENT`, or it is another implementation),
+`unknown` (read, nothing usable: the peer's host did not enable
+`SRTO_ROBOTWEAX_IDENTITY_ADVERTISEMENT`, it is another implementation, or SRT
+dropped the record as invalid, duplicate or too large for the handshake),
 `read_failed`, or `unavailable` (not enabled). Telemetry never sets the
 advertisement option; the host decides what its own sockets disclose. The
 values are self-reported claims for diagnosis (which implementations met in
@@ -471,14 +472,19 @@ answers only inside `srt_listen_callback`, so the host calls the helper there
 with the provisional socket; the embed keeps the observation (60 s, at most
 1024) until the accepted socket or group member with that ID is attached.
 The helper takes no lock a tick holds while it calls SRT, so it is safe in
-the callback, and it never decides admission: on Robotweax SRT a callback
+the callback; the callback holds the embed, so close the listener before
+`embed_stop`. The helper never decides admission: on Robotweax SRT a callback
 must still set a non-zero `SRTO_ROBOTWEAX_GROUPDOMAIN` to admit a group
 (since 0.2.8; returning 0 alone refuses it). The snapshot carries the
-caller's advertised `srt_version`, its raw `flags_raw` word and the known
+caller's advertised version (`srt_version_raw` as received; `srt_version`
+dotted, or `null` when the word is not in SRT's `0x00XXYYZZ` form: SRT
+passes it on before validating it), its raw `flags_raw` word and the known
 flag bits, and the latencies the caller configured itself before
 negotiation took the larger of both sides' values: `receiver_delay_seconds`
 (its `SRTO_RCVLATENCY`) and `sender_delay_seconds` (its `SRTO_PEERLATENCY`).
 A caller has no handshake row of its own: SRT offers this only to listeners.
+The identity is read once a socket has connected, also after it broke (SRT
+keeps it until close); a detached (lingering) source keeps what was read.
 
 Neither feeds health, alerts, windows, Prometheus or OTLP, and neither is in
 recordings yet: the recording schema is read strictly by SRT Doctor, so a

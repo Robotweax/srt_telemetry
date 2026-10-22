@@ -926,11 +926,19 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
         json_string(out, peer.handshake_availability == 2 ? "available" : "unavailable");
         if (peer.handshake_availability == 2)
         {
+            /* As advertised, before SRT validated it: dotted only in the
+             * 0x00XXYYZZ form, always raw. */
             const auto v = peer.handshake_srt_version;
             out += ",\"srt_version\":";
-            json_string(out, std::to_string((v >> 16) & 0xff) + "." + std::to_string((v >> 8) & 0xff) + "." +
-                                 std::to_string(v & 0xff));
+            if ((v >> 24) == 0)
+                json_string(out, std::to_string((v >> 16) & 0xff) + "." + std::to_string((v >> 8) & 0xff) + "." +
+                                     std::to_string(v & 0xff));
+            else
+                out += "null";
             char raw[11];
+            std::snprintf(raw, sizeof(raw), "0x%08x", v);
+            out += ",\"srt_version_raw\":";
+            json_string(out, raw);
             std::snprintf(raw, sizeof(raw), "0x%08x", peer.handshake_flags);
             out += ",\"flags_raw\":";
             json_string(out, raw);

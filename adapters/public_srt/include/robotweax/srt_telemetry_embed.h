@@ -393,7 +393,9 @@ extern "C"
      * configured latencies before negotiation. Safe to call from the listen
      * callback (it takes no lock a tick holds while calling SRT). A noted
      * handshake waits 60 s for its socket; at most 1024 wait. A snapshot
-     * without a decoded HSREQ is ignored. See
+     * without a decoded HSREQ is ignored. The embed must outlive every
+     * listen callback that can call this: close those listeners (or remove
+     * the callback) before embed_stop. See
      * robotweax_srt_telemetry_host_embed_note_peer_handshake. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer_handshake_v1(
         robotweax_srt_telemetry_embed *embed, int32_t socket, const struct ROBOTWEAX_SRT_PeerHandshakeV1_ *handshake,

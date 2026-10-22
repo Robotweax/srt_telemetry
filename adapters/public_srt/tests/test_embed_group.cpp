@@ -1687,11 +1687,12 @@ void peer_metadata_group_scenario()
     check(count_with(all, {"\"stream\":\"peer-group\"", "\"peer\":{\"version\":1,\"identity\":{\"availability\":"
                            "\"unavailable\"},\"handshake\":{\"availability\":\"unavailable\"}}"}) == 2,
           "group peer: the group rows have no peer metadata");
+    /* The listener's callback holds the embed: close it before stop. */
+    srt_close(listener);
     robotweax_srt_telemetry_embed_stop(embed);
     stop = true;
     sender.join();
     srt_close(group);
-    srt_close(listener);
     receiver.join();
     if (accepted != SRT_INVALID_SOCK)
         srt_close(accepted);

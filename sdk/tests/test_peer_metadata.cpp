@@ -140,7 +140,7 @@ int main(int argc, char **argv)
     check(peer_of(json, full) ==
               "\"peer\":{\"version\":1,\"identity\":{\"availability\":\"available\",\"name\":\"Robotweax SRT\","
               "\"release\":\"0.3.0\"},\"handshake\":{\"availability\":\"available\",\"srt_version\":\"1.5.7\","
-              "\"flags_raw\":\"0x000000bf\",\"flags\":{\"tsbpd_send\":true,\"tsbpd_receive\":true,\"crypt\":true,"
+              "\"srt_version_raw\":\"0x00010507\",\"flags_raw\":\"0x000000bf\",\"flags\":{\"tsbpd_send\":true,\"tsbpd_receive\":true,\"crypt\":true,"
               "\"tlpktdrop\":true,\"nak_report\":true,\"retransmit_marking\":true,\"stream\":false,"
               "\"packet_filter\":true},\"receiver_delay_seconds\":0.25,\"sender_delay_seconds\":0.12}}",
           "full: " + peer_of(json, full));
@@ -214,6 +214,13 @@ int main(int argc, char **argv)
     /* Longest values SRT allows. */
     m = identity("A2345678901234567890123456789012", "B234567890123456789012345678901234567890123456789012345678901234");
     check(set(full, &m) == ROBOTWEAX_SRT_TELEMETRY_OK, "32-byte name and 64-byte release accepted");
+
+    /* SRT passes the advertised word on unvalidated: not dotted unless well formed. */
+    m = handshake(identity(nullptr, nullptr));
+    m.handshake_srt_version = 0x695d5a39;
+    check(set(full, &m) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              has(peer_of(render(sampler), full), "\"srt_version\":null,\"srt_version_raw\":\"0x695d5a39\""),
+          "an ill-formed version stays raw: " + peer_of(render(sampler), full));
 
     check(set(full, nullptr) == ROBOTWEAX_SRT_TELEMETRY_OK &&
               has(peer_of(render(sampler), full), "\"identity\":{\"availability\":\"unavailable\"}"),

@@ -1589,7 +1589,12 @@ void poll_peer(Embed &embed, Endpoint &endpoint)
     {
         std::lock_guard lock(embed.peer_mutex);
         const auto found = embed.pending_handshakes.find(endpoint.socket);
-        if (found != embed.pending_handshakes.end())
+        if (found != embed.pending_handshakes.end() &&
+            SteadyClock::now() - found->second.noted > pending_handshake_lifetime)
+        {
+            embed.pending_handshakes.erase(found); /* too old to be this socket's */
+        }
+        else if (found != embed.pending_handshakes.end())
         {
             const auto &noted = found->second.metadata;
             endpoint.peer.handshake_availability = noted.handshake_availability;
@@ -1602,8 +1607,12 @@ void poll_peer(Embed &embed, Endpoint &endpoint)
             changed = true;
         }
     }
+    /* SRT keeps the identity until close: a socket that broke before the
+     * first tick is still read. Not while connecting (nothing exchanged). */
+    const auto connection = endpoint.context.connection;
     if (embed.peer_identity_getter != nullptr && !endpoint.peer_identity_read &&
-        endpoint.context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED)
+        (connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED ||
+         (connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_LOST && endpoint.socket_connected)))
     {
         /* A failed read is shown and tried again next tick. */
         endpoint.peer_identity_read =
@@ -2737,7 +2746,8 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_peer_
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     std::lock_guard lock(embed->mutex);
     embed->peer_identity_getter = getter;
-    /* Read again with the new getter, or forget what the old one read. */
+    /* Read again with the new getter (active, not retired endpoints: those
+     * make no more SRT calls), or forget what the old one read. */
     const auto reset = [&](Endpoint &endpoint)
     {
         if (endpoint.kind == EndpointKind::group || endpoint.peer_socket < 0)
@@ -2784,7 +2794,7 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer
         auto &pending_handshakes = embed->pending_handshakes;
         for (auto it = pending_handshakes.begin(); it != pending_handshakes.end();)
             it = pending.noted - it->second.noted > pending_handshake_lifetime ? pending_handshakes.erase(it) : ++it;
-        while (pending_handshakes.size() >= pending_handshake_capacity)
+        while (pending_handshakes.count(socket) == 0 && pending_handshakes.size() >= pending_handshake_capacity)
         {
             auto oldest = pending_handshakes.begin();
             for (auto it = pending_handshakes.begin(); it != pending_handshakes.end(); ++it)

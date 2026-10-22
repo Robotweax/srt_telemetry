@@ -198,7 +198,8 @@ robotweax_srt_telemetry_host_embed_peer_identity(robotweax_srt_telemetry_embed *
  * provisional socket. Notes the caller's handshake (SRT version, flags, its
  * own configured latencies) for the snapshot of the socket or group member
  * attached later with this ID (peer.handshake). The callback's decision is
- * the host's; a failure here does not reject the caller. */
+ * the host's; a failure here does not reject the caller. Close the listener
+ * before robotweax_srt_telemetry_embed_stop: the callback holds the embed. */
 static inline robotweax_srt_telemetry_error
 robotweax_srt_telemetry_host_embed_note_peer_handshake(robotweax_srt_telemetry_embed *embed, SRTSOCKET socket)
 {

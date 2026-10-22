@@ -94,16 +94,16 @@ extern "C"
      * itself (SRTO_ROBOTWEAX_PEER_IDENTITY). A diagnostic claim, never
      * authenticated, never a capability. identity_availability: 0 not read
      * (disabled or unsupported), 1 read failed, 2 read. When read,
-     * identity_fields 0 means the peer advertised nothing (unknown); bit 1
-     * name, bit 2 release (only with a name). Name: 1-32 bytes, first
+     * identity_fields 0 means the peer advertised nothing usable (unknown);
+     * 0x1 name, 0x2 release (only with a name). Name: 1-32 bytes, first
      * alphanumeric, then alphanumerics, space, '.', '_', '+', '-', no trailing
      * space. Release: 1-64 bytes, first alphanumeric, then alphanumerics, '.',
      * '_', '+', '-'. NUL-terminated, zero after the terminator.
      *
      * Handshake: the peer's HSREQ as a listener saw it during admission
      * (SRTO_ROBOTWEAX_PEER_HANDSHAKE, readable only in srt_listen_callback).
-     * handshake_availability: 0 none captured, 2 captured. srt_version
-     * 0x00XXYYZZ as advertised, flags the raw HSREQ word (unknown bits kept),
+     * handshake_availability: 0 none captured, 2 captured. srt_version as
+     * advertised, unvalidated (0x00XXYYZZ when well formed), flags the raw HSREQ word (unknown bits kept),
      * receiver_delay the peer's own SRTO_RCVLATENCY and sender_delay its
      * SRTO_PEERLATENCY in milliseconds, before negotiation took the larger of
      * each side's value. Raw advertisements, not negotiated guarantees.
