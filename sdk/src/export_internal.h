@@ -34,6 +34,7 @@ struct ExportSource
     double rtt_capture_age_seconds = 0;
     robotweax_srt_telemetry_group_send_metadata_v1 group_send_metadata{};
     double group_send_capture_age_seconds = 0;
+    robotweax_srt_telemetry_peer_metadata_v1 peer_metadata{};
     bool has_raw = false;
     robotweax_srt_telemetry_raw_sample_v1 raw{};
     bool has_ext = false;

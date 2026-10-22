@@ -901,6 +901,61 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
             json_number(out, s.group_send_capture_age_seconds);
         }
         out += '}';
+
+        /* The peer's self-reported identity and, on an accepted socket, the
+         * handshake it offered at admission (Robotweax SRT 0.3.0). */
+        const auto &peer = s.peer_metadata;
+        out += ",\"peer\":{\"version\":1,\"identity\":{\"availability\":";
+        const bool named = peer.identity_availability == 2 &&
+                           (peer.identity_fields & ROBOTWEAX_SRT_TELEMETRY_PEER_IDENTITY_NAME) != 0;
+        json_string(out, named                              ? "available"
+                         : peer.identity_availability == 2 ? "unknown"
+                         : peer.identity_availability == 1 ? "read_failed"
+                                                           : "unavailable");
+        if (named)
+        {
+            out += ",\"name\":";
+            json_string(out, peer.identity_name);
+            out += ",\"release\":";
+            if ((peer.identity_fields & ROBOTWEAX_SRT_TELEMETRY_PEER_IDENTITY_RELEASE) != 0)
+                json_string(out, peer.identity_release);
+            else
+                out += "null";
+        }
+        out += "},\"handshake\":{\"availability\":";
+        json_string(out, peer.handshake_availability == 2 ? "available" : "unavailable");
+        if (peer.handshake_availability == 2)
+        {
+            const auto v = peer.handshake_srt_version;
+            out += ",\"srt_version\":";
+            json_string(out, std::to_string((v >> 16) & 0xff) + "." + std::to_string((v >> 8) & 0xff) + "." +
+                                 std::to_string(v & 0xff));
+            char raw[11];
+            std::snprintf(raw, sizeof(raw), "0x%08x", peer.handshake_flags);
+            out += ",\"flags_raw\":";
+            json_string(out, raw);
+            static constexpr struct
+            {
+                const char *key;
+                std::uint32_t bit;
+            } flags[] = {{"tsbpd_send", 0x01}, {"tsbpd_receive", 0x02},     {"crypt", 0x04},
+                         {"tlpktdrop", 0x08},  {"nak_report", 0x10},        {"retransmit_marking", 0x20},
+                         {"stream", 0x40},     {"packet_filter", 0x80}};
+            out += ",\"flags\":{";
+            bool first_flag = true;
+            for (const auto &f : flags)
+            {
+                out += first_flag ? "\"" : ",\"";
+                first_flag = false;
+                out += f.key;
+                out += (peer.handshake_flags & f.bit) != 0 ? "\":true" : "\":false";
+            }
+            out += "},\"receiver_delay_seconds\":";
+            json_number(out, static_cast<double>(peer.handshake_receiver_delay_milliseconds) / 1e3);
+            out += ",\"sender_delay_seconds\":";
+            json_number(out, static_cast<double>(peer.handshake_sender_delay_milliseconds) / 1e3);
+        }
+        out += "}}";
         if (window_usable(s))
         {
             out += ",\"window\":{\"start_unix_nano\":";

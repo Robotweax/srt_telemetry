@@ -373,6 +373,32 @@ extern "C"
         robotweax_srt_telemetry_embed *embed,
         robotweax_srt_telemetry_public_srt_standby_rtt_data_v1_fn getter);
 
+    /* Peer identity (Robotweax SRT 0.3.0, SRTO_ROBOTWEAX_PEER_IDENTITY): the
+     * implementation name and release each connected socket's peer reports
+     * about itself, read once per socket after it connects (group members
+     * each; a group handle has none) and shown as the snapshot's
+     * peer.identity. A diagnostic claim, never authenticated. The peer only
+     * advertises when its host enabled SRTO_ROBOTWEAX_IDENTITY_ADVERTISEMENT;
+     * otherwise it reads unknown. NULL disables and clears. Must not run from
+     * callbacks; the getter's library must stay loaded. See
+     * robotweax_srt_telemetry_host_embed_peer_identity. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_peer_identity_v1(
+        robotweax_srt_telemetry_embed *embed, robotweax_srt_telemetry_public_srt_peer_identity_v1_fn getter);
+
+    /* Notes the handshake a caller offered, read in the host's
+     * srt_listen_callback with SRTO_ROBOTWEAX_PEER_HANDSHAKE (Robotweax SRT
+     * 0.3.0; SRT clears it when the callback returns). When the accepted
+     * socket (or group member) with this ID is attached, its snapshot shows
+     * it as peer.handshake: the caller's SRT version, raw flags and its own
+     * configured latencies before negotiation. Safe to call from the listen
+     * callback (it takes no lock a tick holds while calling SRT). A noted
+     * handshake waits 60 s for its socket; at most 1024 wait. A snapshot
+     * without a decoded HSREQ is ignored. See
+     * robotweax_srt_telemetry_host_embed_note_peer_handshake. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer_handshake_v1(
+        robotweax_srt_telemetry_embed *embed, int32_t socket, const struct ROBOTWEAX_SRT_PeerHandshakeV1_ *handshake,
+        size_t size);
+
 #ifdef __cplusplus
 }
 #endif

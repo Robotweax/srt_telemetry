@@ -1578,6 +1578,126 @@ void backup_outage_scenario(const bool authority)
         srt_close(accepted);
 }
 
+#if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)
+int note_member_handshake(void *embed, SRTSOCKET socket, int, const sockaddr *, const char *)
+{
+    static_cast<void>(robotweax_srt_telemetry_host_embed_note_peer_handshake(
+        static_cast<robotweax_srt_telemetry_embed *>(embed), socket));
+    /* Robotweax SRT admits a group declaration from a listen callback only
+     * with a group domain (since 0.2.8); returning 0 alone refuses it. */
+    const std::uint64_t domain = 1;
+    srt_setsockflag(socket, SRTO_ROBOTWEAX_GROUPDOMAIN, &domain, sizeof(domain));
+    return 0;
+}
+
+/* Robotweax SRT 0.3.0 peer metadata on group members: SRT answers per member
+ * socket, never for a group handle. The listener advertises its identity, so
+ * each caller member reads it; the listen callback runs once per member, so
+ * each accepted member shows its caller's handshake. Group rows have none. */
+void peer_metadata_group_scenario()
+{
+    robotweax_srt_telemetry_embed *embed = start_embed(0);
+    if (embed == nullptr)
+        return;
+    check(robotweax_srt_telemetry_host_embed_peer_identity(embed) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "group peer: identity enabled");
+    const SRTSOCKET listener = srt_create_socket();
+    int yes = 1;
+    std::int32_t full = ROBOTWEAX_SRT_IDENTITY_NAME_AND_RELEASE;
+    check(srt_setsockflag(listener, SRTO_GROUPCONNECT, &yes, sizeof(yes)) == 0 &&
+              srt_setsockflag(listener, SRTO_ROBOTWEAX_IDENTITY_ADVERTISEMENT, &full, sizeof(full)) == 0 &&
+              srt_listen_callback(listener, note_member_handshake, embed) == 0,
+          "group peer: listener advertises and notes handshakes");
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+    int length = sizeof(address);
+    check(srt_bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0 &&
+              srt_listen(listener, 4) == 0 &&
+              srt_getsockname(listener, reinterpret_cast<sockaddr *>(&address), &length) == 0,
+          "group peer: listen");
+    std::atomic<SRTSOCKET> accepted{SRT_INVALID_SOCK};
+    std::atomic<bool> stop{false};
+    std::thread receiver([&] {
+        const SRTSOCKET socket = srt_accept(listener, nullptr, nullptr);
+        if (socket == SRT_INVALID_SOCK)
+            return;
+        accepted = socket;
+        int timeout = 100;
+        srt_setsockflag(socket, SRTO_RCVTIMEO, &timeout, sizeof(timeout));
+        char buffer[1500];
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_recvmsg2(socket, buffer, sizeof(buffer), &control));
+        }
+    });
+    const SRTSOCKET group = srt_create_group(SRT_GTYPE_BROADCAST);
+    std::vector<SRT_SOCKGROUPCONFIG> endpoints;
+    for (const std::uint16_t weight : {20, 10})
+    {
+        endpoints.push_back(srt_prepare_endpoint(nullptr, reinterpret_cast<sockaddr *>(&address), sizeof(address)));
+        endpoints.back().weight = weight;
+    }
+    check(srt_connect_group(group, endpoints.data(), 2) != SRT_ERROR, "group peer: connect");
+    std::thread sender([&] {
+        char payload[1316] = {};
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_sendmsg2(group, payload, sizeof(payload), &control));
+            sleep_ms(2);
+        }
+    });
+    check(wait_for([&] { return accepted != SRT_INVALID_SOCK; }, 5000), "group peer: accepted");
+    robotweax_srt_telemetry_label_v1 labels[] = {{"stream", "peer-group"}};
+    robotweax_srt_telemetry_embed_group_v1 tx;
+    robotweax_srt_telemetry_embed_group_default(&tx);
+    tx.group = group;
+    tx.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    tx.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BROADCAST;
+    tx.labels = labels;
+    tx.label_count = 1;
+    tx.path_name = name_by_weight;
+    auto rx = tx;
+    rx.group = accepted;
+    rx.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &tx) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_attach_group(embed, &rx) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "group peer: both groups attached");
+    const std::string release = std::string("\"release\":\"") + ROBOTWEAX_SRT_VERSION_STRING + "\"";
+    const std::string listener_identity = "\"identity\":{\"availability\":\"available\",\"name\":\"Robotweax SRT\"," + release;
+    const bool read = wait_for(
+        [&]
+        {
+            const auto all = sources(embed);
+            return count_with(all, {"\"stream\":\"peer-group\"", "\"role\":\"sender\"", "\"path\":",
+                                    listener_identity}) == 2 &&
+                   count_with(all, {"\"stream\":\"peer-group\"", "\"role\":\"receiver\"", "\"path\":",
+                                    "\"handshake\":{\"availability\":\"available\",\"srt_version\":\"1.5.7\""}) == 2;
+        },
+        8000);
+    const auto all = sources(embed);
+    check(read, "group peer: caller members read the listener's identity, accepted members their caller's handshake: " +
+                    std::to_string(count_with(all, {"\"stream\":\"peer-group\"", "\"path\":", listener_identity})) +
+                    " identities");
+    check(count_with(all, {"\"stream\":\"peer-group\"", "\"role\":\"receiver\"", "\"path\":",
+                           "\"identity\":{\"availability\":\"unknown\"}"}) == 2,
+          "group peer: callers that do not advertise read unknown");
+    check(count_with(all, {"\"stream\":\"peer-group\"", "\"peer\":{\"version\":1,\"identity\":{\"availability\":"
+                           "\"unavailable\"},\"handshake\":{\"availability\":\"unavailable\"}}"}) == 2,
+          "group peer: the group rows have no peer metadata");
+    robotweax_srt_telemetry_embed_stop(embed);
+    stop = true;
+    sender.join();
+    srt_close(group);
+    srt_close(listener);
+    receiver.join();
+    if (accepted != SRT_INVALID_SOCK)
+        srt_close(accepted);
+}
+#endif
+
 #if defined(ROBOTWEAX_SRT_STANDBY_RTT_VERSION) && ROBOTWEAX_SRT_STANDBY_RTT_VERSION == 1
 /* Plain own-to-own loopback integration of the opt-in getter into member JSON.
  * No DATA is sent. This is not fleet, WAN or encrypted-control qualification. */
@@ -1674,6 +1794,9 @@ int main(int argc, char **argv)
     srt_close(probe);
 #if defined(ROBOTWEAX_SRT_STANDBY_RTT_VERSION) && ROBOTWEAX_SRT_STANDBY_RTT_VERSION == 1
     native_standby_observation_scenario();
+#endif
+#if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)
+    peer_metadata_group_scenario();
 #endif
     backup_scenario();
     backup_outage_scenario(false);

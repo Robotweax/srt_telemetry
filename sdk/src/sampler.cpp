@@ -4,6 +4,7 @@
 #include "health_internal.h"
 #include "history_internal.h"
 #include "thread_name.h"
+#include "peer_metadata_internal.h"
 #include "standby_metadata_internal.h"
 
 #include <algorithm>
@@ -75,6 +76,7 @@ struct Source
     robotweax_srt_telemetry_metric_sample_v1 latest_metrics{};
     robotweax_srt_telemetry_standby_rtt_metadata_v1 standby_rtt_metadata{};
     std::uint64_t standby_rtt_updated_steady = 0;
+    robotweax_srt_telemetry_peer_metadata_v1 peer_metadata{};
     robotweax_srt_telemetry_rtt_metadata_v1 rtt_metadata{};
     std::uint64_t rtt_updated_steady = 0;
     robotweax_srt_telemetry_group_send_metadata_v1 group_send_metadata{};
@@ -1790,6 +1792,7 @@ robotweax_srt_telemetry_error render_impl(robotweax_srt_telemetry_sampler *sampl
                 out.rtt_capture_age_seconds =
                     static_cast<double>(now_steady - source.rtt_updated_steady) / 1e9;
                 out.group_send_metadata = source.group_send_metadata;
+                out.peer_metadata = source.peer_metadata;
                 out.group_send_capture_age_seconds =
                     static_cast<double>(now_steady - source.group_send_updated_steady) / 1e9;
                 out.has_ext = source.has_latest_ext;
@@ -2069,5 +2072,23 @@ robotweax_srt_telemetry_sampler_set_standby_rtt_metadata_v1(
     found->second->standby_rtt_metadata =
         metadata == nullptr ? robotweax_srt_telemetry_standby_rtt_metadata_v1{} : *metadata;
     found->second->standby_rtt_updated_steady = steady_nano();
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_peer_metadata_v1(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+    const robotweax_srt_telemetry_peer_metadata_v1 *metadata)
+{
+    if (sampler == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    if (in_callback_of(sampler))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    if (metadata != nullptr && !robotweax_srt_telemetry_internal::valid_peer_metadata(*metadata))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    found->second->peer_metadata = metadata == nullptr ? robotweax_srt_telemetry_peer_metadata_v1{} : *metadata;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }

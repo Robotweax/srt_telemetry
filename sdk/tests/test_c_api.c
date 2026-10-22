@@ -14,6 +14,9 @@ _Static_assert(sizeof(robotweax_srt_telemetry_standby_rtt_metadata_v1) == 64,
 _Static_assert(offsetof(robotweax_srt_telemetry_standby_rtt_metadata_v1, rtt_microseconds) == 24,
                "standby RTT offset");
 _Static_assert(sizeof(robotweax_srt_telemetry_rtt_metadata_v1) == 64, "RTT metadata ABI");
+_Static_assert(sizeof(robotweax_srt_telemetry_peer_metadata_v1) == 148, "peer metadata ABI");
+_Static_assert(offsetof(robotweax_srt_telemetry_peer_metadata_v1, identity_name) == 40, "peer name offset");
+_Static_assert(offsetof(robotweax_srt_telemetry_peer_metadata_v1, reserved) == 140, "peer reserved offset");
 _Static_assert(sizeof(robotweax_srt_telemetry_label_copy_v1) == 320, "label copy ABI");
 _Static_assert(sizeof(robotweax_srt_telemetry_recorder_member_v1) == 24, "recorder member ABI");
 _Static_assert(sizeof(robotweax_srt_telemetry_jsonl_export_v2_options) == 24, "JSONL v2 options ABI");

@@ -88,6 +88,44 @@ extern "C"
         char active_path[64], probe_path[64];
     } robotweax_srt_telemetry_group_send_metadata_v1;
 
+    /* Optional peer metadata of one connected socket (Robotweax SRT 0.3.0).
+     *
+     * Identity: the implementation name and release the peer reports about
+     * itself (SRTO_ROBOTWEAX_PEER_IDENTITY). A diagnostic claim, never
+     * authenticated, never a capability. identity_availability: 0 not read
+     * (disabled or unsupported), 1 read failed, 2 read. When read,
+     * identity_fields 0 means the peer advertised nothing (unknown); bit 1
+     * name, bit 2 release (only with a name). Name: 1-32 bytes, first
+     * alphanumeric, then alphanumerics, space, '.', '_', '+', '-', no trailing
+     * space. Release: 1-64 bytes, first alphanumeric, then alphanumerics, '.',
+     * '_', '+', '-'. NUL-terminated, zero after the terminator.
+     *
+     * Handshake: the peer's HSREQ as a listener saw it during admission
+     * (SRTO_ROBOTWEAX_PEER_HANDSHAKE, readable only in srt_listen_callback).
+     * handshake_availability: 0 none captured, 2 captured. srt_version
+     * 0x00XXYYZZ as advertised, flags the raw HSREQ word (unknown bits kept),
+     * receiver_delay the peer's own SRTO_RCVLATENCY and sender_delay its
+     * SRTO_PEERLATENCY in milliseconds, before negotiation took the larger of
+     * each side's value. Raw advertisements, not negotiated guarantees.
+     *
+     * Instantaneous metadata only; no health, alert or metric-window input. */
+    typedef struct robotweax_srt_telemetry_peer_metadata_v1
+    {
+        uint32_t struct_size, abi_version;
+        uint32_t identity_availability, identity_fields;
+        int32_t identity_native_result;
+        uint32_t handshake_availability;
+        uint32_t handshake_srt_version, handshake_flags;
+        uint32_t handshake_receiver_delay_milliseconds, handshake_sender_delay_milliseconds;
+        char identity_name[33];
+        char identity_release[65];
+        uint8_t padding[2];
+        uint32_t reserved[2];
+    } robotweax_srt_telemetry_peer_metadata_v1;
+
+#define ROBOTWEAX_SRT_TELEMETRY_PEER_IDENTITY_NAME UINT32_C(1)
+#define ROBOTWEAX_SRT_TELEMETRY_PEER_IDENTITY_RELEASE UINT32_C(2)
+
     /* Host label such as {"site", "studio-2"}. Keys: [A-Za-z_][A-Za-z0-9_]*,
      * at most 63 bytes. Values: printable ASCII, at most 255 bytes. Labels are
      * copied when the source is added. */
@@ -405,6 +443,14 @@ extern "C"
     robotweax_srt_telemetry_sampler_set_group_send_metadata_v1(
         robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
         const robotweax_srt_telemetry_group_send_metadata_v1 *metadata);
+
+    /* Copies validated peer metadata (identity and admission handshake);
+     * NULL clears. Thread-safe, forbidden from sampler callbacks. Removal
+     * forgets it. Existing source/sample ABI unchanged. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_sampler_set_peer_metadata_v1(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
+        const robotweax_srt_telemetry_peer_metadata_v1 *metadata);
 
 #ifdef __cplusplus
 }
