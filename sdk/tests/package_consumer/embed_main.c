@@ -49,6 +49,8 @@ int main(void)
         robotweax_srt_telemetry_embed_set_peer_identity_v1(embed, NULL) != ROBOTWEAX_SRT_TELEMETRY_OK ||
         robotweax_srt_telemetry_embed_note_peer_handshake_v1(embed, -1, NULL, 0) !=
             ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT ||
+        robotweax_srt_telemetry_embed_note_peer_group_v1(embed, -1, 5) != ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT ||
+        robotweax_srt_telemetry_embed_set_session_ref(embed, 7, "consumer") != ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND ||
         robotweax_srt_telemetry_embed_set_recording_callback(embed, NULL, NULL) !=
             ROBOTWEAX_SRT_TELEMETRY_OK ||
         robotweax_srt_telemetry_embed_write_recording(embed, 7) != ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE ||

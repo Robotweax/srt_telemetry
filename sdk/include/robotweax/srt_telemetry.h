@@ -507,6 +507,75 @@ extern "C"
         const robotweax_srt_telemetry_jsonl_export_v2_options *options,
         robotweax_srt_telemetry_jsonl_sink sink, void *user_data);
 
+    /* ------------------------------------------------ recording schema 1alpha3
+     * What pairs two ends' recordings of one session: the connection age of
+     * each sample, a session key both hosts agree on, the negotiated path
+     * label and group IDs (docs/architecture/bounded-recorder.md#schema-1alpha3). */
+
+    /* The connection a sample was taken on. */
+    typedef struct robotweax_srt_telemetry_recorder_connection_v1
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        /* 1: connection_age_nano holds the sample's connection age. Pass 1
+         * only for samples of a connected socket: SRT's statistics clock
+         * means nothing before the connection exists. */
+        uint32_t available;
+        uint32_t reserved;
+        /* SRT's msTimeStamp (ext connection_age_seconds) in nanoseconds:
+         * time since the connection's statistics started. A group's is the
+         * time since its first member connected. */
+        uint64_t connection_age_nano;
+    } robotweax_srt_telemetry_recorder_connection_v1;
+
+    /* push_member_v1 plus the sample's connection (connection may be NULL:
+     * unknown). */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_push_sample_v1(
+        robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_raw_sample_v1 *raw,
+        const robotweax_srt_telemetry_delta_v1 *delta, const robotweax_srt_telemetry_recorder_member_v1 *member,
+        const robotweax_srt_telemetry_recorder_connection_v1 *connection);
+
+/* jsonl_export_v3_options.path_label */
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_PATH_LABEL_CAPACITY 32u
+/* jsonl_export_v3_options.session_ref: printable ASCII, 1..256 bytes. */
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_SESSION_REF_CAPACITY 256u
+
+    /* What the 1alpha3 header says beyond the 1alpha2 options. */
+    typedef struct robotweax_srt_telemetry_jsonl_export_v3_options
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        /* As in v2_options. */
+        uint32_t group_type;
+        uint32_t group_row;
+        uint32_t health_lines;
+        /* Member rows only: the negotiated path label (SRTO_ROBOTWEAX_PATHID)
+         * as SRT reports it on either end, 0 when none was negotiated. */
+        uint32_t path_label_length;
+        uint8_t path_label[ROBOTWEAX_SRT_TELEMETRY_RECORDING_PATH_LABEL_CAPACITY];
+        /* Group and member rows: this end's group handle, and the peer's
+         * group ID noted at admission (SRTO_ROBOTWEAX_PEERGROUP, accepting
+         * side only); -1 when unknown. Plain sockets: both -1. */
+        int32_t group_id;
+        int32_t peer_group_id;
+        /* An opaque key both ends of the session agree on, chosen by the
+         * hosts (e.g. a digest of a session ID); NULL when none. SRT Doctor
+         * keeps only a digest of it. */
+        const char *session_ref;
+        uint64_t reserved[2];
+    } robotweax_srt_telemetry_jsonl_export_v3_options;
+
+    /* Exports schema 1alpha3: everything 1alpha2 carries, each sample's
+     * connectionAgeNano, and in the header sessionRef, groupId, peerGroupId,
+     * pathLabel and the start of the first kept sample's connection
+     * (connectedAtUnixNano, connectedAtMonotonicNano: the sample's clocks
+     * minus its connection age; null without a connection age). */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v3(
+        const robotweax_srt_telemetry_recorder *recorder,
+        const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+        const robotweax_srt_telemetry_jsonl_export_v3_options *options, robotweax_srt_telemetry_jsonl_sink sink,
+        void *user_data);
+
 #ifdef __cplusplus
 }
 #endif

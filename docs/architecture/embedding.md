@@ -358,6 +358,47 @@ common v1 statistics, not the provider-specific extended fields, and samples
 not yet written are lost if the process crashes; a streaming disk spool
 remains open.
 
+### Pairing both ends of a session (schema 1alpha3)
+
+`jsonl_schema=1alpha3` (config `ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA3`)
+writes what lets SRT Doctor pair this end's recording with the other end's
+(srt_telemetry#57; [format](bounded-recorder.md#schema-1alpha3)). It stays
+opt-in until Doctor reads `1alpha3`. The embed fills:
+
+- **Connection age** on every sample taken while the source is connected, and
+  the connection start in the header. Nothing to do for the host.
+- **Group IDs** (`groupId`) on group and member rows, from the group handle.
+- **Path labels** (`pathLabel`) on member rows when labels were negotiated and
+  `group_path_data` is set, also when the host's `path_name` names the path.
+- **The session reference**, from the host:
+
+  ```c
+  robotweax_srt_telemetry_embed_set_session_ref(telemetry, socket_or_group, "sha256:6b1f0c2e");
+  ```
+
+  Both ends must set the same value, for example a digest of the session ID
+  both hosts know. A group's members follow the group. It describes the whole
+  recording, also samples taken before the call; a source that continues
+  after a reconnection keeps it until set again.
+- **The caller's group ID** (`peerGroupId`) on the accepting side, with
+  Robotweax SRT, from the host's listen callback (where SRT offers it):
+
+  ```c
+  static int on_admission(void *telemetry, SRTSOCKET socket, int, const struct sockaddr *, const char *)
+  {
+      robotweax_srt_telemetry_host_embed_note_peer_group(telemetry, socket);
+      /* ... the host's own admission decision ... */
+      return 0;
+  }
+  ```
+
+  It follows the [peer handshake](#optional-peer-metadata-robotweax-srt-030)'s
+  rules: a note waits 60 s for its socket, and the listener must be closed
+  before `embed_stop`.
+
+With Haivision SRT the caller's connection start is when `srt_connect` was
+called, not the handshake (see the [format](bounded-recorder.md#schema-1alpha3)).
+
 ## Threading
 
 One embed thread polls the connection monitors and ticks the sampler every

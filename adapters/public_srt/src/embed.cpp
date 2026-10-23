@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <atomic>
 #include <cerrno>
+#include <cmath>
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
@@ -242,6 +243,12 @@ struct Endpoint
     std::int32_t peer_socket = -1;
     bool peer_identity_read = false;
     bool peer_handshake_taken = false;
+    /* Recording schema 1alpha3: the host's session reference (members follow
+     * their group's), the caller's group ID noted at admission (a member's,
+     * and its group's from its members), the member's negotiated label. */
+    std::string session_ref;
+    std::int32_t peer_group = -1;
+    std::string path_label;
 
     /* Group endpoints. */
     std::unique_ptr<GroupLink> group;
@@ -308,8 +315,19 @@ struct Recording
     std::uint64_t written_pushed = 0;
     /* Samples in the last written version (writer thread). */
     std::uint64_t written_records = 0;
-    /* Schema 1alpha2: set at creation, then read-only. */
+    /* Schema 1alpha2 (and 1alpha3): set at creation, then read-only. */
     bool v2 = false;
+    bool v3 = false;
+    /* 1alpha3: the source is connected this tick, so its samples carry
+     * their connection age (embed lock). */
+    bool connected = false;
+    /* 1alpha3 header, updated each tick (embed lock and meta_mutex) and read
+     * by the writer (meta_mutex). */
+    std::mutex meta_mutex;
+    std::string session_ref;
+    std::string path_label;
+    std::int32_t group_id = -1;
+    std::int32_t peer_group_id = -1;
     std::uint32_t group_type = ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_NONE;
     std::uint32_t group_row = ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE;
     /* A member's state, pushed with each sample (embed lock). */
@@ -421,7 +439,10 @@ struct robotweax_srt_telemetry_embed
      * peer_mutex. */
     struct PendingHandshake
     {
+        /* What the callback noted: the handshake, the proposed group. */
+        bool handshake = false;
         robotweax_srt_telemetry_peer_metadata_v1 metadata{};
+        std::int32_t peer_group = -1;
         SteadyClock::time_point noted;
     };
     std::mutex peer_mutex;
@@ -499,8 +520,21 @@ void on_sample(void *user_data, const robotweax_srt_telemetry_source_info_v1 *so
     {
         auto &recording = *found->second;
         const bool member = recording.v2 && recording.group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER;
-        if (robotweax_srt_telemetry_recorder_push_member_v1(recording.recorder, &output->raw, &output->delta,
-                                                            member ? &recording.member : nullptr) ==
+        robotweax_srt_telemetry_recorder_connection_v1 connection{};
+        connection.struct_size = sizeof(connection);
+        connection.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        if (recording.v3 && recording.connected && output->has_ext != 0 &&
+            (output->ext.available_fields & ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_CONNECTION_AGE_SECONDS) != 0 &&
+            std::isfinite(output->ext.connection_age_seconds) && output->ext.connection_age_seconds >= 0 &&
+            output->ext.connection_age_seconds < 1e9)
+        {
+            connection.available = 1;
+            connection.connection_age_nano =
+                static_cast<std::uint64_t>(std::llround(output->ext.connection_age_seconds * 1e9));
+        }
+        if (robotweax_srt_telemetry_recorder_push_sample_v1(recording.recorder, &output->raw, &output->delta,
+                                                            member ? &recording.member : nullptr,
+                                                            recording.v3 ? &connection : nullptr) ==
             ROBOTWEAX_SRT_TELEMETRY_OK)
         {
             found->second->pushed.fetch_add(1, std::memory_order_relaxed);
@@ -598,7 +632,40 @@ bool write_recording(const Embed &embed, Recording &recording)
     {
         ok = false;
     }
-    if (recording.v2)
+    if (recording.v3)
+    {
+        robotweax_srt_telemetry_jsonl_export_v3_options options{};
+        options.struct_size = sizeof(options);
+        options.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        options.group_type = recording.group_type;
+        options.group_row = recording.group_row;
+        options.health_lines = 1;
+        std::string session_ref;
+        try
+        {
+            std::lock_guard lock(recording.meta_mutex);
+            session_ref = recording.session_ref;
+            options.group_id = recording.group_id;
+            options.peer_group_id = recording.peer_group_id;
+            const auto &hex = recording.path_label;
+            if (recording.group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER && hex.size() % 2 == 0 &&
+                hex.size() <= 2 * ROBOTWEAX_SRT_TELEMETRY_RECORDING_PATH_LABEL_CAPACITY)
+            {
+                const auto nibble = [](const char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
+                for (std::size_t i = 0; i < hex.size(); i += 2)
+                    options.path_label[i / 2] = static_cast<std::uint8_t>(nibble(hex[i]) * 16 + nibble(hex[i + 1]));
+                options.path_label_length = static_cast<std::uint32_t>(hex.size() / 2);
+            }
+        }
+        catch (const std::bad_alloc &)
+        {
+            ok = false;
+        }
+        options.session_ref = session_ref.empty() ? nullptr : session_ref.c_str();
+        ok = ok && robotweax_srt_telemetry_recorder_export_jsonl_v3(recording.recorder, &config, &options, file_sink,
+                                                                    &sink) == ROBOTWEAX_SRT_TELEMETRY_OK;
+    }
+    else if (recording.v2)
     {
         robotweax_srt_telemetry_jsonl_export_v2_options options{};
         options.struct_size = sizeof(options);
@@ -787,6 +854,8 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
         recording->role = endpoint.role;
         recording->directory = embed.config.recording_directory;
         recording->v2 = embed.config.recording_schema != ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1;
+        recording->v3 = embed.config.recording_schema == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA3;
+        recording->session_ref = endpoint.session_ref;
         recording->group_type = group_type;
         recording->group_row = group_row;
         recording->member.struct_size = sizeof(recording->member);
@@ -1209,6 +1278,16 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
     }
     member->member_state = entry.member_state;
     member->member_socket_state = entry.socket_state;
+    if (entry.path_label[0] != '\0' && member->path_label != entry.path_label)
+    {
+        try
+        {
+            member->path_label = entry.path_label;
+        }
+        catch (const std::bad_alloc &)
+        {
+        }
+    }
     member->cached.raw = entry.raw;
     member->cached.delta = entry.delta;
     member->cached.ext = entry.ext;
@@ -1584,6 +1663,7 @@ void poll_peer(Embed &embed, Endpoint &endpoint)
         endpoint.peer_socket = endpoint.socket;
         endpoint.peer_identity_read = false;
         endpoint.peer_handshake_taken = false;
+        endpoint.peer_group = -1;
     }
     if (!endpoint.peer_handshake_taken)
     {
@@ -1596,15 +1676,19 @@ void poll_peer(Embed &embed, Endpoint &endpoint)
         }
         else if (found != embed.pending_handshakes.end())
         {
-            const auto &noted = found->second.metadata;
-            endpoint.peer.handshake_availability = noted.handshake_availability;
-            endpoint.peer.handshake_srt_version = noted.handshake_srt_version;
-            endpoint.peer.handshake_flags = noted.handshake_flags;
-            endpoint.peer.handshake_receiver_delay_milliseconds = noted.handshake_receiver_delay_milliseconds;
-            endpoint.peer.handshake_sender_delay_milliseconds = noted.handshake_sender_delay_milliseconds;
+            if (found->second.handshake)
+            {
+                const auto &noted = found->second.metadata;
+                endpoint.peer.handshake_availability = noted.handshake_availability;
+                endpoint.peer.handshake_srt_version = noted.handshake_srt_version;
+                endpoint.peer.handshake_flags = noted.handshake_flags;
+                endpoint.peer.handshake_receiver_delay_milliseconds = noted.handshake_receiver_delay_milliseconds;
+                endpoint.peer.handshake_sender_delay_milliseconds = noted.handshake_sender_delay_milliseconds;
+                changed = true;
+            }
+            endpoint.peer_group = found->second.peer_group;
             embed.pending_handshakes.erase(found);
             endpoint.peer_handshake_taken = true;
-            changed = true;
         }
     }
     /* SRT keeps the identity until close: a socket that broke before the
@@ -1689,6 +1773,56 @@ void record_health(Embed &embed)
     }
 }
 
+/* Recording schema 1alpha3: whether this tick's samples carry their
+ * connection age, and the header's session reference, group IDs and path
+ * label. Lock held. */
+void note_recording_meta(Embed &embed, Endpoint &endpoint, const std::int32_t group_socket, bool gone = false)
+{
+    const auto found = embed.recordings.find(endpoint.source_id);
+    if (found == embed.recordings.end() || !found->second->v3)
+        return;
+    auto &recording = *found->second;
+    gone = gone || endpoint.retired;
+    recording.connected = !gone && endpoint.context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+    std::lock_guard lock(recording.meta_mutex);
+    if (!gone)
+        recording.group_id = group_socket;
+    if (endpoint.peer_group >= 0)
+        recording.peer_group_id = endpoint.peer_group;
+    try
+    {
+        if (recording.session_ref != endpoint.session_ref)
+            recording.session_ref = endpoint.session_ref;
+        if (!endpoint.path_label.empty() && recording.path_label != endpoint.path_label)
+            recording.path_label = endpoint.path_label;
+    }
+    catch (const std::bad_alloc &)
+    {
+    }
+}
+
+/* Before a tick: members follow their group's session reference, and a
+ * group takes the peer group its members noted at admission. */
+void note_group_meta(Embed &embed, Endpoint &group)
+{
+    for (auto &[path, member] : group.group->members)
+    {
+        try
+        {
+            if (member->session_ref != group.session_ref)
+                member->session_ref = group.session_ref;
+        }
+        catch (const std::bad_alloc &)
+        {
+        }
+        if (member->peer_group >= 0)
+            group.peer_group = member->peer_group;
+    }
+    note_recording_meta(embed, group, group.socket);
+    for (auto &[path, member] : group.group->members)
+        note_recording_meta(embed, *member, group.socket, group.retired);
+}
+
 void run(Embed &embed)
 {
     const auto period = std::chrono::nanoseconds(embed.period_nano);
@@ -1720,6 +1854,11 @@ void run(Embed &embed)
                     poll_standby_rtt(embed, *member, mono);
                     poll_peer(embed, *member);
                 }
+                note_group_meta(embed, *endpoint);
+            }
+            else
+            {
+                note_recording_meta(embed, *endpoint, -1);
             }
         }
         for (auto it = embed.retired.begin(); it != embed.retired.end();)
@@ -1734,6 +1873,10 @@ void run(Embed &embed)
                 poll_rtt(embed, **it, mono);
                 poll_standby_rtt(embed, **it, mono);
                 poll_authority(embed, **it, wall, mono);
+                if ((*it)->group)
+                    note_group_meta(embed, **it);
+                else
+                    note_recording_meta(embed, **it, -1);
                 ++it;
             }
         }
@@ -1966,9 +2109,10 @@ robotweax_srt_telemetry_embed_config_parse(robotweax_srt_telemetry_embed_config_
         }
         else if (key == "jsonl_schema" && has_value)
         {
-            ok = value == "1alpha1" || value == "1alpha2";
-            parsed.recording_schema = value == "1alpha2" ? ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2
-                                                         : ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1;
+            ok = value == "1alpha1" || value == "1alpha2" || value == "1alpha3";
+            parsed.recording_schema = value == "1alpha3"   ? ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA3
+                                      : value == "1alpha2" ? ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2
+                                                           : ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA1;
         }
         else if (key == "jsonl_s" && has_value)
         {
@@ -2038,7 +2182,7 @@ robotweax_srt_telemetry_embed_start(const robotweax_srt_telemetry_embed_config_v
         !terminated(config->name, sizeof(config->name)) || !printable(config->name) ||
         !terminated(config->recording_directory, sizeof(config->recording_directory)) ||
         config->recording_seconds > maximum_recording_seconds ||
-        config->recording_schema > ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2 ||
+        config->recording_schema > ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA3 ||
         !terminated(config->provider_version, sizeof(config->provider_version)) ||
         !printable(config->provider_version) ||
         !terminated(config->provider_revision, sizeof(config->provider_revision)) ||
@@ -2773,27 +2917,20 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_peer_
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
-extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer_handshake_v1(
-    robotweax_srt_telemetry_embed *embed, const std::int32_t socket,
-    const struct ROBOTWEAX_SRT_PeerHandshakeV1_ *handshake, const size_t size)
+namespace
 {
-    if (embed == nullptr || socket < 0)
-        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
-    Embed::PendingHandshake pending;
-    pending.metadata.struct_size = sizeof(pending.metadata);
-    pending.metadata.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
-    const auto error = robotweax_srt_telemetry_public_srt_peer_handshake_v1(handshake, size, &pending.metadata);
-    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
-        return error;
-    if (pending.metadata.handshake_availability == 0)
-        return ROBOTWEAX_SRT_TELEMETRY_OK; /* no decoded HSREQ: nothing to show */
-    pending.noted = SteadyClock::now();
+/* Merges what the listen callback noted about a socket into its pending
+ * entry. Takes only peer_mutex: safe in the listen callback. */
+template <typename Update>
+robotweax_srt_telemetry_error note_pending(Embed &embed, const std::int32_t socket, Update update)
+{
+    const auto now = SteadyClock::now();
     try
     {
-        std::lock_guard lock(embed->peer_mutex);
-        auto &pending_handshakes = embed->pending_handshakes;
+        std::lock_guard lock(embed.peer_mutex);
+        auto &pending_handshakes = embed.pending_handshakes;
         for (auto it = pending_handshakes.begin(); it != pending_handshakes.end();)
-            it = pending.noted - it->second.noted > pending_handshake_lifetime ? pending_handshakes.erase(it) : ++it;
+            it = now - it->second.noted > pending_handshake_lifetime ? pending_handshakes.erase(it) : ++it;
         while (pending_handshakes.count(socket) == 0 && pending_handshakes.size() >= pending_handshake_capacity)
         {
             auto oldest = pending_handshakes.begin();
@@ -2802,8 +2939,92 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer
                     oldest = it;
             pending_handshakes.erase(oldest);
         }
-        /* A socket's later admission attempt replaces an earlier one. */
-        pending_handshakes[socket] = pending;
+        /* Notes of one admission merge; a later one overwrites what it notes. */
+        auto &pending = pending_handshakes[socket];
+        update(pending);
+        pending.noted = now;
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+} // namespace
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer_handshake_v1(
+    robotweax_srt_telemetry_embed *embed, const std::int32_t socket,
+    const struct ROBOTWEAX_SRT_PeerHandshakeV1_ *handshake, const size_t size)
+{
+    if (embed == nullptr || socket < 0)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    robotweax_srt_telemetry_peer_metadata_v1 metadata{};
+    metadata.struct_size = sizeof(metadata);
+    metadata.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    const auto error = robotweax_srt_telemetry_public_srt_peer_handshake_v1(handshake, size, &metadata);
+    if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+        return error;
+    if (metadata.handshake_availability == 0)
+        return ROBOTWEAX_SRT_TELEMETRY_OK; /* no decoded HSREQ: nothing to show */
+    return note_pending(*embed, socket,
+                        [&](Embed::PendingHandshake &pending)
+                        {
+                            pending.handshake = true;
+                            pending.metadata = metadata;
+                        });
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_embed_note_peer_group_v1(robotweax_srt_telemetry_embed *embed, const std::int32_t socket,
+                                                 const std::int32_t peer_group)
+{
+    if (embed == nullptr || socket < 0)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    if (peer_group < 0)
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    return note_pending(*embed, socket, [&](Embed::PendingHandshake &pending) { pending.peer_group = peer_group; });
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_session_ref(
+    robotweax_srt_telemetry_embed *embed, const std::int32_t socket, const char *session_ref)
+{
+    if (embed == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::string value;
+    if (session_ref != nullptr)
+    {
+        const auto length = ::strnlen(session_ref, ROBOTWEAX_SRT_TELEMETRY_RECORDING_SESSION_REF_CAPACITY + 1);
+        if (length == 0 || length > ROBOTWEAX_SRT_TELEMETRY_RECORDING_SESSION_REF_CAPACITY ||
+            !std::all_of(session_ref, session_ref + length,
+                         [](const char c)
+                         { return static_cast<unsigned char>(c) >= 0x20 && static_cast<unsigned char>(c) <= 0x7e; }))
+            return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+        try
+        {
+            value.assign(session_ref, length);
+        }
+        catch (const std::bad_alloc &)
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+        }
+    }
+    std::lock_guard lock(embed->mutex);
+    if (embed->stopping)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    const auto found = embed->active.find(socket);
+    if (found == embed->active.end())
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    try
+    {
+        auto &endpoint = *found->second;
+        endpoint.session_ref = value;
+        note_recording_meta(*embed, endpoint, endpoint.kind == EndpointKind::group ? endpoint.socket : -1);
+        if (endpoint.group)
+            for (auto &[path, member] : endpoint.group->members)
+            {
+                member->session_ref = value;
+                note_recording_meta(*embed, *member, endpoint.socket);
+            }
     }
     catch (const std::bad_alloc &)
     {

@@ -1000,6 +1000,122 @@ void test_live_recording()
     std::filesystem::remove_all(directory);
 }
 
+/* Recording schema 1alpha3 on a plain socket pair (srt_telemetry#57): both
+ * ends carry the session reference, each sample its connection age, and
+ * their connection starts lie within the handshake of each other (one
+ * process, one clock). */
+void test_recording_1alpha3_pair()
+{
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-1alpha3-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    auto config = base_config();
+    const auto spec = "off,name=cam-9,jsonl=" + directory.string() + ",linger_s=0,jsonl_schema=1alpha3";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              config.recording_schema == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA3,
+          "jsonl_schema=1alpha3 parses");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "1alpha3 start");
+    if (embed == nullptr)
+    {
+        return;
+    }
+    RecordingEvents events;
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, RecordingEvents::callback, &events) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "1alpha3 recording callback");
+    Stream stream;
+    check(stream.open(nullptr) &&
+              robotweax_srt_telemetry_embed_attach(embed, stream.sender, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                   nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_attach(embed, stream.receiver,
+                                                   ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER, nullptr,
+                                                   0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "1alpha3 attach both ends");
+    check(robotweax_srt_telemetry_embed_set_session_ref(embed, stream.listener, "sess-42") ==
+                  ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND &&
+              robotweax_srt_telemetry_embed_set_session_ref(nullptr, stream.sender, "sess-42") ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT &&
+              robotweax_srt_telemetry_embed_set_session_ref(embed, stream.sender, "") ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT &&
+              robotweax_srt_telemetry_embed_set_session_ref(embed, stream.sender, "bad\nref") ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT &&
+              robotweax_srt_telemetry_embed_set_session_ref(embed, stream.sender, std::string(257, 'x').c_str()) ==
+                  ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "session reference refusals");
+    stream.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    /* Set after samples were taken: it describes the whole recording. */
+    check(robotweax_srt_telemetry_embed_set_session_ref(embed, stream.sender, "sess-42") == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_set_session_ref(embed, stream.receiver, "sess-42") ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK,
+          "session reference on both ends");
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    check(robotweax_srt_telemetry_embed_write_recording(embed, stream.sender) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_write_recording(embed, stream.receiver) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              wait_until([&] { return events.size() >= 2; }, 5'000),
+          "1alpha3 live writes reported");
+    std::map<std::string, std::int64_t> starts;
+    for (std::size_t i = 0; i < std::min<std::size_t>(events.size(), 2); ++i)
+    {
+        const auto lines = read_lines(events.path(i));
+        if (lines.size() < 6)
+        {
+            check(false, "1alpha3 recording has samples: " + events.path(i));
+            continue;
+        }
+        const auto &header = lines[0];
+        const auto role = json_field(header, "role");
+        check(json_field(header, "schemaVersion") == "1alpha3" && json_field(header, "sessionRef") == "sess-42" &&
+                  json_field(header, "groupId") == "null" && json_field(header, "peerGroupId") == "null" &&
+                  json_field(header, "pathLabel") == "null" && json_field(header, "groupRow") == "null",
+              "1alpha3 plain header: " + header);
+        const auto connected_at = json_field(header, "connectedAtUnixNano");
+        check(connected_at != "null" && !connected_at.empty(), "the connection start is known: " + header);
+        if (connected_at == "null" || connected_at.empty())
+            continue;
+        starts[role] = std::stoll(connected_at);
+        /* Every sample carries its age; ages grow; clock minus age stays at
+         * the header's start (SRT counts whole milliseconds). */
+        std::int64_t previous = -1;
+        bool aged = true;
+        bool growing = true;
+        bool consistent = true;
+        for (std::size_t n = 1; n < lines.size(); ++n)
+        {
+            if (lines[n].find("robotweax-srt-telemetry-sample") == std::string::npos)
+                continue;
+            const auto age_text = json_field(lines[n], "connectionAgeNano");
+            if (age_text == "null")
+            {
+                aged = false;
+                continue;
+            }
+            const auto age = std::stoll(age_text);
+            growing = growing && age > previous;
+            previous = age;
+            const auto observed = std::stoll(json_field(lines[n], "observed_at_unix_nano"));
+            consistent = consistent && std::llabs(observed - age - starts[role]) < 20'000'000;
+        }
+        check(aged && growing && consistent, "1alpha3 " + role + " samples: ages on every sample, growing, consistent");
+    }
+    if (starts.size() == 2)
+    {
+        const auto difference = std::llabs(starts["sender"] - starts["receiver"]);
+        std::cout << "1alpha3 pair: connection starts differ by " << difference / 1000 << " us ("
+                  << (ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT
+                          ? "robotweax-srt"
+                          : "haivision-srt")
+                  << ")\n";
+        check(difference < 100'000'000, "both ends' connection starts lie within 100 ms on loopback: " +
+                                            std::to_string(difference) + " ns");
+    }
+    robotweax_srt_telemetry_embed_stop(embed);
+    stream.stop();
+    std::filesystem::remove_all(directory);
+}
+
 /* The recording callback may call into the embed, also while stop runs;
  * clearing the callback waits for a running call. */
 struct ReentrantCallback
@@ -1334,6 +1450,7 @@ int main()
     test_recording_lifecycle();
     test_recording_failure_counter();
     test_live_recording();
+    test_recording_1alpha3_pair();
     test_recording_callback_reentry();
     test_thread_names();
 #if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)

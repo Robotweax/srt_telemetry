@@ -54,6 +54,8 @@ struct Member
     std::uint32_t weight = 0;
     std::uint32_t path_source = ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE;
     std::string path;
+    /* Negotiated label (hex), whatever named the path; read once. */
+    std::string path_label;
     std::string local_address;
     bool local_final = false;
     std::string peer_address;
@@ -411,6 +413,7 @@ void fill_entry_identity(const Member &member, Entry &entry)
     entry.weight = member.weight;
     entry.path_source = member.path_source;
     copy_text(entry.path, member.path);
+    copy_text(entry.path_label, member.path_label);
     copy_text(entry.local_address, member.local_address);
     copy_text(entry.peer_address, member.peer_address);
 }
@@ -495,6 +498,23 @@ robotweax_srt_telemetry_error sample_member(Session &session, Member &member,
     {
         path = path_for(session, member.socket, data.token, data.weight, local, peer);
     }
+    /* The label itself, also when the host named the path. */
+    std::string label;
+    if (session.path_data != nullptr && member.path_label.empty() && socket_state == connected_state)
+    {
+        if (path.source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_IDENTIFIER)
+        {
+            label = path.name.substr(7);
+        }
+        else
+        {
+            auto identifier = identifier_for(session, member.socket);
+            if (identifier.source == ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_IDENTIFIER)
+            {
+                label = identifier.name.substr(7); /* after "pathid-" */
+            }
+        }
+    }
 
     /* Commit: nothing below throws. Changes go through unreported_flags, which
      * only the end of a successful call clears. */
@@ -514,6 +534,10 @@ robotweax_srt_telemetry_error sample_member(Session &session, Member &member,
     member.peer_address = std::move(peer);
     member.local_address = std::move(local);
     member.local_final = local_final;
+    if (!label.empty())
+    {
+        member.path_label = std::move(label);
+    }
     if (name_path && path.source != ROBOTWEAX_SRT_TELEMETRY_PATH_SOURCE_NONE)
     {
         member.path = std::move(path.name);

@@ -20,6 +20,14 @@ _Static_assert(offsetof(robotweax_srt_telemetry_peer_metadata_v1, reserved) == 1
 _Static_assert(sizeof(robotweax_srt_telemetry_label_copy_v1) == 320, "label copy ABI");
 _Static_assert(sizeof(robotweax_srt_telemetry_recorder_member_v1) == 24, "recorder member ABI");
 _Static_assert(sizeof(robotweax_srt_telemetry_jsonl_export_v2_options) == 24, "JSONL v2 options ABI");
+_Static_assert(sizeof(robotweax_srt_telemetry_recorder_connection_v1) == 24, "recorder connection ABI");
+_Static_assert(offsetof(robotweax_srt_telemetry_jsonl_export_v3_options, path_label) == 24, "JSONL v3 label offset");
+_Static_assert(offsetof(robotweax_srt_telemetry_jsonl_export_v3_options, group_id) == 56, "JSONL v3 group offset");
+_Static_assert(offsetof(robotweax_srt_telemetry_jsonl_export_v3_options, session_ref) == 64,
+               "JSONL v3 session reference offset");
+#if UINTPTR_MAX == UINT64_MAX
+_Static_assert(sizeof(robotweax_srt_telemetry_jsonl_export_v3_options) == 88, "JSONL v3 options ABI");
+#endif
 _Static_assert(offsetof(robotweax_srt_telemetry_rtt_metadata_v1, local_ackack_age_microseconds) ==
                    32,
                "RTT age offset");

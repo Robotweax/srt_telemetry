@@ -215,6 +215,27 @@ robotweax_srt_telemetry_host_embed_note_peer_handshake(robotweax_srt_telemetry_e
 }
 #endif
 
+#if defined(ROBOTWEAX_SRT_COMPAT_SRT_H) || defined(ROBOTWEAX_SRT_FLAT_COMPAT_HEADER_H)
+/* Robotweax SRT: call from the host's srt_listen_callback with the
+ * provisional socket. Notes the group ID a group caller proposed
+ * (SRTO_ROBOTWEAX_PEERGROUP) for the group recording's peerGroupId
+ * (1alpha3). A non-group caller has none: nothing is noted. Close the
+ * listener before robotweax_srt_telemetry_embed_stop. */
+static inline robotweax_srt_telemetry_error
+robotweax_srt_telemetry_host_embed_note_peer_group(robotweax_srt_telemetry_embed *embed, SRTSOCKET socket)
+{
+    int32_t peer_group = -1;
+    int length = (int)sizeof(peer_group);
+    if (srt_getsockflag(socket, SRTO_ROBOTWEAX_PEERGROUP, &peer_group, &length) != 0 ||
+        length != (int)sizeof(peer_group))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_PROVIDER_SAMPLE_FAILURE;
+    }
+    return peer_group < 0 ? ROBOTWEAX_SRT_TELEMETRY_OK
+                          : robotweax_srt_telemetry_embed_note_peer_group_v1(embed, (int32_t)socket, peer_group);
+}
+#endif
+
 /* Starts an embed from a command-line style spec (see
  * robotweax_srt_telemetry_embed_config_parse), e.g. "0.0.0.0:9810" or
  * "9810,token_file=/run/srt/token". service_name names the application in
