@@ -558,11 +558,11 @@ extern "C"
          * side only); -1 when unknown. Plain sockets: both -1. */
         int32_t group_id;
         int32_t peer_group_id;
+        uint64_t reserved[2];
         /* An opaque key both ends of the session agree on, chosen by the
          * hosts (e.g. a digest of a session ID); NULL when none. SRT Doctor
          * keeps only a digest of it. */
         const char *session_ref;
-        uint64_t reserved[2];
     } robotweax_srt_telemetry_jsonl_export_v3_options;
 
     /* Exports schema 1alpha3: everything 1alpha2 carries, each sample's

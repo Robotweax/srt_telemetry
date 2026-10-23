@@ -54,13 +54,14 @@ constexpr std::uint64_t no_age = std::numeric_limits<std::uint64_t>::max();
 struct robotweax_srt_telemetry_recorder
 {
     explicit robotweax_srt_telemetry_recorder(const std::size_t capacity)
-        : records(capacity), members(capacity), ages(capacity, no_age)
+        : records(capacity), members(capacity)
     {
     }
 
     mutable std::mutex mutex;
     std::vector<robotweax_srt_telemetry_record_v1> records;
     std::vector<MemberCell> members;
+    /* Allocated with the first connection age (1alpha3); empty: none. */
     std::vector<std::uint64_t> ages;
     std::size_t write_index = 0;
     std::size_t size = 0;
@@ -440,7 +441,10 @@ void push_locked(robotweax_srt_telemetry_recorder &recorder, const robotweax_srt
 {
     recorder.records[recorder.write_index] = make_record(raw, delta);
     recorder.members[recorder.write_index] = member;
-    recorder.ages[recorder.write_index] = age;
+    if (!recorder.ages.empty())
+    {
+        recorder.ages[recorder.write_index] = age;
+    }
     recorder.write_index = (recorder.write_index + 1) % recorder.records.size();
     if (recorder.size < recorder.records.size())
     {
@@ -469,7 +473,8 @@ RecorderSnapshot snapshot(const robotweax_srt_telemetry_recorder &recorder)
     {
         result.records.push_back(recorder.records[(oldest + index) % recorder.records.size()]);
         result.members.push_back(recorder.members[(oldest + index) % recorder.records.size()]);
-        result.ages.push_back(recorder.ages[(oldest + index) % recorder.records.size()]);
+        result.ages.push_back(recorder.ages.empty() ? no_age
+                                                    : recorder.ages[(oldest + index) % recorder.records.size()]);
     }
     result.first_sample = recorder.pushed - recorder.size;
     result.health.assign(recorder.health.begin(), recorder.health.end());
@@ -571,6 +576,17 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_push_s
         cell = {true, member->state, member->standby != 0, member->authority};
     }
     std::lock_guard lock(recorder->mutex);
+    if (age != no_age && recorder->ages.empty())
+    {
+        try
+        {
+            recorder->ages.assign(recorder->records.size(), no_age);
+        }
+        catch (const std::bad_alloc &)
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+        }
+    }
     push_locked(*recorder, *raw, *delta, cell, age);
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
@@ -994,9 +1010,12 @@ robotweax_srt_telemetry_error export_grouped(const robotweax_srt_telemetry_recor
             append_optional_int(extra, "groupId", v3->group_id);
             append_optional_int(extra, "peerGroupId", v3->peer_group_id);
             append_optional_string(extra, "pathLabel", v3->path_label);
-            /* The first kept sample's connection: its clocks minus its age. */
+            /* The first kept sample's connection: its clocks minus its age
+             * (a sample whose age exceeds its clocks says nothing). */
             std::size_t aged = 0;
-            while (aged < snap.ages.size() && snap.ages[aged] == no_age)
+            while (aged < snap.ages.size() &&
+                   (snap.ages[aged] == no_age || snap.ages[aged] > snap.records[aged].raw.observed_at_unix_nano ||
+                    snap.ages[aged] > snap.records[aged].raw.sample_monotonic_nano))
             {
                 ++aged;
             }
@@ -1004,10 +1023,8 @@ robotweax_srt_telemetry_error export_grouped(const robotweax_srt_telemetry_recor
             {
                 const auto &raw = snap.records[aged].raw;
                 const auto age = snap.ages[aged];
-                extra += ",\"connectedAtUnixNano\":" +
-                         std::to_string(raw.observed_at_unix_nano > age ? raw.observed_at_unix_nano - age : 0) +
-                         ",\"connectedAtMonotonicNano\":" +
-                         std::to_string(raw.sample_monotonic_nano > age ? raw.sample_monotonic_nano - age : 0);
+                extra += ",\"connectedAtUnixNano\":" + std::to_string(raw.observed_at_unix_nano - age) +
+                         ",\"connectedAtMonotonicNano\":" + std::to_string(raw.sample_monotonic_nano - age);
             }
             else
             {

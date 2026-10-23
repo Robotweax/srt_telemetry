@@ -365,6 +365,10 @@ writes what lets SRT Doctor pair this end's recording with the other end's
 (srt_telemetry#57; [format](bounded-recorder.md#schema-1alpha3)). It stays
 opt-in until Doctor reads `1alpha3`. The embed fills:
 
+- **One recording per connection**, so that the header describes all of it:
+  a source that goes on over a new connection (a socket or group attached
+  again with the same labels within the linger, or a path's new member
+  socket) finishes its recording, written as `FINAL`, and starts a new file.
 - **Connection age** on every sample taken while the source is connected, and
   the connection start in the header. Nothing to do for the host.
 - **Group IDs** (`groupId`) on group and member rows, from the group handle.
@@ -378,8 +382,8 @@ opt-in until Doctor reads `1alpha3`. The embed fills:
 
   Both ends must set the same value, for example a digest of the session ID
   both hosts know. A group's members follow the group. It describes the whole
-  recording, also samples taken before the call; a source that continues
-  after a reconnection keeps it until set again.
+  recording, also samples taken before the call. A new connection starts
+  without one: set it after every attach. `NULL` clears it.
 - **The caller's group ID** (`peerGroupId`) on the accepting side, with
   Robotweax SRT, from the host's listen callback (where SRT offers it):
 
@@ -394,7 +398,8 @@ opt-in until Doctor reads `1alpha3`. The embed fills:
 
   It follows the [peer handshake](#optional-peer-metadata-robotweax-srt-030)'s
   rules: a note waits 60 s for its socket, and the listener must be closed
-  before `embed_stop`.
+  before `embed_stop`. A note for a socket attached on its own (not as a
+  group member) is ignored.
 
 With Haivision SRT the caller's connection start is when `srt_connect` was
 called, not the handshake (see the [format](bounded-recorder.md#schema-1alpha3)).

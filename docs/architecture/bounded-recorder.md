@@ -96,7 +96,8 @@ long server recording). Every line, health lines too, carries
   the adapter's ext `connection_age_seconds`) at the sample, in nanoseconds,
   or `null` while the socket is not connected. A group row's counts from its
   first connected member. A decrease marks a new connection, so a recording
-  that spans reconnections shows each one. Push it with
+  that spans reconnections shows each one (the embedding library starts a
+  new recording per connection instead). Push it with
   `recorder_push_sample_v1` and a `recorder_connection_v1`; pass
   `available = 1` only for samples of a connected socket.
 - **Header** adds:
@@ -104,7 +105,7 @@ long server recording). Every line, health lines too, carries
     first kept sample's connection, that sample's clocks minus its age
     (millisecond resolution, SRT counts whole milliseconds). It survives ring
     overwrites, because every sample carries its age. `null` when no kept
-    sample has one.
+    sample has one (a sample whose age exceeds its clocks is skipped).
   - `sessionRef`: an opaque key both ends agree on, set by the host
     (printable ASCII, 1–256 bytes), or `null`. Prefer a digest to a raw
     identifier; Doctor keeps only a digest.

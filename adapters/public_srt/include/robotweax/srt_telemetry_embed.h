@@ -412,7 +412,9 @@ extern "C"
      * key both ends of the session agree on, so SRT Doctor can pair their
      * recordings. Printable ASCII, 1..256 bytes; prefer a digest to a raw
      * identifier (Doctor keeps only a digest). NULL clears it. It applies to
-     * the whole recording, also samples taken before the call. NOT_FOUND
+     * the whole recording, also samples taken before the call. In 1alpha3
+     * each connection is its own recording: a socket or group attached
+     * again (continuing a lingering source) starts without one. NOT_FOUND
      * for a socket that is not attached, INVALID_STATE once stop has begun.
      * Thread-safe. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
@@ -426,7 +428,8 @@ extern "C"
      * groupId, so the two ends' group recordings can be paired. Untrusted
      * metadata, never authorization. Same rules as note_peer_handshake_v1:
      * safe in the listen callback, waits 60 s for its socket, close the
-     * listener before embed_stop. peer_group < 0 is ignored. See
+     * listener before embed_stop. peer_group < 0, and a note for a socket
+     * attached on its own (not as a group member), are ignored. See
      * robotweax_srt_telemetry_host_embed_note_peer_group. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_embed_note_peer_group_v1(robotweax_srt_telemetry_embed *embed, int32_t socket,

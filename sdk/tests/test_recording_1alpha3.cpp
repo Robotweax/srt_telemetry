@@ -219,6 +219,18 @@ int main(int argc, char **argv)
               field(lines[3], "connectionAgeNano") == "null",
           "the header follows the first kept sample's connection, skipping samples without an age: " + lines[0]);
 
+    /* An age beyond the sample's clocks says nothing about the start. */
+    {
+        robotweax_srt_telemetry_recorder *odd = nullptr;
+        check(robotweax_srt_telemetry_recorder_create(4, &odd) == ROBOTWEAX_SRT_TELEMETRY_OK, "create");
+        push(odd, 0, true, mono0 + second); /* older than the monotonic clock */
+        push(odd, 1, true, 400 * milli);
+        const auto out = export_v3(odd, options(none, plain_row));
+        check(field(out[0], "connectedAtMonotonicNano") == std::to_string(mono0 + second / 10 - 400 * milli),
+              "a sample whose age exceeds its clocks is skipped: " + out[0]);
+        robotweax_srt_telemetry_recorder_destroy(odd);
+    }
+
     /* Session reference and health lines in 1alpha3. */
     auto with_ref = options(none, plain_row);
     with_ref.session_ref = "sha256:6b1f0c2e";

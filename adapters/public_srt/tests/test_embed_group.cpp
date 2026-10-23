@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -33,6 +34,17 @@
 
 namespace
 {
+
+/* The member entry grew by path_label (srt_telemetry#57); a host passes
+ * sizeof as member_entry_size, so a mismatch is reported, never misread. */
+static_assert(offsetof(robotweax_srt_telemetry_group_member_v1, path_label) + ROBOTWEAX_SRT_TELEMETRY_GROUP_PATH_LABEL_CAPACITY <=
+                  sizeof(robotweax_srt_telemetry_group_member_v1),
+              "path_label ends the member entry");
+#if UINTPTR_MAX == UINT64_MAX
+static_assert(sizeof(robotweax_srt_telemetry_group_member_v1) ==
+                  offsetof(robotweax_srt_telemetry_group_member_v1, path_label) + 72,
+              "member entry layout (64-bit)");
+#endif
 
 int failures = 0;
 

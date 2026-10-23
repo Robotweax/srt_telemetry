@@ -647,11 +647,13 @@ bool write_recording(const Embed &embed, Recording &recording)
             session_ref = recording.session_ref;
             options.group_id = recording.group_id;
             options.peer_group_id = recording.peer_group_id;
+            /* Lowercase hex from the group session; anything else is left out. */
             const auto &hex = recording.path_label;
+            const auto nibble = [](const char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1; };
             if (recording.group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER && hex.size() % 2 == 0 &&
-                hex.size() <= 2 * ROBOTWEAX_SRT_TELEMETRY_RECORDING_PATH_LABEL_CAPACITY)
+                hex.size() <= 2 * ROBOTWEAX_SRT_TELEMETRY_RECORDING_PATH_LABEL_CAPACITY &&
+                std::all_of(hex.begin(), hex.end(), [&](const char c) { return nibble(c) >= 0; }))
             {
-                const auto nibble = [](const char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
                 for (std::size_t i = 0; i < hex.size(); i += 2)
                     options.path_label[i / 2] = static_cast<std::uint8_t>(nibble(hex[i]) * 16 + nibble(hex[i + 1]));
                 options.path_label_length = static_cast<std::uint32_t>(hex.size() / 2);
@@ -906,6 +908,20 @@ robotweax_srt_telemetry_error start_recording(Embed &embed, const Endpoint &endp
         return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
     }
     return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+/* Recording schema 1alpha3 keeps one connection per recording, so that its
+ * header (connection start, session reference, group IDs) describes all of
+ * it: a source that goes on over a new connection (a continued socket or
+ * group, a path's new member socket) finishes its recording, which is
+ * written as final, and starts the next one. Lock held. */
+void next_recording(Embed &embed, Endpoint &endpoint, const std::uint32_t group_type, const std::uint32_t group_row)
+{
+    const auto found = embed.recordings.find(endpoint.source_id);
+    if (found == embed.recordings.end() || !found->second->v3)
+        return;
+    queue_recording(embed, endpoint.source_id, true);
+    static_cast<void>(start_recording(embed, endpoint, group_type, group_row));
 }
 
 void record(Embed &embed, Endpoint &endpoint, const robotweax_srt_telemetry_public_srt_connection_result_v1 &result)
@@ -1256,6 +1272,8 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
     }
     if (member->socket != entry.socket)
     {
+        if (member->socket >= 0)
+            next_recording(embed, *member, recording_group_type(link.type), ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER);
         member->socket = entry.socket;
         /* The old socket's RTT history says nothing about the new one. */
         member->rtt_fresh = false;
@@ -1787,7 +1805,9 @@ void note_recording_meta(Embed &embed, Endpoint &endpoint, const std::int32_t gr
     std::lock_guard lock(recording.meta_mutex);
     if (!gone)
         recording.group_id = group_socket;
-    if (endpoint.peer_group >= 0)
+    /* Only group and member rows have group IDs (a plain socket's note is
+     * ignored). */
+    if (endpoint.peer_group >= 0 && recording.group_row != ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE)
         recording.peer_group_id = endpoint.peer_group;
     try
     {
@@ -2455,6 +2475,10 @@ robotweax_srt_telemetry_embed_attach(robotweax_srt_telemetry_embed *embed, const
         }
         embed->retired.erase(std::next(it).base());
         auto &continued = *embed->active.at(socket);
+        /* A new connection: the host sets its session reference again. */
+        continued.session_ref.clear();
+        next_recording(*embed, continued, ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_NONE,
+                       ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE);
         record(*embed, continued, first);
         apply_context(*embed, continued);
         return ROBOTWEAX_SRT_TELEMETRY_OK;
@@ -2693,6 +2717,10 @@ robotweax_srt_telemetry_embed_attach_group(robotweax_srt_telemetry_embed *embed,
         }
         embed->retired.erase(std::next(it).base());
         auto &continued = *embed->active.at(group->group);
+        continued.session_ref.clear();
+        continued.peer_group = -1;
+        next_recording(*embed, continued, recording_group_type(continued.group->type),
+                       ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_GROUP);
         record(*embed, continued, first);
         apply_context(*embed, continued);
         return ROBOTWEAX_SRT_TELEMETRY_OK;

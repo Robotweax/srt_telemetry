@@ -1044,6 +1044,11 @@ void test_recording_1alpha3_pair()
               robotweax_srt_telemetry_embed_set_session_ref(embed, stream.sender, std::string(257, 'x').c_str()) ==
                   ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
           "session reference refusals");
+    /* A peer group noted for a socket attached on its own is ignored (the
+     * recording is still written, with no group IDs). */
+    check(robotweax_srt_telemetry_embed_note_peer_group_v1(embed, stream.receiver, 0x40000001) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "peer group noted for a plain socket");
     stream.start();
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     /* Set after samples were taken: it describes the whole recording. */
@@ -1113,6 +1118,73 @@ void test_recording_1alpha3_pair()
     }
     robotweax_srt_telemetry_embed_stop(embed);
     stream.stop();
+    std::filesystem::remove_all(directory);
+}
+
+/* 1alpha3 keeps one connection per recording: a socket attached again with
+ * the same labels within the linger continues the source on the dashboard
+ * but starts a new recording, without the old session reference. */
+void test_recording_1alpha3_continuation()
+{
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-1alpha3-continued-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    auto config = base_config();
+    const auto spec = "off,name=cam-9,jsonl=" + directory.string() + ",linger_s=30,jsonl_schema=1alpha3";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "continuation spec");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "continuation start");
+    if (embed == nullptr)
+        return;
+    RecordingEvents events;
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, RecordingEvents::callback, &events) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "continuation callback");
+    Stream first;
+    check(first.open(nullptr) &&
+              robotweax_srt_telemetry_embed_attach(embed, first.sender, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                   nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_set_session_ref(embed, first.sender, "first") == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "first connection attached");
+    first.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    check(robotweax_srt_telemetry_embed_detach(embed, first.sender) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_set_session_ref(embed, first.sender, "late") ==
+                  ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND,
+          "detached: lingering, not settable");
+    first.stop();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    Stream second;
+    check(second.open(nullptr) &&
+              robotweax_srt_telemetry_embed_attach(embed, second.sender, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                   nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "second connection continues the source");
+    check(robotweax_srt_telemetry_embed_set_session_ref(embed, second.sender, "temporary") ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_set_session_ref(embed, second.sender, nullptr) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK,
+          "session reference set and cleared");
+    second.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    robotweax_srt_telemetry_embed_stop(embed);
+    second.stop();
+    const auto files = recordings_in(directory);
+    check(files.size() == 2, "two connections, two recordings: " + std::to_string(files.size()));
+    std::map<std::string, std::string> by_ref;
+    for (const auto &file : files)
+    {
+        const auto lines = read_lines(file);
+        if (!lines.empty())
+            by_ref[json_field(lines[0], "sessionRef")] = lines[0];
+    }
+    check(by_ref.count("first") == 1 && by_ref.count("null") == 1,
+          "the first recording keeps its reference; the second starts without one");
+    if (by_ref.count("first") == 1 && by_ref.count("null") == 1)
+        check(std::stoll(json_field(by_ref["null"], "connectedAtUnixNano")) >
+                  std::stoll(json_field(by_ref["first"], "connectedAtUnixNano")) + 500'000'000,
+              "each header names its own connection's start");
     std::filesystem::remove_all(directory);
 }
 
@@ -1451,6 +1523,7 @@ int main()
     test_recording_failure_counter();
     test_live_recording();
     test_recording_1alpha3_pair();
+    test_recording_1alpha3_continuation();
     test_recording_callback_reentry();
     test_thread_names();
 #if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)
