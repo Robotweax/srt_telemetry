@@ -529,6 +529,11 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     target_compile_features(robotweax_srt_telemetry_recording_1alpha2_tests PRIVATE cxx_std_20)
     add_test(NAME robotweax_srt_telemetry_recording_1alpha2_tests
         COMMAND robotweax_srt_telemetry_recording_1alpha2_tests)
+    add_executable(robotweax_srt_telemetry_recording_1alpha3_tests sdk/tests/test_recording_1alpha3.cpp)
+    target_link_libraries(robotweax_srt_telemetry_recording_1alpha3_tests PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_recording_1alpha3_tests PRIVATE cxx_std_20)
+    add_test(NAME robotweax_srt_telemetry_recording_1alpha3_tests
+        COMMAND robotweax_srt_telemetry_recording_1alpha3_tests)
     add_executable(robotweax_srt_telemetry_standby_metadata_tests sdk/tests/test_standby_metadata.cpp)
     target_link_libraries(robotweax_srt_telemetry_standby_metadata_tests PRIVATE RobotweaxSRTTelemetry::core)
     target_compile_features(robotweax_srt_telemetry_standby_metadata_tests PRIVATE cxx_std_20)
@@ -562,7 +567,8 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
         add_test(NAME robotweax_srt_telemetry_recording_schema_test
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/sdk/tests/test_recording_schema.py"
-                $<TARGET_FILE:robotweax_srt_telemetry_recording_1alpha2_tests>)
+                $<TARGET_FILE:robotweax_srt_telemetry_recording_1alpha2_tests>
+                $<TARGET_FILE:robotweax_srt_telemetry_recording_1alpha3_tests>)
         set_tests_properties(robotweax_srt_telemetry_recording_schema_test PROPERTIES SKIP_RETURN_CODE 77)
     endif()
     if(Python3_Interpreter_FOUND)

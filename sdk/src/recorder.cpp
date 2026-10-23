@@ -1,6 +1,7 @@
 #include <robotweax/srt_telemetry.h>
 #include <robotweax/srt_telemetry_health.h>
 
+#include <algorithm>
 #include <cmath>
 #include <deque>
 #include <iomanip>
@@ -44,6 +45,12 @@ struct HealthCell
 };
 } // namespace
 
+namespace
+{
+/* ages[i]: the sample's connection age (1alpha3), or none. */
+constexpr std::uint64_t no_age = std::numeric_limits<std::uint64_t>::max();
+} // namespace
+
 struct robotweax_srt_telemetry_recorder
 {
     explicit robotweax_srt_telemetry_recorder(const std::size_t capacity)
@@ -54,6 +61,8 @@ struct robotweax_srt_telemetry_recorder
     mutable std::mutex mutex;
     std::vector<robotweax_srt_telemetry_record_v1> records;
     std::vector<MemberCell> members;
+    /* Allocated with the first connection age (1alpha3); empty: none. */
+    std::vector<std::uint64_t> ages;
     std::size_t write_index = 0;
     std::size_t size = 0;
     std::uint64_t overwritten_count = 0;
@@ -397,6 +406,7 @@ struct RecorderSnapshot final
 {
     std::vector<robotweax_srt_telemetry_record_v1> records;
     std::vector<MemberCell> members;
+    std::vector<std::uint64_t> ages;
     std::size_t capacity = 0;
     std::uint64_t overwritten_count = 0;
     /* Push number of records[0]. */
@@ -426,10 +436,15 @@ void prune_health(robotweax_srt_telemetry_recorder &recorder)
 }
 
 void push_locked(robotweax_srt_telemetry_recorder &recorder, const robotweax_srt_telemetry_raw_sample_v1 &raw,
-                 const robotweax_srt_telemetry_delta_v1 &delta, const MemberCell &member)
+                 const robotweax_srt_telemetry_delta_v1 &delta, const MemberCell &member,
+                 const std::uint64_t age = no_age)
 {
     recorder.records[recorder.write_index] = make_record(raw, delta);
     recorder.members[recorder.write_index] = member;
+    if (!recorder.ages.empty())
+    {
+        recorder.ages[recorder.write_index] = age;
+    }
     recorder.write_index = (recorder.write_index + 1) % recorder.records.size();
     if (recorder.size < recorder.records.size())
     {
@@ -453,10 +468,13 @@ RecorderSnapshot snapshot(const robotweax_srt_telemetry_recorder &recorder)
     const auto oldest =
         recorder.size == recorder.records.size() ? recorder.write_index : std::size_t{0};
     result.members.reserve(recorder.size);
+    result.ages.reserve(recorder.size);
     for (std::size_t index = 0; index < recorder.size; ++index)
     {
         result.records.push_back(recorder.records[(oldest + index) % recorder.records.size()]);
         result.members.push_back(recorder.members[(oldest + index) % recorder.records.size()]);
+        result.ages.push_back(recorder.ages.empty() ? no_age
+                                                    : recorder.ages[(oldest + index) % recorder.records.size()]);
     }
     result.first_sample = recorder.pushed - recorder.size;
     result.health.assign(recorder.health.begin(), recorder.health.end());
@@ -514,15 +532,38 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_push_m
     robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_raw_sample_v1 *raw,
     const robotweax_srt_telemetry_delta_v1 *delta, const robotweax_srt_telemetry_recorder_member_v1 *member)
 {
+    return robotweax_srt_telemetry_recorder_push_sample_v1(recorder, raw, delta, member, nullptr);
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_push_sample_v1(
+    robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_raw_sample_v1 *raw,
+    const robotweax_srt_telemetry_delta_v1 *delta, const robotweax_srt_telemetry_recorder_member_v1 *member,
+    const robotweax_srt_telemetry_recorder_connection_v1 *connection)
+{
     if (recorder == nullptr || raw == nullptr || delta == nullptr)
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
     if (!valid_raw(raw) || !valid_delta(delta) ||
         (member != nullptr && (member->struct_size < sizeof(*member) ||
-                               member->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)))
+                               member->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)) ||
+        (connection != nullptr && (connection->struct_size < sizeof(*connection) ||
+                                   connection->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)))
     {
         return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    auto age = no_age;
+    if (connection != nullptr)
+    {
+        if (connection->available > 1 || connection->reserved != 0 ||
+            (connection->available == 1 && connection->connection_age_nano == no_age))
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+        }
+        if (connection->available == 1)
+        {
+            age = connection->connection_age_nano;
+        }
     }
     MemberCell cell;
     if (member != nullptr)
@@ -535,7 +576,18 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_push_m
         cell = {true, member->state, member->standby != 0, member->authority};
     }
     std::lock_guard lock(recorder->mutex);
-    push_locked(*recorder, *raw, *delta, cell);
+    if (age != no_age && recorder->ages.empty())
+    {
+        try
+        {
+            recorder->ages.assign(recorder->records.size(), no_age);
+        }
+        catch (const std::bad_alloc &)
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+        }
+    }
+    push_locked(*recorder, *raw, *delta, cell, age);
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
@@ -785,12 +837,13 @@ std::string_view knob_direction_name(const robotweax_srt_telemetry_knob_directio
 
 /* One health line; false for a status the schema cannot carry. */
 bool serialize_health(const robotweax_srt_telemetry_jsonl_export_config_v1 &config, const HealthCell &cell,
-                      const std::uint64_t sample_index, const bool carried, const bool group_row, std::string &line)
+                      const std::uint64_t sample_index, const bool carried, const bool group_row, std::string &line,
+                      const std::string_view version)
 {
     std::ostringstream output;
     output.imbue(std::locale::classic());
     output << std::setprecision(std::numeric_limits<double>::max_digits10)
-           << "{\"schemaVersion\":\"1alpha2\",\"kind\":\"robotweax-srt-telemetry-health\",\"streamId\":";
+           << "{\"schemaVersion\":\"" << version << "\",\"kind\":\"robotweax-srt-telemetry-health\",\"streamId\":";
     append_json_string(output, config.stream_id);
     output << ",\"sampleIndex\":" << sample_index << ",\"observedAtUnixNano\":" << cell.observed_at_unix_nano
            << ",\"verdict\":\""
@@ -831,35 +884,71 @@ bool serialize_health(const robotweax_srt_telemetry_jsonl_export_config_v1 &conf
 
 } // namespace
 
-extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v2(
-    const robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
-    const robotweax_srt_telemetry_jsonl_export_v2_options *options, const robotweax_srt_telemetry_jsonl_sink sink,
-    void *user_data)
+namespace
 {
-    if (recorder == nullptr || config == nullptr || options == nullptr || sink == nullptr)
+
+/* The 1alpha3 additions, validated. */
+struct V3Header
+{
+    std::string session_ref; /* empty: null */
+    std::string path_label;  /* lowercase hex; empty: null */
+    std::int32_t group_id = -1;
+    std::int32_t peer_group_id = -1;
+};
+
+bool valid_session_ref(const char *value)
+{
+    std::size_t length = 0;
+    while (length <= ROBOTWEAX_SRT_TELEMETRY_RECORDING_SESSION_REF_CAPACITY && value[length] != '\0')
     {
-        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+        const auto character = static_cast<unsigned char>(value[length]);
+        if (character < 0x20 || character > 0x7e)
+        {
+            return false;
+        }
+        ++length;
     }
-    if (config->struct_size < sizeof(*config) || config->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION ||
-        options->struct_size < sizeof(*options) || options->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    return length != 0 && length <= ROBOTWEAX_SRT_TELEMETRY_RECORDING_SESSION_REF_CAPACITY;
+}
+
+void append_optional_int(std::string &out, const std::string_view name, const std::int32_t value)
+{
+    out += ",\"";
+    out += name;
+    out += "\":";
+    out += value >= 0 ? std::to_string(value) : std::string("null");
+}
+
+void append_optional_string(std::string &out, const std::string_view name, const std::string &value)
+{
+    out += ",\"";
+    out += name;
+    out += "\":";
+    if (value.empty())
     {
-        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+        out += "null";
+        return;
     }
-    if (!valid_export_config(config) || options->group_type > ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_UNKNOWN ||
-        options->group_row > ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER || options->health_lines > 1 ||
-        options->reserved != 0 ||
-        (options->group_type == ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_NONE) !=
-            (options->group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE))
-    {
-        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
-    }
+    std::ostringstream text;
+    append_json_string(text, value);
+    out += text.str();
+}
+
+/* 1alpha2, or 1alpha3 when v3 is given. Arguments are validated. */
+robotweax_srt_telemetry_error export_grouped(const robotweax_srt_telemetry_recorder &recorder,
+                                             const robotweax_srt_telemetry_jsonl_export_config_v1 &config,
+                                             const std::uint32_t group_type, const std::uint32_t group_row_kind,
+                                             const bool health_lines, const V3Header *v3,
+                                             const robotweax_srt_telemetry_jsonl_sink sink, void *user_data)
+{
     static constexpr const char *group_types[] = {"null", "\"broadcast\"", "\"backup\"", "\"unknown\""};
     static constexpr const char *group_rows[] = {"null", "\"group\"", "\"member\""};
-    const bool member_row = options->group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER;
-    const bool group_row = options->group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_GROUP;
+    const std::string_view version = v3 != nullptr ? "1alpha3" : "1alpha2";
+    const bool member_row = group_row_kind == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER;
+    const bool group_row = group_row_kind == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_GROUP;
     try
     {
-        const auto snap = snapshot(*recorder);
+        const auto snap = snapshot(recorder);
         const auto first = snap.first_sample;
         const auto end = first + snap.records.size();
         /* Health lines to write: the transition in force at the first kept
@@ -867,7 +956,7 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
          * samples. Transitions older than that one are overwritten. */
         std::vector<std::pair<const HealthCell *, bool>> lines;
         std::uint64_t overwritten = snap.health_dropped;
-        if (options->health_lines != 0 && !snap.records.empty())
+        if (health_lines && !snap.records.empty())
         {
             const HealthCell *in_force = nullptr;
             for (const auto &cell : snap.health)
@@ -909,14 +998,41 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
             overwritten = 0;
         }
         std::string extra = ",\"groupType\":";
-        extra += group_types[options->group_type];
+        extra += group_types[group_type];
         extra += ",\"groupRow\":";
-        extra += group_rows[options->group_row];
-        extra += options->health_lines != 0 ? ",\"healthLines\":true" : ",\"healthLines\":false";
+        extra += group_rows[group_row_kind];
+        extra += health_lines ? ",\"healthLines\":true" : ",\"healthLines\":false";
         extra += ",\"healthCount\":" + std::to_string(lines.size()) +
                  ",\"healthOverwrittenCount\":" + std::to_string(overwritten);
-        const auto header = serialize_header(*config, snap.records.size(), snap.capacity, snap.overwritten_count,
-                                             "1alpha2", extra);
+        if (v3 != nullptr)
+        {
+            append_optional_string(extra, "sessionRef", v3->session_ref);
+            append_optional_int(extra, "groupId", v3->group_id);
+            append_optional_int(extra, "peerGroupId", v3->peer_group_id);
+            append_optional_string(extra, "pathLabel", v3->path_label);
+            /* The first kept sample's connection: its clocks minus its age
+             * (a sample whose age exceeds its clocks says nothing). */
+            std::size_t aged = 0;
+            while (aged < snap.ages.size() &&
+                   (snap.ages[aged] == no_age || snap.ages[aged] > snap.records[aged].raw.observed_at_unix_nano ||
+                    snap.ages[aged] > snap.records[aged].raw.sample_monotonic_nano))
+            {
+                ++aged;
+            }
+            if (aged < snap.ages.size())
+            {
+                const auto &raw = snap.records[aged].raw;
+                const auto age = snap.ages[aged];
+                extra += ",\"connectedAtUnixNano\":" + std::to_string(raw.observed_at_unix_nano - age) +
+                         ",\"connectedAtMonotonicNano\":" + std::to_string(raw.sample_monotonic_nano - age);
+            }
+            else
+            {
+                extra += ",\"connectedAtUnixNano\":null,\"connectedAtMonotonicNano\":null";
+            }
+        }
+        const auto header = serialize_header(config, snap.records.size(), snap.capacity, snap.overwritten_count,
+                                             version, extra);
         if (sink(user_data, header.data(), header.size()) != 0)
         {
             return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
@@ -925,8 +1041,13 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
         for (std::size_t index = 0; index < snap.records.size(); ++index)
         {
             std::string line;
-            const std::string member = member_row ? member_json(snap.members[index]) : ",\"member\":null";
-            if (!serialize_record(*config, snap.records[index], index, line, "1alpha2", member))
+            std::string sample_extra = member_row ? member_json(snap.members[index]) : ",\"member\":null";
+            if (v3 != nullptr)
+            {
+                sample_extra += ",\"connectionAgeNano\":";
+                sample_extra += snap.ages[index] != no_age ? std::to_string(snap.ages[index]) : std::string("null");
+            }
+            if (!serialize_record(config, snap.records[index], index, line, version, sample_extra))
             {
                 return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
             }
@@ -939,7 +1060,8 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
                    (lines[next].second ? index == 0 : lines[next].first->sample - first == index))
             {
                 std::string health;
-                if (!serialize_health(*config, *lines[next].first, index, lines[next].second, group_row, health))
+                if (!serialize_health(config, *lines[next].first, index, lines[next].second, group_row, health,
+                                      version))
                 {
                     return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
                 }
@@ -960,4 +1082,92 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
         return ROBOTWEAX_SRT_TELEMETRY_SINK_FAILURE;
     }
     return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+bool valid_group_context(const std::uint32_t group_type, const std::uint32_t group_row, const std::uint32_t health_lines)
+{
+    return group_type <= ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_UNKNOWN &&
+           group_row <= ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER && health_lines <= 1 &&
+           (group_type == ROBOTWEAX_SRT_TELEMETRY_RECORDING_GROUP_NONE) ==
+               (group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE);
+}
+
+} // namespace
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v2(
+    const robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+    const robotweax_srt_telemetry_jsonl_export_v2_options *options, const robotweax_srt_telemetry_jsonl_sink sink,
+    void *user_data)
+{
+    if (recorder == nullptr || config == nullptr || options == nullptr || sink == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (config->struct_size < sizeof(*config) || config->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION ||
+        options->struct_size < sizeof(*options) || options->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    if (!valid_export_config(config) ||
+        !valid_group_context(options->group_type, options->group_row, options->health_lines) ||
+        options->reserved != 0)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    return export_grouped(*recorder, *config, options->group_type, options->group_row, options->health_lines != 0,
+                          nullptr, sink, user_data);
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v3(
+    const robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+    const robotweax_srt_telemetry_jsonl_export_v3_options *options, const robotweax_srt_telemetry_jsonl_sink sink,
+    void *user_data)
+{
+    if (recorder == nullptr || config == nullptr || options == nullptr || sink == nullptr)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    if (config->struct_size < sizeof(*config) || config->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION ||
+        options->struct_size < sizeof(*options) || options->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    }
+    const bool plain = options->group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_NONE;
+    const bool member_row = options->group_row == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER;
+    const auto label_length = options->path_label_length;
+    if (!valid_export_config(config) ||
+        !valid_group_context(options->group_type, options->group_row, options->health_lines) ||
+        options->reserved[0] != 0 || options->reserved[1] != 0 ||
+        label_length > ROBOTWEAX_SRT_TELEMETRY_RECORDING_PATH_LABEL_CAPACITY || (label_length != 0 && !member_row) ||
+        !std::all_of(options->path_label + label_length,
+                     options->path_label + ROBOTWEAX_SRT_TELEMETRY_RECORDING_PATH_LABEL_CAPACITY,
+                     [](const std::uint8_t byte) { return byte == 0; }) ||
+        options->group_id < -1 || options->peer_group_id < -1 ||
+        (plain && (options->group_id != -1 || options->peer_group_id != -1)) ||
+        (options->session_ref != nullptr && !valid_session_ref(options->session_ref)))
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    }
+    V3Header v3;
+    try
+    {
+        if (options->session_ref != nullptr)
+        {
+            v3.session_ref = options->session_ref;
+        }
+        constexpr char hex[] = "0123456789abcdef";
+        for (std::uint32_t i = 0; i < label_length; ++i)
+        {
+            v3.path_label += hex[options->path_label[i] >> 4];
+            v3.path_label += hex[options->path_label[i] & 15];
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
+    v3.group_id = options->group_id;
+    v3.peer_group_id = options->peer_group_id;
+    return export_grouped(*recorder, *config, options->group_type, options->group_row, options->health_lines != 0, &v3,
+                          sink, user_data);
 }

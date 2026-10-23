@@ -129,7 +129,7 @@ record.
 
 | Contract field | Source | Notes |
 | --- | --- | --- |
-| ext `connection_age_seconds` | `msTimeStamp` | time since connect; transport-local, never wall clock |
+| ext `connection_age_seconds` | `msTimeStamp` | time since connect; transport-local, never wall clock. Robotweax SRT starts it at the handshake on both ends; Haivision SRT starts a caller's at `srt_connect`. Recorded per sample as `connectionAgeNano` in [recording schema 1alpha3](bounded-recorder.md#schema-1alpha3) |
 
 ## `mbpsBandwidth` differs by provider
 

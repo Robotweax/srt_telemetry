@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -33,6 +34,17 @@
 
 namespace
 {
+
+/* The member entry grew by path_label (srt_telemetry#57); a host passes
+ * sizeof as member_entry_size, so a mismatch is reported, never misread. */
+static_assert(offsetof(robotweax_srt_telemetry_group_member_v1, path_label) + ROBOTWEAX_SRT_TELEMETRY_GROUP_PATH_LABEL_CAPACITY <=
+                  sizeof(robotweax_srt_telemetry_group_member_v1),
+              "path_label ends the member entry");
+#if UINTPTR_MAX == UINT64_MAX
+static_assert(sizeof(robotweax_srt_telemetry_group_member_v1) ==
+                  offsetof(robotweax_srt_telemetry_group_member_v1, path_label) + 72,
+              "member entry layout (64-bit)");
+#endif
 
 int failures = 0;
 
@@ -889,6 +901,228 @@ void recording_1alpha2_scenario()
         std::filesystem::copy(directory, keep, std::filesystem::copy_options::recursive |
                                                    std::filesystem::copy_options::overwrite_existing);
     }
+    std::filesystem::remove_all(directory);
+}
+
+/* Recording schema 1alpha3 on a live group pair (srt_telemetry#57): both
+ * ends' rows carry the session reference and their group IDs; the accepting
+ * side notes the caller's proposed group ID at admission (Robotweax SRT), and
+ * with negotiated labels both ends' member rows carry the same label, so
+ * SRT Doctor can pair group with group and path with path. */
+int note_peer_group(void *embed, SRTSOCKET socket, int, const sockaddr *, const char *)
+{
+#if defined(ROBOTWEAX_SRT_COMPAT_SRT_H) || defined(ROBOTWEAX_SRT_FLAT_COMPAT_HEADER_H)
+    static_cast<void>(
+        robotweax_srt_telemetry_host_embed_note_peer_group(static_cast<robotweax_srt_telemetry_embed *>(embed), socket));
+    const std::uint64_t domain = 1;
+    srt_setsockflag(socket, SRTO_ROBOTWEAX_GROUPDOMAIN, &domain, sizeof(domain));
+#else
+    static_cast<void>(embed);
+    static_cast<void>(socket);
+#endif
+    return 0;
+}
+
+std::string header_field(const std::string &line, const std::string &key)
+{
+    const auto at = line.find("\"" + key + "\":");
+    if (at == std::string::npos)
+        return "<absent>";
+    auto start = at + key.size() + 3;
+    if (line[start] == '"')
+        return line.substr(start + 1, line.find('"', start + 1) - start - 1);
+    return line.substr(start, line.find_first_of(",}", start) - start);
+}
+
+void recording_1alpha3_scenario()
+{
+    const bool robotweax = ROBOTWEAX_SRT_TELEMETRY_HOST_PROVIDER == ROBOTWEAX_SRT_TELEMETRY_PROVIDER_ROBOTWEAX_SRT;
+    bool labels = false;
+    const auto directory = recording_root() / ("srt-telemetry-group-1alpha3-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    robotweax_srt_telemetry_embed_config_v1 config;
+    robotweax_srt_telemetry_embed_config_default(&config);
+    robotweax_srt_telemetry_host_embed_functions(&config);
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+    robotweax_srt_telemetry_host_embed_path_data(&config);
+    labels = true;
+#endif
+    config.flags = ROBOTWEAX_SRT_TELEMETRY_EMBED_NO_HTTP;
+    const auto spec = "off,jsonl=" + directory.string() + ",jsonl_schema=1alpha3,linger_s=0";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "1alpha3 group spec");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "1alpha3 group start");
+    if (embed == nullptr)
+        return;
+    GroupRecordingEvents events;
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, GroupRecordingEvents::callback, &events) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "1alpha3 group recording callback");
+
+    const SRTSOCKET listener = srt_create_socket();
+    const SRTSOCKET caller = srt_create_group(SRT_GTYPE_BACKUP);
+    int yes = 1;
+    srt_setsockflag(listener, SRTO_GROUPCONNECT, &yes, sizeof(yes));
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+    check(srt_setsockflag(listener, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0 &&
+              srt_setsockflag(caller, SRTO_ROBOTWEAX_PATHID_REQUIRED, &yes, sizeof(yes)) == 0,
+          "1alpha3: both peers require path labels");
+#endif
+    if (robotweax)
+        check(srt_listen_callback(listener, note_peer_group, embed) == 0, "1alpha3: listen callback");
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+    int length = sizeof(address);
+    check(srt_bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0 &&
+              srt_listen(listener, 4) == 0 &&
+              srt_getsockname(listener, reinterpret_cast<sockaddr *>(&address), &length) == 0,
+          "1alpha3: listen");
+    std::atomic<SRTSOCKET> accepted{SRT_INVALID_SOCK};
+    std::atomic<bool> stop{false};
+    std::thread receiver([&] {
+        const SRTSOCKET socket = srt_accept(listener, nullptr, nullptr);
+        if (socket == SRT_INVALID_SOCK)
+            return;
+        accepted = socket;
+        int timeout = 100;
+        srt_setsockflag(socket, SRTO_RCVTIMEO, &timeout, sizeof(timeout));
+        char buffer[1500];
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_recvmsg2(socket, buffer, sizeof(buffer), &control));
+        }
+    });
+    std::vector<SRT_SOCKGROUPCONFIG> endpoints;
+    for (const char *label : {"lte", "sat"})
+    {
+        endpoints.push_back(srt_prepare_endpoint(nullptr, reinterpret_cast<sockaddr *>(&address), sizeof(address)));
+        endpoints.back().weight = std::string_view(label) == "lte" ? 20 : 10;
+#if defined(ROBOTWEAX_SRT_PATHID_NEGOTIATED)
+        endpoints.back().config = srt_create_config();
+        srt_config_add(endpoints.back().config, SRTO_ROBOTWEAX_PATHID, label, static_cast<int>(std::strlen(label)));
+#else
+        static_cast<void>(label);
+#endif
+    }
+    const bool connected = srt_connect_group(caller, endpoints.data(), 2) != SRT_ERROR;
+    for (auto &endpoint : endpoints)
+        if (endpoint.config != nullptr)
+            srt_delete_config(endpoint.config);
+    check(connected, "1alpha3: connect group");
+    std::thread sender([&] {
+        char payload[1316] = {};
+        while (!stop)
+        {
+            SRT_MSGCTRL control = srt_msgctrl_default;
+            static_cast<void>(srt_sendmsg2(caller, payload, sizeof(payload), &control));
+            sleep_ms(2);
+        }
+    });
+    check(wait_for([&] { return accepted != SRT_INVALID_SOCK; }, 5000), "1alpha3: accepted");
+    robotweax_srt_telemetry_label_v1 stream_label[] = {{"stream", "cam-v3"}};
+    robotweax_srt_telemetry_embed_group_v1 g;
+    robotweax_srt_telemetry_embed_group_default(&g);
+    g.group = caller;
+    g.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER;
+    g.group_type = ROBOTWEAX_SRT_TELEMETRY_GROUP_TYPE_BACKUP;
+    g.labels = stream_label;
+    g.label_count = 1;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &g) == ROBOTWEAX_SRT_TELEMETRY_OK, "1alpha3: attach sender");
+    g.group = accepted;
+    g.role = ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER;
+    check(robotweax_srt_telemetry_embed_attach_group(embed, &g) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "1alpha3: attach receiver");
+    /* On the group handle: its members follow it. */
+    check(robotweax_srt_telemetry_embed_set_session_ref(embed, caller, "pair-1") == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_set_session_ref(embed, accepted, "pair-1") == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "1alpha3: session reference on both groups");
+    const bool settled = wait_for(
+        [&]
+        {
+            const auto all = sources(embed);
+            return count_with(all, {"\"stream\":\"cam-v3\"", "\"path\":", "\"connection\":\"connected\""}) == 4;
+        },
+        15000);
+    check(settled, "1alpha3: four member rows connected");
+    sleep_ms(1000);
+    check(robotweax_srt_telemetry_embed_write_recording(embed, caller) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_embed_write_recording(embed, accepted) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "1alpha3: live writes");
+    check(wait_for([&] { return events.copy().size() >= 6; }, write_timeout_ms),
+          "1alpha3: two groups and four members written: " + std::to_string(events.copy().size()));
+
+    std::map<std::string, std::vector<std::string>> rows; /* "<role>/<groupRow>" -> headers */
+    for (const auto &entry : std::filesystem::directory_iterator(directory))
+    {
+        std::ifstream in(entry.path());
+        std::string header;
+        std::getline(in, header);
+        rows[header_field(header, "role") + "/" + header_field(header, "groupRow")].push_back(header);
+        check(header_field(header, "schemaVersion") == "1alpha3" && header_field(header, "sessionRef") == "pair-1" &&
+                  header_field(header, "connectedAtUnixNano") != "null",
+              "1alpha3 group header: " + header);
+        bool aged = false;
+        for (std::string line; std::getline(in, line);)
+            aged = aged || (has(line, "robotweax-srt-telemetry-sample") && !has(line, "\"connectionAgeNano\":null"));
+        check(aged, "1alpha3 samples carry connection ages: " + entry.path().filename().string());
+    }
+    check(rows["sender/group"].size() == 1 && rows["receiver/group"].size() == 1 && rows["sender/member"].size() == 2 &&
+              rows["receiver/member"].size() == 2,
+          "1alpha3: one group row and two member rows per end");
+    const auto caller_id = std::to_string(caller);
+    const auto accepted_id = std::to_string(accepted.load());
+    for (const auto &[kind, headers] : rows)
+    {
+        for (const auto &header : headers)
+        {
+            const bool sending = kind.rfind("sender", 0) == 0;
+            check(header_field(header, "groupId") == (sending ? caller_id : accepted_id),
+                  "1alpha3: groupId is this end's group handle: " + header);
+            const auto peer = header_field(header, "peerGroupId");
+            if (sending || !robotweax)
+                check(peer == "null", "1alpha3: no peer group ID on the caller or without Robotweax SRT: " + header);
+            else
+                check(peer == caller_id, "1alpha3: the accepting side noted the caller's group ID: " + header);
+        }
+    }
+    if (labels)
+    {
+        std::map<std::string, std::map<std::string, std::int64_t>> starts; /* label -> role -> start */
+        for (const auto *kind : {"sender/member", "receiver/member"})
+            for (const auto &header : rows[kind])
+                starts[header_field(header, "pathLabel")][header_field(header, "role")] =
+                    std::stoll(header_field(header, "connectedAtUnixNano"));
+        check(starts.size() == 2 && starts.count("6c7465") == 1 && starts.count("736174") == 1,
+              "1alpha3: both ends' member rows carry the labels lte and sat");
+        for (const auto &[label, by_role] : starts)
+        {
+            if (by_role.size() != 2)
+                continue;
+            const auto difference = std::llabs(by_role.at("sender") - by_role.at("receiver"));
+            std::cout << "1alpha3 group pair: path " << label << " connection starts differ by " << difference / 1000
+                      << " us\n";
+            check(difference < 100'000'000, "1alpha3: a path's two connection starts within 100 ms: " +
+                                                std::to_string(difference) + " ns");
+        }
+    }
+    else
+    {
+        for (const auto *kind : {"sender/member", "receiver/member"})
+            for (const auto &header : rows[kind])
+                check(header_field(header, "pathLabel") == "null", "1alpha3: no label without negotiation: " + header);
+    }
+    srt_close(listener); /* its callback holds the embed */
+    robotweax_srt_telemetry_embed_stop(embed);
+    stop = true;
+    sender.join();
+    srt_close(caller);
+    receiver.join();
+    if (accepted != SRT_INVALID_SOCK)
+        srt_close(accepted);
     std::filesystem::remove_all(directory);
 }
 
@@ -1805,6 +2039,7 @@ int main(int argc, char **argv)
     backup_outage_scenario(true);
 #endif
     recording_1alpha2_scenario();
+    recording_1alpha3_scenario();
     broadcast_scenario();
     duplicate_names_scenario();
     listener_names_reconnect_scenario();

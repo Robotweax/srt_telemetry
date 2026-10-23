@@ -83,6 +83,55 @@ these out. `sdk/tests/test_recording_1alpha2.cpp` checks the line order, the
 carried line and the bounds; `test_recording_schema.py` validates its output
 against the line schema.
 
+## Schema 1alpha3
+
+`robotweax_srt_telemetry_recorder_export_jsonl_v3` writes schema `1alpha3`
+(srt_telemetry#57): everything `1alpha2` carries, plus what lets a reader such
+as SRT Doctor pair the two ends' recordings of one session when they did not
+start together (a bounded window after an app's incident trigger beside a
+long server recording). Every line, health lines too, carries
+`"schemaVersion":"1alpha3"`.
+
+- **Samples** add `connectionAgeNano`: SRT's statistics clock (`msTimeStamp`,
+  the adapter's ext `connection_age_seconds`) at the sample, in nanoseconds,
+  or `null` while the socket is not connected. A group row's counts from its
+  first connected member. A decrease marks a new connection, so a recording
+  that spans reconnections shows each one (the embedding library starts a
+  new recording per connection instead). Push it with
+  `recorder_push_sample_v1` and a `recorder_connection_v1`; pass
+  `available = 1` only for samples of a connected socket.
+- **Header** adds:
+  - `connectedAtUnixNano` and `connectedAtMonotonicNano`: the start of the
+    first kept sample's connection, that sample's clocks minus its age
+    (millisecond resolution, SRT counts whole milliseconds). It survives ring
+    overwrites, because every sample carries its age. `null` when no kept
+    sample has one (a sample whose age exceeds its clocks is skipped).
+  - `sessionRef`: an opaque key both ends agree on, set by the host
+    (printable ASCII, 1–256 bytes), or `null`. Prefer a digest to a raw
+    identifier; Doctor keeps only a digest.
+  - `groupId`: this end's group handle on group and member rows; `null` for a
+    plain socket.
+  - `peerGroupId`: on the accepting side, the group ID the caller proposed
+    (`SRTO_ROBOTWEAX_PEERGROUP`, noted at admission), which equals the
+    caller's `groupId`; otherwise `null`. Untrusted metadata, never
+    authorization.
+  - `pathLabel`: on member rows, the negotiated path label
+    (`SRTO_ROBOTWEAX_PATHID`) as lowercase hex, the same on both ends and
+    independent of what named the path; otherwise `null`.
+
+**What the connection start bounds.** With Robotweax SRT (0.2.9, 0.3.0) both
+ends start their statistics clock when the handshake arrives: on one host
+their starts agreed within 2 ms, also when the caller had waited 1.5 s for
+the listener. With Haivision SRT 1.5.7 the caller's clock starts when
+`srt_connect` is called, the listener's at the handshake: a caller that waited
+2 s for its listener started 2 s earlier. Across hosts, the two starts then
+bound the clock offset only from one side (the caller's is not later than the
+listener's). The header does not say which end was the caller.
+
+`sdk/tests/test_recording_1alpha3.cpp` checks ages, overwrite, reconnection
+and the option rules; `test_recording_schema.py` validates both schemas'
+output and refuses malformed `1alpha3` headers.
+
 The [embedding library](embedding.md#recordings) uses one recorder per source
 to write recordings (`jsonl=DIR`): the same export, written as a complete file
 when a socket is detached, when its source is removed and at stop. The SDK

@@ -132,6 +132,8 @@ extern "C"
 #define ROBOTWEAX_SRT_TELEMETRY_GROUP_ADDRESS_CAPACITY 80u
 /* Two addresses and the separator fit, so automatic names are never cut. */
 #define ROBOTWEAX_SRT_TELEMETRY_GROUP_PATH_CAPACITY 160u
+/* Lowercase hex of the up to 32 label bytes, NUL-terminated. */
+#define ROBOTWEAX_SRT_TELEMETRY_GROUP_PATH_LABEL_CAPACITY 65u
 
     /* What the path_name callback sees about a member. */
     typedef struct robotweax_srt_telemetry_group_member_identity_v1
@@ -223,6 +225,11 @@ extern "C"
         robotweax_srt_telemetry_delta_v1 delta;
         robotweax_srt_telemetry_ext_sample_v1 ext;
         robotweax_srt_telemetry_ext_delta_v1 ext_delta;
+        /* The negotiated path label (Robotweax SRT, with group_path_data
+         * configured) as lowercase hex, whatever named the path: read once
+         * the member is CONNECTED, then kept. Empty while unknown or when
+         * the member's path carries no label. */
+        char path_label[ROBOTWEAX_SRT_TELEMETRY_GROUP_PATH_LABEL_CAPACITY];
     } robotweax_srt_telemetry_group_member_v1;
 
     typedef struct robotweax_srt_telemetry_public_srt_group_result_v1
