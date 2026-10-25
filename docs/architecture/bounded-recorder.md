@@ -119,7 +119,7 @@ long server recording). Every line, health lines too, carries
     (`SRTO_ROBOTWEAX_PATHID`) as lowercase hex, the same on both ends and
     independent of what named the path; otherwise `null`.
 
-**What the connection start bounds.** With Robotweax SRT (0.2.9, 0.3.0) both
+**What the connection start bounds.** With Robotweax SRT (0.2.9, 0.3.0, 0.3.1) both
 ends start their statistics clock when the handshake arrives: on one host
 their starts agreed within 2 ms, also when the caller had waited 1.5 s for
 the listener. With Haivision SRT 1.5.7 the caller's clock starts when
