@@ -296,3 +296,16 @@ export function simulatedApi(
     return reducer(s, body);
   throw new Error(`Unmatched simulation request: ${method} ${path}`);
 }
+
+// Retained confirmations are historical when a submitted command's effect is unknown.
+// Every page consumes this projection instead of treating retained IDs as current truth.
+export function programReadback(s: State) {
+  const uncertain = s.command?.phase === "unknown";
+  return {
+    uncertain,
+    currentProgram: uncertain ? null : s.program,
+    currentObserved: uncertain ? null : s.observed,
+    lastConfirmed: s.program,
+    lastObserved: s.observed,
+  };
+}

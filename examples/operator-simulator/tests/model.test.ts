@@ -103,7 +103,10 @@ describe("simulation safety contracts", () => {
   it("out of order apply cannot fabricate a commit", () => {
     const s = take();
     expect(
-      reducer(s, { type: "event", event: { epoch: s.epoch, kind: "apply" } }),
+      reducer(s, {
+        type: "event",
+        event: { epoch: s.epoch, kind: "apply", commandId: s.command!.id },
+      }),
     ).toBe(s);
   });
 });

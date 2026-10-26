@@ -19,6 +19,7 @@ import {
   blocked,
   busy,
   scenarios,
+  programReadback,
   type Action,
   type Source,
   type Scenario,
@@ -132,6 +133,8 @@ export default function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+  const readback = programReadback(s);
+  const uncertain = readback.uncertain;
   const program = s.sources.find((x) => x.id === s.program)!;
   const preview = s.sources.find((x) => x.id === s.preview)!;
   const detail = s.sources.find((x) => route === `#/stream/${x.id}`);
@@ -252,6 +255,20 @@ export default function App() {
           </small>
         </section>
         <main>
+          {uncertain && (
+            <section className="uncertainty" role="alert">
+              <strong>Current Program unknown · reconciliation required</strong>
+              <p>
+                Last confirmed: {program.name} at revision {s.revision}. Last
+                observed downstream:{" "}
+                {s.observed
+                  ? s.sources.find((x) => x.id === s.observed)?.name
+                  : "Unknown"}{" "}
+                before this request. These are historical observations, not
+                current readback.
+              </p>
+            </section>
+          )}
           <div className="heading">
             <div>
               <p className="eyebrow">
@@ -299,12 +316,12 @@ export default function App() {
                   ungraded
                 </span>
                 <span>
-                  Program <b>{program.name}</b>
+                  Program <b>{uncertain ? "Unknown" : program.name}</b>
                 </span>
                 <span>
                   Destination{" "}
                   <b>
-                    {s.observed
+                    {readback.currentObserved
                       ? s.sources.find((x) => x.id === s.observed)?.name
                       : "Unknown"}
                   </b>
@@ -322,10 +339,12 @@ export default function App() {
                         source={source}
                         label={
                           s.program === source.id
-                            ? "CURRENT PROGRAM"
+                            ? uncertain
+                              ? "LAST CONFIRMED PROGRAM"
+                              : "CURRENT PROGRAM"
                             : "CONTRIBUTION"
                         }
-                        program={s.program === source.id}
+                        program={readback.currentProgram === source.id}
                       />
                       <div className="source-meta">
                         <b>{source.name}</b>
@@ -349,8 +368,11 @@ export default function App() {
                 <div>
                   <b>Program 01</b>
                   <span>
-                    {program.name} → Control room A · downstream{" "}
-                    {s.observed ? "observed (synthetic)" : "unknown"}
+                    {uncertain ? "Unknown current Program" : program.name} →
+                    Control room A · downstream{" "}
+                    {readback.currentObserved
+                      ? "observed (synthetic)"
+                      : "unknown"}
                   </span>
                 </div>
                 <Badge tone={busy(s) ? "warn" : "muted"}>
@@ -391,9 +413,13 @@ export default function App() {
                   <div className="path-node">
                     Program 01
                     <small>
-                      {s.program === detail.id
-                        ? "Selected by confirmed commit"
-                        : "Not selected for Program"}
+                      {uncertain
+                        ? s.program === detail.id
+                          ? "Current selection unknown · last confirmed source before request"
+                          : "Current selection unknown · awaiting reconciliation"
+                        : s.program === detail.id
+                          ? "Selected by confirmed commit"
+                          : "Not selected for Program"}
                     </small>
                   </div>
                   <hr />
@@ -441,18 +467,27 @@ export default function App() {
             <div className="switch-layout">
               <section>
                 <div className="monitor-grid">
-                  <Monitor source={program} label={t.current} program />
+                  <Monitor
+                    source={program}
+                    label={uncertain ? "Last confirmed Program" : t.current}
+                    program={!uncertain}
+                  />
                   <Monitor source={preview} label={t.preview} />
                 </div>
                 <div className="monitor-status">
                   <span>
-                    Commit confirmed · revision {s.revision}
+                    {uncertain
+                      ? "Historical commit · revision"
+                      : "Commit confirmed · revision"}{" "}
+                    {s.revision}
                     <small>
                       Downstream:{" "}
-                      {s.observed
-                        ? s.sources.find((x) => x.id === s.observed)?.name +
-                          " observed (synthetic)"
-                        : "Unknown · awaiting observation"}
+                      {uncertain
+                        ? "Unknown · historical observation shown above"
+                        : s.observed
+                          ? s.sources.find((x) => x.id === s.observed)?.name +
+                            " observed (synthetic)"
+                          : "Unknown · awaiting observation"}
                     </small>
                   </span>
                   <span>
@@ -482,7 +517,9 @@ export default function App() {
                         <small>{source.media}</small>
                         <span>
                           {s.program === source.id
-                            ? "PROGRAM"
+                            ? uncertain
+                              ? "LAST CONFIRMED"
+                              : "PROGRAM"
                             : s.preview === source.id
                               ? "PREVIEW"
                               : "SOURCE"}
@@ -498,9 +535,14 @@ export default function App() {
                       {s.armed ? "ARMED" : "LOCKED"}
                     </Badge>
                     <h2>
-                      {program.name} → {preview.name}
+                      {uncertain ? "Unknown current Program" : program.name} →{" "}
+                      {preview.name}
                     </h2>
-                    <p>Program 01 · Control room A · revision {s.revision}</p>
+                    <p>
+                      Program 01 · Control room A ·{" "}
+                      {uncertain ? "last confirmed revision" : "revision"}{" "}
+                      {s.revision}
+                    </p>
                     <p role="status">
                       {reason ?? (s.armed ? t.armed : t.unsent)}
                     </p>
@@ -549,7 +591,13 @@ export default function App() {
                       "accepted",
                       "applied",
                       "observed",
-                    ].indexOf(phase ?? "");
+                    ].indexOf(
+                      phase === "unknown"
+                        ? "accepted"
+                        : phase === "rejected"
+                          ? "requested"
+                          : (phase ?? ""),
+                    );
                     return (
                       <li key={stage} className={rank >= i ? "reached" : ""}>
                         <span>{i + 1}</span>

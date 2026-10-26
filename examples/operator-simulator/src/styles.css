@@ -843,3 +843,16 @@ button:disabled {
   font-size: 9px;
   color: #57728b;
 }
+.uncertainty {
+  padding: 12px 15px;
+  margin-bottom: 18px;
+  border: 1px solid #deb69c;
+  border-left: 3px solid #f46b25;
+  border-radius: 5px;
+  background: #fff5e9;
+  color: #74401e;
+}
+.uncertainty p {
+  margin-top: 5px;
+  font-size: 11px;
+}

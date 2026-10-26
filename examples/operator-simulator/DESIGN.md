@@ -29,3 +29,7 @@ One immutable reducer is the authority across all pages. Source identity, sessio
 English headings and shared copy live in `copy.ts`; domain IDs remain stable. Remaining component-specific sentences are English and require catalog extraction before a second locale. No completed localization or screen-reader conformance claim.
 
 Manual replay is deliberate and clearly described in the simulator panel. It is not representative of production command timing. Production API, authorization, durable command reconciliation, media observations and any automatic playback scheduler remain separate future decisions.
+
+## Uncertain readback correction
+
+`programReadback` projects retained confirmation IDs into current versus historical evidence. A lost response makes current Program and downstream unknown on every page while preserving the last confirmed source/revision and last observed destination as history. Reconciliation restores the known commit first; a separate event restores downstream observation. A rejected request keeps the previous Program known. Stage styling retains reached Requested/Accepted evidence instead of erasing it on unknown/rejected outcomes.

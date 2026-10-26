@@ -45,6 +45,13 @@ it("rejection and recovery are actionable", async () => {
   );
   await user.click(screen.getByRole("button", { name: /Next event/ }));
   expect(screen.getByText(/Known Program is preserved/)).toBeVisible();
+  expect(
+    screen.getByText("requested", { selector: ".stages b" }).closest("li"),
+  ).toHaveClass("reached");
+  expect(
+    screen.getByRole("img", { name: /Current Program: Camera A/ }),
+  ).toBeVisible();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Recover / reconcile" }));
   expect(screen.getByRole("button", { name: "Arm Program 01" })).toBeEnabled();
 });
@@ -76,4 +83,73 @@ it("navigation does not cancel submitted command, reset clears it", async () => 
   await user.click(screen.getByRole("button", { name: "Reset / replay" }));
   expect(screen.getByRole("button", { name: /Next event/ })).toBeDisabled();
   expect(screen.getByText("No command submitted")).toBeVisible();
+});
+
+it("unknown command marks Program and downstream historical across pages until reconciled", async () => {
+  open();
+  const user = userEvent.setup();
+  await user.selectOptions(screen.getByLabelText("Scenario"), "unknown");
+  await user.click(screen.getByRole("button", { name: "Arm Program 01" }));
+  await user.click(
+    screen.getByRole("button", { name: "Take preview to Program" }),
+  );
+  await user.click(screen.getByRole("button", { name: /Next event/ }));
+  await user.click(screen.getByRole("button", { name: /Next event/ }));
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Current Program unknown",
+  );
+  expect(
+    screen.getByRole("img", { name: /Last confirmed Program: Camera A/ }),
+  ).toBeVisible();
+  expect(
+    screen.queryByText("Commit confirmed · revision 7"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Downstream: Unknown · historical observation shown above",
+    ),
+  ).toBeVisible();
+  expect(
+    screen.getByText("LAST CONFIRMED", { selector: ".bank-buttons span" }),
+  ).toBeVisible();
+  const navigate = async (path: string) =>
+    act(async () => {
+      window.location.hash = path;
+      fireEvent(window, new HashChangeEvent("hashchange"));
+    });
+  await navigate("/");
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Last confirmed: Camera A",
+  );
+  expect(
+    screen.getAllByText("Unknown", { selector: ".summary-strip b" }),
+  ).toHaveLength(2);
+  expect(screen.queryByText("CURRENT PROGRAM")).not.toBeInTheDocument();
+  await navigate("/stream/a");
+  expect(
+    screen.getByText(
+      "Current selection unknown · last confirmed source before request",
+    ),
+  ).toBeVisible();
+  expect(
+    screen.queryByText("Selected by confirmed commit"),
+  ).not.toBeInTheDocument();
+  await navigate("/stream/b");
+  expect(
+    screen.getByText("Current selection unknown · awaiting reconciliation"),
+  ).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Recover / reconcile" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByText("Selected by confirmed commit")).toBeVisible();
+  await navigate("/program");
+  expect(
+    screen.getByRole("img", { name: /Current Program: Camera B/ }),
+  ).toBeVisible();
+  expect(
+    screen.getByText("Downstream: Unknown · awaiting observation"),
+  ).toBeVisible();
+  await user.click(screen.getByRole("button", { name: /Next event/ }));
+  expect(
+    screen.getByText("Downstream: Camera B observed (synthetic)"),
+  ).toBeVisible();
 });
