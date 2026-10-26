@@ -1188,6 +1188,84 @@ void test_recording_1alpha3_continuation()
     std::filesystem::remove_all(directory);
 }
 
+/* Recording schema 1alpha4 (srt_telemetry#60): the observer the host set is
+ * written by every write of a recording (a live write as SRT Server's EXPORT
+ * asks, and the final write at stop); a recording keeps the observer it
+ * started with, and a change applies to recordings started after it. */
+void test_recording_1alpha4_observer()
+{
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-1alpha4-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    auto config = base_config();
+    const auto spec = "off,name=cam-9,jsonl=" + directory.string() + ",linger_s=0,jsonl_schema=1alpha4";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              config.recording_schema == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA4,
+          "jsonl_schema=1alpha4 parses");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "1alpha4 start");
+    if (embed == nullptr)
+        return;
+    const std::string long_value(65, 'n');
+    bool refused = robotweax_srt_telemetry_embed_set_observer_v1(nullptr, "edge-fra-2", nullptr) ==
+                   ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    for (const char *bad : {"", "null", "edge fra", long_value.c_str()})
+        refused = refused &&
+                  robotweax_srt_telemetry_embed_set_observer_v1(embed, bad, "inst-1") ==
+                      ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT &&
+                  robotweax_srt_telemetry_embed_set_observer_v1(embed, "edge-fra-2", bad) ==
+                      ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    check(refused, "observer refusals");
+    check(robotweax_srt_telemetry_embed_set_observer_v1(embed, "edge-fra-2", "inst-1") == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "observer set");
+    RecordingEvents events;
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, RecordingEvents::callback, &events) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "1alpha4 recording callback");
+    Stream first;
+    check(first.open(nullptr) && robotweax_srt_telemetry_embed_attach(embed, first.sender,
+                                                                      ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                                      nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "first source attached");
+    first.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    check(robotweax_srt_telemetry_embed_write_recording(embed, first.sender) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              wait_until([&] { return events.size() >= 1; }, 5'000),
+          "live write (EXPORT) reported");
+    const auto first_file = events.size() >= 1 ? events.path(0) : std::string();
+    auto header = first_file.empty() ? std::string() : read_lines(first_file).at(0);
+    check(json_field(header, "schemaVersion") == "1alpha4" && json_field(header, "observerNode") == "edge-fra-2" &&
+              json_field(header, "observerInstance") == "inst-1",
+          "the live write carries the observer: " + header);
+
+    /* A new incarnation without a known node: only new recordings take it. */
+    check(robotweax_srt_telemetry_embed_set_observer_v1(embed, nullptr, "inst-2") == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "observer changed");
+    Stream second;
+    check(second.open(nullptr) && robotweax_srt_telemetry_embed_attach(embed, second.receiver,
+                                                                       ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_RECEIVER,
+                                                                       nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "second source attached");
+    second.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    robotweax_srt_telemetry_embed_stop(embed);
+    first.stop();
+    second.stop();
+    std::map<std::string, std::string> by_instance;
+    for (const auto &file : recordings_in(directory))
+    {
+        const auto lines = read_lines(file);
+        if (!lines.empty())
+            by_instance[json_field(lines[0], "observerInstance")] = lines[0];
+    }
+    check(by_instance.size() == 2 && json_field(by_instance["inst-1"], "observerNode") == "edge-fra-2" &&
+              json_field(by_instance["inst-2"], "observerNode") == "null" &&
+              json_field(by_instance["inst-2"], "role") == "receiver",
+          "the final write at stop keeps each recording's observer; the node stays unknown when not given");
+    std::filesystem::remove_all(directory);
+}
+
 /* The recording callback may call into the embed, also while stop runs;
  * clearing the callback waits for a running call. */
 struct ReentrantCallback
@@ -1524,6 +1602,7 @@ int main()
     test_live_recording();
     test_recording_1alpha3_pair();
     test_recording_1alpha3_continuation();
+    test_recording_1alpha4_observer();
     test_recording_callback_reentry();
     test_thread_names();
 #if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)

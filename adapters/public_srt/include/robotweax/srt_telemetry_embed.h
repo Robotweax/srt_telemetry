@@ -71,6 +71,8 @@ extern "C"
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA2 2u
 /* 1alpha2 plus what pairs both ends of a session (srt_telemetry#57). */
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA3 3u
+/* 1alpha3 plus the observer node and instance (srt_telemetry#60). */
+#define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA4 4u
 
 /* embed_config_v1.flags */
 /* No HTTP server (OTLP only, or a host that serves the sampler itself). */
@@ -145,7 +147,9 @@ extern "C"
          * ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA3 adds each sample's
          * connection age, the connection start, the session reference
          * (embed_set_session_ref), group IDs and negotiated path labels: what
-         * pairs the two ends' recordings of one session. */
+         * pairs the two ends' recordings of one session.
+         * ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA4 adds the observer
+         * that wrote the recording (embed_set_observer_v1). */
         uint32_t recording_schema;
         /* Recording header metadata, printable ASCII: the SRT library version
          * (robotweax_srt_telemetry_host_embed_functions fills it from srt.h)
@@ -181,7 +185,7 @@ extern "C"
      * line, trimmed), host=NAME (allowed host name; repeatable), otlp=URL,
      * otlp_interval_ms=N, history_s=N, linger_s=N, stream_id (label sources
      * with their stream ID), no_ui, jsonl=DIR (recordings), jsonl_s=N
-     * (recording ring), jsonl_schema=1alpha1|1alpha2|1alpha3, provider_revision=REV.
+     * (recording ring), jsonl_schema=1alpha1|1alpha2|1alpha3|1alpha4, provider_revision=REV.
      * A bare port binds 127.0.0.1, ":port" every interface; "off" needs
      * otlp= or jsonl=. INVALID_ARGUMENT names nothing; the spec
      * is short enough to check by eye. */
@@ -431,6 +435,18 @@ extern "C"
      * listener before embed_stop. peer_group < 0, and a note for a socket
      * attached on its own (not as a group member), are ignored. See
      * robotweax_srt_telemetry_host_embed_note_peer_group. */
+    /* Sets the observer written into every 1alpha4 recording started from
+     * now on (a recording keeps the values it started with): node, the
+     * deployment node the operator assigned to this host, and instance, this
+     * process's incarnation. Each is 1..64 bytes of [A-Za-z0-9_.-], not the
+     * word "null"; NULL means unknown (null in the header). Telemetry never
+     * derives either itself. Set it before the first attach. Refused values
+     * change nothing (INVALID_ARGUMENT); INVALID_STATE once stop has begun.
+     * Thread-safe. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_embed_set_observer_v1(robotweax_srt_telemetry_embed *embed, const char *node,
+                                                 const char *instance);
+
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_embed_note_peer_group_v1(robotweax_srt_telemetry_embed *embed, int32_t socket,
                                                     int32_t peer_group);

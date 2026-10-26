@@ -12,6 +12,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace
@@ -894,7 +895,29 @@ struct V3Header
     std::string path_label;  /* lowercase hex; empty: null */
     std::int32_t group_id = -1;
     std::int32_t peer_group_id = -1;
+    /* 1alpha4: the observer; empty: null. */
+    bool v4 = false;
+    std::string observer_node;
+    std::string observer_instance;
 };
+
+/* An observer node or instance: 1..64 of [A-Za-z0-9_.-], not "null". */
+bool valid_observer(const char *value)
+{
+    std::size_t length = 0;
+    while (length <= ROBOTWEAX_SRT_TELEMETRY_RECORDING_OBSERVER_CAPACITY && value[length] != '\0')
+    {
+        const auto c = value[length];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '.' ||
+              c == '-'))
+        {
+            return false;
+        }
+        ++length;
+    }
+    return length != 0 && length <= ROBOTWEAX_SRT_TELEMETRY_RECORDING_OBSERVER_CAPACITY &&
+           std::string_view(value, length) != "null";
+}
 
 bool valid_session_ref(const char *value)
 {
@@ -943,7 +966,7 @@ robotweax_srt_telemetry_error export_grouped(const robotweax_srt_telemetry_recor
 {
     static constexpr const char *group_types[] = {"null", "\"broadcast\"", "\"backup\"", "\"unknown\""};
     static constexpr const char *group_rows[] = {"null", "\"group\"", "\"member\""};
-    const std::string_view version = v3 != nullptr ? "1alpha3" : "1alpha2";
+    const std::string_view version = v3 == nullptr ? "1alpha2" : v3->v4 ? "1alpha4" : "1alpha3";
     const bool member_row = group_row_kind == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER;
     const bool group_row = group_row_kind == ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_GROUP;
     try
@@ -1010,6 +1033,11 @@ robotweax_srt_telemetry_error export_grouped(const robotweax_srt_telemetry_recor
             append_optional_int(extra, "groupId", v3->group_id);
             append_optional_int(extra, "peerGroupId", v3->peer_group_id);
             append_optional_string(extra, "pathLabel", v3->path_label);
+            if (v3->v4)
+            {
+                append_optional_string(extra, "observerNode", v3->observer_node);
+                append_optional_string(extra, "observerInstance", v3->observer_instance);
+            }
             /* The first kept sample's connection: its clocks minus its age
              * (a sample whose age exceeds its clocks says nothing). */
             std::size_t aged = 0;
@@ -1118,10 +1146,16 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
                           nullptr, sink, user_data);
 }
 
-extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v3(
-    const robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
-    const robotweax_srt_telemetry_jsonl_export_v3_options *options, const robotweax_srt_telemetry_jsonl_sink sink,
-    void *user_data)
+namespace
+{
+/* Validates and exports the 1alpha3 options (and the 1alpha4 observer when
+ * v4 is set). Options is v3_options or v4_options: they share the layout up
+ * to session_ref. */
+template <typename Options>
+robotweax_srt_telemetry_error export_v3_or_v4(const robotweax_srt_telemetry_recorder *recorder,
+                                              const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+                                              const Options *options, const bool v4,
+                                              const robotweax_srt_telemetry_jsonl_sink sink, void *user_data)
 {
     if (recorder == nullptr || config == nullptr || options == nullptr || sink == nullptr)
     {
@@ -1148,6 +1182,17 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
     {
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
     }
+    const char *node = nullptr;
+    const char *instance = nullptr;
+    if constexpr (std::is_same_v<Options, robotweax_srt_telemetry_jsonl_export_v4_options>)
+    {
+        node = options->observer_node;
+        instance = options->observer_instance;
+        if ((node != nullptr && !valid_observer(node)) || (instance != nullptr && !valid_observer(instance)))
+        {
+            return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+        }
+    }
     V3Header v3;
     try
     {
@@ -1161,6 +1206,15 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
             v3.path_label += hex[options->path_label[i] >> 4];
             v3.path_label += hex[options->path_label[i] & 15];
         }
+        v3.v4 = v4;
+        if (node != nullptr)
+        {
+            v3.observer_node = node;
+        }
+        if (instance != nullptr)
+        {
+            v3.observer_instance = instance;
+        }
     }
     catch (const std::bad_alloc &)
     {
@@ -1170,4 +1224,21 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export
     v3.peer_group_id = options->peer_group_id;
     return export_grouped(*recorder, *config, options->group_type, options->group_row, options->health_lines != 0, &v3,
                           sink, user_data);
+}
+} // namespace
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v3(
+    const robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+    const robotweax_srt_telemetry_jsonl_export_v3_options *options, const robotweax_srt_telemetry_jsonl_sink sink,
+    void *user_data)
+{
+    return export_v3_or_v4(recorder, config, options, false, sink, user_data);
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v4(
+    const robotweax_srt_telemetry_recorder *recorder, const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+    const robotweax_srt_telemetry_jsonl_export_v4_options *options, const robotweax_srt_telemetry_jsonl_sink sink,
+    void *user_data)
+{
+    return export_v3_or_v4(recorder, config, options, true, sink, user_data);
 }
