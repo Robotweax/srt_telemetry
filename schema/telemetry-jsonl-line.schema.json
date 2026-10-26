@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://robotweax.com/schemas/srt-telemetry/telemetry-jsonl-line-v1alpha3.json",
-  "title": "Robotweax SRT telemetry JSONL line (1alpha1, 1alpha2 and 1alpha3)",
+  "$id": "https://robotweax.com/schemas/srt-telemetry/telemetry-jsonl-line-v1alpha4.json",
+  "title": "Robotweax SRT telemetry JSONL line (1alpha1 to 1alpha4)",
   "oneOf": [
     {
       "$ref": "#/$defs/recording"
@@ -20,6 +20,12 @@
     },
     {
       "$ref": "#/$defs/sample3"
+    },
+    {
+      "$ref": "#/$defs/recording4"
+    },
+    {
+      "$ref": "#/$defs/sample4"
     },
     {
       "$ref": "#/$defs/health"
@@ -962,6 +968,352 @@
         }
       }
     },
+    "recording4": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "streamId",
+        "flowId",
+        "role",
+        "configuredProvider",
+        "providerVersion",
+        "providerRevision",
+        "buildProfile",
+        "telemetryVersion",
+        "recordCount",
+        "capacity",
+        "overwrittenCount",
+        "groupType",
+        "groupRow",
+        "healthLines",
+        "healthCount",
+        "healthOverwrittenCount",
+        "sessionRef",
+        "groupId",
+        "peerGroupId",
+        "pathLabel",
+        "connectedAtUnixNano",
+        "connectedAtMonotonicNano",
+        "observerNode",
+        "observerInstance"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1alpha4"
+        },
+        "kind": {
+          "const": "robotweax-srt-telemetry-recording"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "flowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "role": {
+          "enum": [
+            "sender",
+            "receiver"
+          ]
+        },
+        "configuredProvider": {
+          "enum": [
+            "haivision-srt",
+            "robotweax-srt"
+          ]
+        },
+        "providerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "providerRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "buildProfile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "telemetryVersion": {
+          "const": "0.1.0-alpha.0"
+        },
+        "recordCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "overwrittenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "groupType": {
+          "enum": [
+            "backup",
+            "broadcast",
+            "unknown",
+            null
+          ]
+        },
+        "groupRow": {
+          "enum": [
+            "group",
+            "member",
+            null
+          ]
+        },
+        "healthLines": {
+          "type": "boolean"
+        },
+        "healthCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "healthOverwrittenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[\\x20-\\x7e]+$",
+          "description": "Opaque key both ends of the session agree on, set by the host; readers keep only a digest."
+        },
+        "groupId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "This end's group handle (group and member rows)."
+        },
+        "peerGroupId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "The group ID the caller proposed (SRTO_ROBOTWEAX_PEERGROUP), noted on the accepting side: the caller's groupId."
+        },
+        "pathLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([0-9a-f]{2}){1,32}$",
+          "description": "Member rows: the negotiated path label (SRTO_ROBOTWEAX_PATHID) as lowercase hex, the same on both ends."
+        },
+        "connectedAtUnixNano": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Start of the first kept sample's connection: its observedAtUnixNano minus its connectionAgeNano."
+        },
+        "connectedAtMonotonicNano": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The same instant on the sample monotonic clock."
+        },
+        "observerNode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "not": {
+            "const": "null"
+          },
+          "description": "The deployment node the operator assigned to the host that wrote this recording; opaque, scoped to its administrative domain; null when unknown."
+        },
+        "observerInstance": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "not": {
+            "const": "null"
+          },
+          "description": "The writing process's incarnation, set by the host; null when unknown."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "groupType": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "groupRow": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "groupRow": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "healthLines": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "healthCount": {
+                "const": 0
+              },
+              "healthOverwrittenCount": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "groupRow": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "groupId": {
+                "type": "null"
+              },
+              "peerGroupId": {
+                "type": "null"
+              },
+              "pathLabel": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "groupRow": {
+                "const": "group"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pathLabel": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "connectedAtUnixNano": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "connectedAtMonotonicNano": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "connectedAtMonotonicNano": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "sample4": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "streamId",
+        "sampleIndex",
+        "raw",
+        "delta",
+        "member",
+        "connectionAgeNano"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1alpha4"
+        },
+        "kind": {
+          "const": "robotweax-srt-telemetry-sample"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sampleIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "raw": {
+          "$ref": "#/$defs/raw"
+        },
+        "delta": {
+          "$ref": "#/$defs/delta"
+        },
+        "member": {
+          "$ref": "#/$defs/member"
+        },
+        "connectionAgeNano": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "SRT's statistics clock (msTimeStamp) at this sample, in nanoseconds: time since the sample's connection started; null while not connected. A group's counts from its first connected member. A decrease marks a new connection."
+        }
+      }
+    },
     "verdict": {
       "enum": [
         "unknown",
@@ -997,7 +1349,8 @@
         "schemaVersion": {
           "enum": [
             "1alpha2",
-            "1alpha3"
+            "1alpha3",
+            "1alpha4"
           ]
         },
         "kind": {

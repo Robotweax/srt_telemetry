@@ -26,8 +26,12 @@ _Static_assert(offsetof(robotweax_srt_telemetry_jsonl_export_v3_options, group_i
 _Static_assert(offsetof(robotweax_srt_telemetry_jsonl_export_v3_options, reserved) == 64, "JSONL v3 reserved offset");
 _Static_assert(offsetof(robotweax_srt_telemetry_jsonl_export_v3_options, session_ref) == 80,
                "JSONL v3 session reference offset");
+_Static_assert(offsetof(robotweax_srt_telemetry_jsonl_export_v4_options, session_ref) ==
+                   offsetof(robotweax_srt_telemetry_jsonl_export_v3_options, session_ref),
+               "JSONL v4 options extend v3");
 #if UINTPTR_MAX == UINT64_MAX
 _Static_assert(sizeof(robotweax_srt_telemetry_jsonl_export_v3_options) == 88, "JSONL v3 options ABI");
+_Static_assert(sizeof(robotweax_srt_telemetry_jsonl_export_v4_options) == 104, "JSONL v4 options ABI");
 #endif
 _Static_assert(offsetof(robotweax_srt_telemetry_rtt_metadata_v1, local_ackack_age_microseconds) ==
                    32,

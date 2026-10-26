@@ -15,6 +15,7 @@ int main(void)
     robotweax_srt_telemetry_recorder *recorder = NULL;
     robotweax_srt_telemetry_jsonl_export_config_v1 config;
     robotweax_srt_telemetry_jsonl_export_v3_options options;
+    robotweax_srt_telemetry_jsonl_export_v4_options v4;
     size_t bytes = 0;
     int result = 0;
     if (strcmp(robotweax_srt_telemetry_version(), "0.1.0-alpha.0") != 0 ||
@@ -43,6 +44,17 @@ int main(void)
         bytes == 0)
     {
         result = 2;
+    }
+    memset(&v4, 0, sizeof(v4));
+    v4.struct_size = sizeof(v4);
+    v4.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    v4.group_id = -1;
+    v4.peer_group_id = -1;
+    v4.observer_node = "node-1";
+    if (robotweax_srt_telemetry_recorder_export_jsonl_v4(recorder, &config, &v4, sink, &bytes) !=
+        ROBOTWEAX_SRT_TELEMETRY_OK)
+    {
+        result = 3;
     }
     robotweax_srt_telemetry_recorder_destroy(recorder);
     return result;

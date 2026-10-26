@@ -404,6 +404,28 @@ opt-in until Doctor reads `1alpha3`. The embed fills:
 With Haivision SRT the caller's connection start is when `srt_connect` was
 called, not the handshake (see the [format](bounded-recorder.md#schema-1alpha3)).
 
+### The observer (schema 1alpha4)
+
+`jsonl_schema=1alpha4` (`ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_1ALPHA4`) is
+`1alpha3` plus the node and process instance that wrote each recording
+([format](bounded-recorder.md#schema-1alpha4), srt_telemetry#60). It stays
+opt-in until SRT Doctor reads it (Doctor #44). The host sets both once,
+before the first attach:
+
+```c
+robotweax_srt_telemetry_embed_set_observer_v1(telemetry, "edge-fra-2", instance_id); /* NULL: unknown */
+```
+
+- A recording copies the observer when it starts and keeps it through every
+  write: detach, a live write (`embed_write_recording`, which SRT Server's
+  EXPORT uses), removal after the linger and `stop`. A later call changes
+  only recordings started after it; with one recording per connection a file
+  never mixes observers.
+- It is not a label: it spends none of the five host labels and is not
+  exported to the snapshot, Prometheus or OTLP.
+- There is no spec option for it: the embed config's layout is fixed, and a
+  host that knows its node and instance calls the function.
+
 ## Threading
 
 One embed thread polls the connection monitors and ticks the sampler every

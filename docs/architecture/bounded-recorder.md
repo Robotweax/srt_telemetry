@@ -132,6 +132,33 @@ listener's). The header does not say which end was the caller.
 and the option rules; `test_recording_schema.py` validates both schemas'
 output and refuses malformed `1alpha3` headers.
 
+## Schema 1alpha4
+
+`robotweax_srt_telemetry_recorder_export_jsonl_v4` writes schema `1alpha4`
+(srt_telemetry#60): `1alpha3` plus the observer that wrote the recording, so a
+reader can tell apart recordings whose flow, resource and session names and
+times repeat across nodes or process restarts. Samples and health lines are
+`1alpha3`'s, labelled `1alpha4`.
+
+- **Header** adds `observerNode`, the deployment node the operator assigned to
+  the writing host (opaque, scoped to its administrative domain), and
+  `observerInstance`, the writing process's incarnation. Each is 1–64 bytes
+  of `[A-Za-z0-9_.-]`, never the word `null`, or `null` when the host did not
+  give it. A known instance with an unknown node is valid.
+- **Set by the host only.** Telemetry never derives either value (not from
+  the host name, a resource, a time, a peer or another recording). An invalid
+  value is refused (`INVALID_ARGUMENT`), never shortened.
+- **Not source identity.** `streamId`, `flowId`, `sessionRef` and the group
+  fields keep their meaning; the observer is neither media identity nor a
+  verified claim. It identifies infrastructure, so readers that package cases
+  should redact it (SRT Doctor #44).
+
+`jsonl_export_v4_options` has the `v3_options` layout followed by
+`observer_node` and `observer_instance` (`NULL`: unknown).
+`sdk/tests/test_recording_1alpha4.cpp` checks values, unknowns and refusals;
+`test_recording_schema.py` validates the output and refuses malformed
+observer fields and observer fields in `1alpha3`.
+
 The [embedding library](embedding.md#recordings) uses one recorder per source
 to write recordings (`jsonl=DIR`): the same export, written as a complete file
 when a socket is detached, when its source is removed and at stop. The SDK

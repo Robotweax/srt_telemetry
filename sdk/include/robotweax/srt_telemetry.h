@@ -576,6 +576,45 @@ extern "C"
         const robotweax_srt_telemetry_jsonl_export_v3_options *options, robotweax_srt_telemetry_jsonl_sink sink,
         void *user_data);
 
+    /* ------------------------------------------------ recording schema 1alpha4
+     * 1alpha3 plus the observer that wrote the recording: the deployment node
+     * and the process instance, both set by the host (srt_telemetry#60,
+     * docs/architecture/bounded-recorder.md#schema-1alpha4). */
+
+/* jsonl_export_v4_options.observer_node / observer_instance: 1..64 bytes of
+ * [A-Za-z0-9_.-], not the word "null". */
+#define ROBOTWEAX_SRT_TELEMETRY_RECORDING_OBSERVER_CAPACITY 64u
+
+    /* The 1alpha3 options, then the observer. */
+    typedef struct robotweax_srt_telemetry_jsonl_export_v4_options
+    {
+        uint32_t struct_size;
+        uint32_t abi_version;
+        /* As in v3_options. */
+        uint32_t group_type;
+        uint32_t group_row;
+        uint32_t health_lines;
+        uint32_t path_label_length;
+        uint8_t path_label[ROBOTWEAX_SRT_TELEMETRY_RECORDING_PATH_LABEL_CAPACITY];
+        int32_t group_id;
+        int32_t peer_group_id;
+        uint64_t reserved[2];
+        const char *session_ref;
+        /* The deployment node the operator assigned to this host (opaque,
+         * scoped to its administrative domain), and this process's
+         * incarnation; NULL when unknown. Never derived by Telemetry. */
+        const char *observer_node;
+        const char *observer_instance;
+    } robotweax_srt_telemetry_jsonl_export_v4_options;
+
+    /* Exports schema 1alpha4: everything 1alpha3 carries, and in the header
+     * observerNode and observerInstance (null when not given). */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_recorder_export_jsonl_v4(
+        const robotweax_srt_telemetry_recorder *recorder,
+        const robotweax_srt_telemetry_jsonl_export_config_v1 *config,
+        const robotweax_srt_telemetry_jsonl_export_v4_options *options, robotweax_srt_telemetry_jsonl_sink sink,
+        void *user_data);
+
 #ifdef __cplusplus
 }
 #endif
