@@ -1,0 +1,32 @@
+UpdateCTestConfiguration  from :/Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote/DartConfiguration.tcl
+Test project /Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 61
+    Start 61: robotweax_srt_telemetry_remote_draft_tests
+
+61: Test command: /Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote/experimental/remote_input/robotweax_srt_telemetry_remote_draft_tests
+61: Working Directory: /Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote/experimental/remote_input
+61: Test timeout computed to be: 30
+61: PASS 82 remote draft assertions; no rate/UI/runtime qualification
+1/2 Test #61: robotweax_srt_telemetry_remote_draft_tests ....   Passed    0.30 sec
+test 62
+    Start 62: robotweax_srt_telemetry_remote_draft_schema
+
+62: Test command: /Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-python/bin/python "/Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/experimental/remote_input/test_schema.py" "/Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote/experimental/remote_input/robotweax_srt_telemetry_remote_draft_tests"
+62: Working Directory: /Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote/experimental/remote_input
+62: Test timeout computed to be: 30
+62: PASS3 closed draft lines, exact contexts/u64s/opaque payload, null versus epoch0, 27 negatives; old recording schema rejects draft
+2/2 Test #62: robotweax_srt_telemetry_remote_draft_schema ...   Passed    0.15 sec
+
+The following tests passed:
+	robotweax_srt_telemetry_remote_draft_tests
+	robotweax_srt_telemetry_remote_draft_schema
+
+100% tests passed out of 2
+
+Total Test time (real) =   0.46 sec

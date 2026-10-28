@@ -10,6 +10,9 @@ project(
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+option(ROBOTWEAX_SRT_TELEMETRY_BUILD_REMOTE_INPUT_DRAFT
+    "Build the uninstalled experimental remote observation envelope (not ABI 1)" OFF)
+
 option(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS "Build telemetry tests" ON)
 option(ROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST
     "Fail configuration when the OTLP protobuf test cannot run (CI)" OFF)
@@ -913,6 +916,12 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/RobotweaxSRTTelemetry)
 install(FILES LICENSE
     DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/robotweax_srt_telemetry)
+
+# Built by tests for contract review, or explicitly for experimentation. Never
+# installed/exported as a released SDK API and never linked into Core/HTTP.
+if(ROBOTWEAX_SRT_TELEMETRY_BUILD_REMOTE_INPUT_DRAFT OR ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
+    add_subdirectory(experimental/remote_input)
+endif()
 # Alert rules, Grafana dashboards and Collector example (docs/architecture/alerting.md).
 install(DIRECTORY observability/
     DESTINATION ${CMAKE_INSTALL_DATADIR}/robotweax_srt_telemetry/observability

@@ -1,0 +1,34 @@
+Internal ctest changing into directory: /tmp/remote-build
+UpdateCTestConfiguration  from :/tmp/remote-build/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/tmp/remote-build/DartConfiguration.tcl
+Test project /tmp/remote-build
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 60
+    Start 60: robotweax_srt_telemetry_remote_draft_tests
+
+60: Test command: /tmp/remote-build/experimental/remote_input/robotweax_srt_telemetry_remote_draft_tests
+60: Working Directory: /tmp/remote-build/experimental/remote_input
+60: Test timeout computed to be: 30
+60: PASS 82 remote draft assertions; no rate/UI/runtime qualification
+1/2 Test #60: robotweax_srt_telemetry_remote_draft_tests ....   Passed    0.01 sec
+test 61
+    Start 61: robotweax_srt_telemetry_remote_draft_schema
+
+61: Test command: /usr/bin/python3 "/telemetry-source/experimental/remote_input/test_schema.py" "/tmp/remote-build/experimental/remote_input/robotweax_srt_telemetry_remote_draft_tests"
+61: Working Directory: /tmp/remote-build/experimental/remote_input
+61: Test timeout computed to be: 30
+61: PASS3 closed draft lines, exact contexts/u64s/opaque payload, null versus epoch0, 27 negatives; old recording schema rejects draft
+2/2 Test #61: robotweax_srt_telemetry_remote_draft_schema ...   Passed    0.12 sec
+
+The following tests passed:
+	robotweax_srt_telemetry_remote_draft_tests
+	robotweax_srt_telemetry_remote_draft_schema
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.13 sec

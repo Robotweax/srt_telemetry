@@ -1,0 +1,596 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:robotweax:telemetry:experimental:remote-input:draft1",
+  "title": "Unreleased remote observation history draft; not a recording 1alpha version",
+  "$defs": {
+    "u64": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]{0,18}|18446744073709551615|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4])$(?![\\s\\S])"
+    },
+    "wall": {
+      "type": "object",
+      "required": [
+        "unixNano",
+        "synchronization",
+        "maximumErrorNano",
+        "provenance"
+      ],
+      "properties": {
+        "unixNano": {
+          "$ref": "#/$defs/u64"
+        },
+        "synchronization": {
+          "enum": [
+            "unknown",
+            "unsynchronized",
+            "synchronized"
+          ]
+        },
+        "maximumErrorNano": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provenance": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[ -~]+$(?![\\s\\S])"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "synchronization": {
+                "const": "synchronized"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "maximumErrorNano": {
+                "$ref": "#/$defs/u64"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "maximumErrorNano": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "schemaVersion",
+        "segmentId",
+        "row",
+        "pair",
+        "producer",
+        "observer",
+        "localOverwrittenRecords",
+        "retired",
+        "origin",
+        "maximumAgeNano"
+      ],
+      "properties": {
+        "type": {
+          "const": "remoteHistory"
+        },
+        "schemaVersion": {
+          "const": "remote-input.draft1"
+        },
+        "segmentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[ -~]+$(?![\\s\\S])"
+        },
+        "row": {
+          "type": "object",
+          "required": [
+            "device",
+            "session",
+            "resource",
+            "mediaSessionIdHex",
+            "sourceGeneration",
+            "mediaKind",
+            "scope",
+            "memberSlot",
+            "memberGeneration",
+            "pathLabelHex"
+          ],
+          "properties": {
+            "device": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[ -~]+$(?![\\s\\S])"
+            },
+            "session": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[ -~]+$(?![\\s\\S])"
+            },
+            "resource": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[ -~]+$(?![\\s\\S])"
+            },
+            "mediaSessionIdHex": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "not": {
+                "const": "0000000000000000000000000000000000000000000000000000000000000000"
+              }
+            },
+            "sourceGeneration": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/u64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            },
+            "mediaKind": {
+              "const": "live"
+            },
+            "scope": {
+              "const": "connection"
+            },
+            "memberSlot": {
+              "const": 0
+            },
+            "memberGeneration": {
+              "const": "0"
+            },
+            "pathLabelHex": {
+              "const": ""
+            }
+          },
+          "additionalProperties": false
+        },
+        "pair": {
+          "type": "object",
+          "required": [
+            "associationGeneration",
+            "componentGeneration",
+            "profileRevision",
+            "metadataEpoch",
+            "bindingGeneration"
+          ],
+          "properties": {
+            "associationGeneration": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/u64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            },
+            "componentGeneration": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/u64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            },
+            "profileRevision": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/u64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            },
+            "metadataEpoch": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/u64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            },
+            "bindingGeneration": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/u64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "producer": {
+          "type": "object",
+          "required": [
+            "role",
+            "instance",
+            "clockDomain",
+            "provider",
+            "providerRevision",
+            "buildProfile",
+            "qualificationId",
+            "sampling",
+            "clearPolicy"
+          ],
+          "properties": {
+            "role": {
+              "const": "sender"
+            },
+            "instance": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[ -~]+$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "clockDomain": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[ -~]+$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "enum": [
+                null,
+                "robotweax-srt",
+                "haivision-srt"
+              ]
+            },
+            "providerRevision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[ -~]+$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "buildProfile": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[ -~]+$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "qualificationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[ -~]+$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sampling": {
+              "enum": [
+                "unknown",
+                "averaged",
+                "instantaneous"
+              ]
+            },
+            "clearPolicy": {
+              "enum": [
+                "unknown",
+                "exclusiveNoClear"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "observer": {
+          "type": "object",
+          "required": [
+            "node",
+            "instance",
+            "clockDomain"
+          ],
+          "properties": {
+            "node": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[A-Za-z0-9_.-]+$(?![\\s\\S])",
+                  "not": {
+                    "const": "null"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "instance": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[A-Za-z0-9_.-]+$(?![\\s\\S])",
+                  "not": {
+                    "const": "null"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "clockDomain": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[ -~]+$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": false
+        },
+        "localOverwrittenRecords": {
+          "$ref": "#/$defs/u64"
+        },
+        "retired": {
+          "type": "boolean"
+        },
+        "origin": {
+          "const": "remote_media_endpoint"
+        },
+        "maximumAgeNano": {
+          "type": "string",
+          "pattern": "^(?:[1-9][0-9]{0,9}|[1-5][0-9]{10}|60000000000)$(?![\\s\\S])"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "schemaVersion",
+        "segmentId",
+        "historical",
+        "sequence",
+        "producerMonotonicNano",
+        "intervalBeginMonotonicNano",
+        "producerWallTime",
+        "firstReceipt",
+        "exportedMonotonicNano",
+        "receiptAgeNano",
+        "freshness",
+        "firstInSegment",
+        "sequenceDiscontinuity",
+        "equalProducerTime",
+        "clearedAfterSample",
+        "native"
+      ],
+      "properties": {
+        "type": {
+          "const": "remoteObservation"
+        },
+        "schemaVersion": {
+          "const": "remote-input.draft1"
+        },
+        "segmentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[ -~]+$(?![\\s\\S])"
+        },
+        "historical": {
+          "const": true
+        },
+        "sequence": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/u64"
+            },
+            {
+              "not": {
+                "const": "0"
+              }
+            }
+          ]
+        },
+        "producerMonotonicNano": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/u64"
+            },
+            {
+              "not": {
+                "const": "0"
+              }
+            }
+          ]
+        },
+        "intervalBeginMonotonicNano": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/u64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "producerWallTime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/wall"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "firstReceipt": {
+          "type": "object",
+          "required": [
+            "monotonicNano",
+            "wallTime"
+          ],
+          "properties": {
+            "monotonicNano": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/u64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            },
+            "wallTime": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/wall"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "exportedMonotonicNano": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/u64"
+            },
+            {
+              "not": {
+                "const": "0"
+              }
+            }
+          ]
+        },
+        "receiptAgeNano": {
+          "$ref": "#/$defs/u64"
+        },
+        "freshness": {
+          "enum": [
+            "fresh",
+            "stale",
+            "retired"
+          ]
+        },
+        "firstInSegment": {
+          "type": "boolean"
+        },
+        "sequenceDiscontinuity": {
+          "type": "boolean"
+        },
+        "equalProducerTime": {
+          "type": "boolean"
+        },
+        "clearedAfterSample": {
+          "type": "boolean"
+        },
+        "native": {
+          "type": "object",
+          "required": [
+            "namespace",
+            "type",
+            "schema",
+            "encoding",
+            "payload"
+          ],
+          "properties": {
+            "namespace": {
+              "const": "rwx-broadcast-01"
+            },
+            "type": {
+              "const": 5
+            },
+            "schema": {
+              "const": "1.0"
+            },
+            "encoding": {
+              "const": "rwblHex"
+            },
+            "payload": {
+              "type": "string",
+              "pattern": "^(?:[0-9a-f]{2}){1,16384}$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+Internal ctest changing into directory: /tmp/remote-build
+Test project /tmp/remote-build
+      Start 35: robotweax_srt_telemetry_jsonl_incident_fixture_test
+      Start  1: robotweax_srt_telemetry_trigger_window_tests
+ 1/60 Test  #1: robotweax_srt_telemetry_trigger_window_tests ........................................   Passed    0.01 sec
+      Start  2: robotweax_srt_telemetry_enum_declaration_check
+ 2/60 Test #35: robotweax_srt_telemetry_jsonl_incident_fixture_test .................................   Passed    0.01 sec
+      Start  3: robotweax_srt_telemetry_http_tests
+ 3/60 Test  #2: robotweax_srt_telemetry_enum_declaration_check ......................................   Passed    0.02 sec
+      Start  4: robotweax_srt_telemetry_otlp_exporter_tests
+ 4/60 Test  #4: robotweax_srt_telemetry_otlp_exporter_tests .........................................   Passed    3.70 sec
+      Start  5: robotweax_srt_telemetry_tests
+ 5/60 Test  #5: robotweax_srt_telemetry_tests .......................................................   Passed    0.01 sec
+      Start  6: robotweax_srt_telemetry_metrics_tests
+ 6/60 Test  #6: robotweax_srt_telemetry_metrics_tests ...............................................   Passed    0.01 sec
+      Start  7: robotweax_srt_telemetry_sampler_tests
+ 7/60 Test  #7: robotweax_srt_telemetry_sampler_tests ...............................................   Passed    0.85 sec
+      Start  8: robotweax_srt_telemetry_history_tests
+ 8/60 Test  #8: robotweax_srt_telemetry_history_tests ...............................................   Passed    0.01 sec
+      Start  9: robotweax_srt_telemetry_health_tests
+ 9/60 Test  #9: robotweax_srt_telemetry_health_tests ................................................   Passed    1.12 sec
+      Start 10: robotweax_srt_telemetry_export_tests
+10/60 Test #10: robotweax_srt_telemetry_export_tests ................................................   Passed    6.88 sec
+      Start 11: robotweax_srt_telemetry_recording_1alpha2_tests
+11/60 Test #11: robotweax_srt_telemetry_recording_1alpha2_tests .....................................   Passed    0.01 sec
+      Start 12: robotweax_srt_telemetry_recording_1alpha3_tests
+12/60 Test #12: robotweax_srt_telemetry_recording_1alpha3_tests .....................................   Passed    0.01 sec
+      Start 13: robotweax_srt_telemetry_recording_1alpha4_tests
+13/60 Test #13: robotweax_srt_telemetry_recording_1alpha4_tests .....................................   Passed    0.01 sec
+      Start 14: robotweax_srt_telemetry_standby_metadata_tests
+14/60 Test #14: robotweax_srt_telemetry_standby_metadata_tests ......................................   Passed    0.01 sec
+      Start 15: robotweax_srt_telemetry_peer_metadata_tests
+15/60 Test #15: robotweax_srt_telemetry_peer_metadata_tests .........................................   Passed    0.01 sec
+      Start 16: robotweax_srt_telemetry_standby_schema_test
+16/60 Test #16: robotweax_srt_telemetry_standby_schema_test .........................................   Passed    0.22 sec
+      Start 17: robotweax_srt_telemetry_peer_schema_test
+17/60 Test #17: robotweax_srt_telemetry_peer_schema_test ............................................   Passed    0.17 sec
+      Start 18: robotweax_srt_telemetry_recording_schema_test
+18/60 Test #18: robotweax_srt_telemetry_recording_schema_test .......................................   Passed    0.30 sec
+      Start 19: robotweax_srt_telemetry_c_api_test
+19/60 Test #19: robotweax_srt_telemetry_c_api_test ..................................................   Passed    0.01 sec
+      Start 20: robotweax_srt_telemetry_golden_incident_test
+20/60 Test #20: robotweax_srt_telemetry_golden_incident_test ........................................   Passed    0.01 sec
+      Start 21: robotweax_srt_telemetry_captured_golden_incident_test
+21/60 Test #21: robotweax_srt_telemetry_captured_golden_incident_test ...............................   Passed    0.01 sec
+      Start 22: robotweax_srt_telemetry_reverse_captured_golden_incident_test
+22/60 Test #22: robotweax_srt_telemetry_reverse_captured_golden_incident_test .......................   Passed    0.01 sec
+      Start 23: robotweax_srt_telemetry_burst_captured_golden_incident_test
+23/60 Test #23: robotweax_srt_telemetry_burst_captured_golden_incident_test .........................   Passed    0.01 sec
+      Start 24: robotweax_srt_telemetry_reverse_burst_captured_golden_incident_test
+24/60 Test #24: robotweax_srt_telemetry_reverse_burst_captured_golden_incident_test .................   Passed    0.01 sec
+      Start 25: robotweax_srt_telemetry_jsonl_captured_golden_incident_test
+25/60 Test #25: robotweax_srt_telemetry_jsonl_captured_golden_incident_test .........................   Passed    0.01 sec
+      Start 26: robotweax_srt_telemetry_reverse_jsonl_captured_golden_incident_test
+26/60 Test #26: robotweax_srt_telemetry_reverse_jsonl_captured_golden_incident_test .................   Passed    0.01 sec
+      Start 27: robotweax_srt_telemetry_rtt_step_golden_incident_test
+27/60 Test #27: robotweax_srt_telemetry_rtt_step_golden_incident_test ...............................   Passed    0.01 sec
+      Start 28: robotweax_srt_telemetry_reverse_rtt_step_golden_incident_test
+28/60 Test #28: robotweax_srt_telemetry_reverse_rtt_step_golden_incident_test .......................   Passed    0.01 sec
+      Start 29: robotweax_srt_telemetry_receiver_pause_golden_incident_test
+29/60 Test #29: robotweax_srt_telemetry_receiver_pause_golden_incident_test .........................   Passed    0.01 sec
+      Start 30: robotweax_srt_telemetry_reverse_receiver_pause_golden_incident_test
+30/60 Test #30: robotweax_srt_telemetry_reverse_receiver_pause_golden_incident_test .................   Passed    0.01 sec
+      Start 31: robotweax_srt_telemetry_bandwidth_reduction_golden_incident_test
+31/60 Test #31: robotweax_srt_telemetry_bandwidth_reduction_golden_incident_test ....................   Passed    0.01 sec
+      Start 32: robotweax_srt_telemetry_reverse_bandwidth_reduction_golden_incident_test
+32/60 Test #32: robotweax_srt_telemetry_reverse_bandwidth_reduction_golden_incident_test ............   Passed    0.01 sec
+      Start 33: robotweax_srt_telemetry_recovery_margin_golden_incident_test
+33/60 Test #33: robotweax_srt_telemetry_recovery_margin_golden_incident_test ........................   Passed    0.01 sec
+      Start 34: robotweax_srt_telemetry_reverse_recovery_margin_golden_incident_test
+34/60 Test #34: robotweax_srt_telemetry_reverse_recovery_margin_golden_incident_test ................   Passed    0.01 sec
+      Start 36: robotweax_srt_telemetry_golden_incident_manifest_test
+35/60 Test #36: robotweax_srt_telemetry_golden_incident_manifest_test ...............................   Passed    0.03 sec
+      Start 37: robotweax_srt_telemetry_golden_incident_reproducibility_test
+36/60 Test #37: robotweax_srt_telemetry_golden_incident_reproducibility_test ........................   Passed    0.02 sec
+      Start 38: robotweax_srt_telemetry_captured_golden_incident_manifest_test
+37/60 Test #38: robotweax_srt_telemetry_captured_golden_incident_manifest_test ......................   Passed    0.03 sec
+      Start 39: robotweax_srt_telemetry_reverse_captured_golden_incident_manifest_test
+38/60 Test #39: robotweax_srt_telemetry_reverse_captured_golden_incident_manifest_test ..............   Passed    0.03 sec
+      Start 40: robotweax_srt_telemetry_burst_captured_golden_incident_manifest_test
+39/60 Test #40: robotweax_srt_telemetry_burst_captured_golden_incident_manifest_test ................   Passed    0.03 sec
+      Start 41: robotweax_srt_telemetry_reverse_burst_captured_golden_incident_manifest_test
+40/60 Test #41: robotweax_srt_telemetry_reverse_burst_captured_golden_incident_manifest_test ........   Passed    0.03 sec
+      Start 42: robotweax_srt_telemetry_jsonl_captured_golden_incident_manifest_test
+41/60 Test #42: robotweax_srt_telemetry_jsonl_captured_golden_incident_manifest_test ................   Passed    0.03 sec
+      Start 43: robotweax_srt_telemetry_reverse_jsonl_captured_golden_incident_manifest_test
+42/60 Test #43: robotweax_srt_telemetry_reverse_jsonl_captured_golden_incident_manifest_test ........   Passed    0.03 sec
+      Start 44: robotweax_srt_telemetry_rtt_step_golden_incident_manifest_test
+43/60 Test #44: robotweax_srt_telemetry_rtt_step_golden_incident_manifest_test ......................   Passed    0.03 sec
+      Start 45: robotweax_srt_telemetry_reverse_rtt_step_golden_incident_manifest_test
+44/60 Test #45: robotweax_srt_telemetry_reverse_rtt_step_golden_incident_manifest_test ..............   Passed    0.03 sec
+      Start 46: robotweax_srt_telemetry_receiver_pause_golden_incident_manifest_test
+45/60 Test #46: robotweax_srt_telemetry_receiver_pause_golden_incident_manifest_test ................   Passed    0.03 sec
+      Start 47: robotweax_srt_telemetry_reverse_receiver_pause_golden_incident_manifest_test
+46/60 Test #47: robotweax_srt_telemetry_reverse_receiver_pause_golden_incident_manifest_test ........   Passed    0.03 sec
+      Start 48: robotweax_srt_telemetry_bandwidth_reduction_golden_incident_manifest_test
+47/60 Test #48: robotweax_srt_telemetry_bandwidth_reduction_golden_incident_manifest_test ...........   Passed    0.03 sec
+      Start 49: robotweax_srt_telemetry_reverse_bandwidth_reduction_golden_incident_manifest_test
+48/60 Test #49: robotweax_srt_telemetry_reverse_bandwidth_reduction_golden_incident_manifest_test ...   Passed    0.03 sec
+      Start 50: robotweax_srt_telemetry_recovery_margin_golden_incident_manifest_test
+49/60 Test #50: robotweax_srt_telemetry_recovery_margin_golden_incident_manifest_test ...............   Passed    0.03 sec
+      Start 51: robotweax_srt_telemetry_reverse_recovery_margin_golden_incident_manifest_test
+50/60 Test #51: robotweax_srt_telemetry_reverse_recovery_margin_golden_incident_manifest_test .......   Passed    0.03 sec
+      Start 52: robotweax_srt_telemetry_loss_shape_observability_result_test
+51/60 Test #52: robotweax_srt_telemetry_loss_shape_observability_result_test ........................   Passed    0.03 sec
+      Start 53: robotweax_srt_telemetry_linux_lab_replay_test
+52/60 Test #53: robotweax_srt_telemetry_linux_lab_replay_test .......................................   Passed    0.10 sec
+      Start 54: robotweax_srt_telemetry_netem_receiver_buffer_test
+53/60 Test #54: robotweax_srt_telemetry_netem_receiver_buffer_test ..................................   Passed    0.08 sec
+      Start 55: robotweax_srt_telemetry_incident_analysis_test
+54/60 Test #55: robotweax_srt_telemetry_incident_analysis_test ......................................   Passed    0.26 sec
+      Start 56: robotweax_srt_telemetry_operator_evaluation_test
+55/60 Test #56: robotweax_srt_telemetry_operator_evaluation_test ....................................   Passed    0.58 sec
+      Start 57: robotweax_srt_telemetry_operator_reference_review_test
+56/60 Test #57: robotweax_srt_telemetry_operator_reference_review_test ..............................   Passed    0.43 sec
+      Start 58: robotweax_srt_telemetry_operator_rehearsal_readiness_test
+57/60 Test #58: robotweax_srt_telemetry_operator_rehearsal_readiness_test ...........................   Passed    0.06 sec
+      Start 59: robotweax_srt_telemetry_remote_draft_tests
+58/60 Test #59: robotweax_srt_telemetry_remote_draft_tests ..........................................   Passed    0.01 sec
+      Start 60: robotweax_srt_telemetry_remote_draft_schema
+59/60 Test #60: robotweax_srt_telemetry_remote_draft_schema .........................................   Passed    0.20 sec
+60/60 Test  #3: robotweax_srt_telemetry_http_tests ..................................................***Failed   27.46 sec
+FAIL: server answers during a ping flood (worst 3.602231 s)
+1 HTTP server checks failed
+
+
+98% tests passed, 1 tests failed out of 60
+
+Total Test time (real) =  27.48 sec
+
+The following tests FAILED:
+	  3 - robotweax_srt_telemetry_http_tests (Failed)
+Errors while running CTest

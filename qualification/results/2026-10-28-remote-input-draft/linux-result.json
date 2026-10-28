@@ -1,0 +1,5 @@
+{
+  "candidate_serial_exit": 8,
+  "baseline_parallel_exit": 8,
+  "candidate_final_after_clock_exit": 8
+}
