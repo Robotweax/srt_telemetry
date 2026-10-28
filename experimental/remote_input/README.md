@@ -3,10 +3,13 @@
 Read the [proposal](../../docs/proposals/remote-observation-input.md). Draft2 owns
 neutral identity/time/receipt/freshness/history only. Origin-specific context and
 per-observation bytes are opaque, namespaced and owned by the producer. No BL
-layout, SRT wire codec, source-authority check or numeric/UI adapter is defined here.
+layout, SRT wire codec, source-authority check or UI adapter is defined here.
+The separate [numeric part 2](../../docs/proposals/remote-numeric-input.md) accepts
+origin-owner supplied typed values with empty default qualification. It shares
+the private counter kernel with Core but never parses origin payloads.
 
-With normal Telemetry tests enabled, two tests exercise this separate static
-library; Core/HTTP do not link it. Otherwise it is absent unless requested:
+With normal Telemetry tests enabled, four draft/compatibility tests are configured.
+Core/HTTP do not link the experimental library. With tests off it is absent unless requested:
 
 ```sh
 cmake -S . -B build-remote-draft \
@@ -23,8 +26,9 @@ export, and reserves no release/recording version. Existing ABI1/1alpha1–4 sta
 With tests enabled and Python3/jsonschema available:
 
 ```sh
-cmake --build build-remote --target robotweax_srt_telemetry_remote_draft_tests
-ctest --test-dir build-remote -R remote_draft --output-on-failure
+cmake --build build-remote --target robotweax_srt_telemetry_remote_draft_tests \
+  robotweax_srt_telemetry_remote_numeric_tests robotweax_srt_telemetry_counter_trace
+ctest --test-dir build-remote -R "remote_draft|remote_numeric|counter_trace" --output-on-failure
 build-remote/experimental/remote_input/robotweax_srt_telemetry_remote_draft_tests --jsonl
 ```
 
@@ -49,3 +53,8 @@ It treats files as opaque bytes and emits a context header plus one observation;
 the optional integer arguments preserve separate source/observer times. This test
 driver does not decode/authenticate bytes or qualify a source. A producer such as
 BL supplies and validates its own closed origin schema before invoking the recorder.
+
+The counter-trace executable deliberately links Core to compare the unchanged C
+API against its frozen merged-main oracle. The numeric/neutral static library
+and their test executables do not link Core, HTTP, SRT, Metadata or BL. The new
+numeric header is uninstalled alongside the existing neutral draft header.
