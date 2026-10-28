@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:robotweax:telemetry:experimental:remote-input:draft1",
+  "$id": "urn:robotweax:telemetry:experimental:remote-input:draft2",
   "title": "Unreleased remote observation history draft; not a recording 1alpha version",
   "$defs": {
     "u64": {
@@ -78,21 +78,20 @@
         "type",
         "schemaVersion",
         "segmentId",
-        "row",
-        "pair",
         "producer",
         "observer",
         "localOverwrittenRecords",
         "retired",
-        "origin",
-        "maximumAgeNano"
+        "maximumAgeNano",
+        "originKind",
+        "origin"
       ],
       "properties": {
         "type": {
           "const": "remoteHistory"
         },
         "schemaVersion": {
-          "const": "remote-input.draft1"
+          "const": "remote-input.draft2"
         },
         "segmentId": {
           "type": "string",
@@ -100,169 +99,34 @@
           "maxLength": 128,
           "pattern": "^[ -~]+$(?![\\s\\S])"
         },
-        "row": {
+        "producer": {
           "type": "object",
           "required": [
-            "device",
-            "session",
-            "resource",
-            "mediaSessionIdHex",
-            "sourceGeneration",
-            "mediaKind",
-            "scope",
-            "memberSlot",
-            "memberGeneration",
-            "pathLabelHex",
-            "nativeKind"
+            "id",
+            "sourceId",
+            "role",
+            "instance",
+            "clockDomain"
           ],
           "properties": {
-            "device": {
+            "id": {
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
               "pattern": "^[ -~]+$(?![\\s\\S])"
             },
-            "session": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128,
-              "pattern": "^[ -~]+$(?![\\s\\S])"
-            },
-            "resource": {
+            "sourceId": {
               "type": "string",
               "minLength": 1,
               "maxLength": 512,
               "pattern": "^[ -~]+$(?![\\s\\S])"
             },
-            "mediaSessionIdHex": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
-              "not": {
-                "const": "0000000000000000000000000000000000000000000000000000000000000000"
-              }
-            },
-            "sourceGeneration": {
-              "allOf": [
-                {
-                  "$ref": "#/$defs/u64"
-                },
-                {
-                  "not": {
-                    "const": "0"
-                  }
-                }
-              ]
-            },
-            "mediaKind": {
-              "const": "live"
-            },
-            "scope": {
-              "const": "connection"
-            },
-            "memberSlot": {
-              "const": 0
-            },
-            "memberGeneration": {
-              "const": "0"
-            },
-            "pathLabelHex": {
-              "const": ""
-            },
-            "nativeKind": {
-              "const": "single"
-            }
-          },
-          "additionalProperties": false
-        },
-        "pair": {
-          "type": "object",
-          "required": [
-            "associationGeneration",
-            "componentGeneration",
-            "profileRevision",
-            "metadataEpoch",
-            "bindingGeneration"
-          ],
-          "properties": {
-            "associationGeneration": {
-              "allOf": [
-                {
-                  "$ref": "#/$defs/u64"
-                },
-                {
-                  "not": {
-                    "const": "0"
-                  }
-                }
-              ]
-            },
-            "componentGeneration": {
-              "allOf": [
-                {
-                  "$ref": "#/$defs/u64"
-                },
-                {
-                  "not": {
-                    "const": "0"
-                  }
-                }
-              ]
-            },
-            "profileRevision": {
-              "allOf": [
-                {
-                  "$ref": "#/$defs/u64"
-                },
-                {
-                  "not": {
-                    "const": "0"
-                  }
-                }
-              ]
-            },
-            "metadataEpoch": {
-              "allOf": [
-                {
-                  "$ref": "#/$defs/u64"
-                },
-                {
-                  "not": {
-                    "const": "0"
-                  }
-                }
-              ]
-            },
-            "bindingGeneration": {
-              "allOf": [
-                {
-                  "$ref": "#/$defs/u64"
-                },
-                {
-                  "not": {
-                    "const": "0"
-                  }
-                }
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        "producer": {
-          "type": "object",
-          "required": [
-            "role",
-            "instance",
-            "clockDomain",
-            "provider",
-            "providerRevision",
-            "buildProfile",
-            "qualificationId",
-            "sampling",
-            "clearPolicy"
-          ],
-          "properties": {
             "role": {
-              "const": "sender"
+              "enum": [
+                null,
+                "sender",
+                "receiver"
+              ]
             },
             "instance": {
               "anyOf": [
@@ -288,65 +152,6 @@
                 {
                   "type": "null"
                 }
-              ]
-            },
-            "provider": {
-              "enum": [
-                null,
-                "robotweax-srt",
-                "haivision-srt"
-              ]
-            },
-            "providerRevision": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "^[ -~]+$(?![\\s\\S])"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "buildProfile": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "^[ -~]+$(?![\\s\\S])"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "qualificationId": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "^[ -~]+$(?![\\s\\S])"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "sampling": {
-              "enum": [
-                "unknown",
-                "averaged",
-                "instantaneous"
-              ]
-            },
-            "clearPolicy": {
-              "enum": [
-                "unknown",
-                "exclusiveNoClear"
               ]
             }
           },
@@ -407,12 +212,43 @@
         "retired": {
           "type": "boolean"
         },
-        "origin": {
-          "const": "remote_media_endpoint"
-        },
         "maximumAgeNano": {
           "type": "string",
           "pattern": "^(?:[1-9][0-9]{0,9}|[1-5][0-9]{10}|60000000000)$(?![\\s\\S])"
+        },
+        "originKind": {
+          "const": "remote_media_endpoint"
+        },
+        "origin": {
+          "type": "object",
+          "required": [
+            "namespace",
+            "schema",
+            "contextEncoding",
+            "context"
+          ],
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[ -~]+$(?![\\s\\S])"
+            },
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[ -~]+$(?![\\s\\S])"
+            },
+            "contextEncoding": {
+              "const": "hex"
+            },
+            "context": {
+              "type": "string",
+              "pattern": "^(?:[0-9a-f]{2}){0,4096}$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -435,15 +271,14 @@
         "firstInSegment",
         "sequenceDiscontinuity",
         "equalProducerTime",
-        "clearedAfterSample",
-        "native"
+        "originPayload"
       ],
       "properties": {
         "type": {
           "const": "remoteObservation"
         },
         "schemaVersion": {
-          "const": "remote-input.draft1"
+          "const": "remote-input.draft2"
         },
         "segmentId": {
           "type": "string",
@@ -561,32 +396,17 @@
         "equalProducerTime": {
           "type": "boolean"
         },
-        "clearedAfterSample": {
-          "type": "boolean"
-        },
-        "native": {
+        "originPayload": {
           "type": "object",
           "required": [
-            "namespace",
-            "type",
-            "schema",
             "encoding",
-            "payload"
+            "bytes"
           ],
           "properties": {
-            "namespace": {
-              "const": "rwx-broadcast-01"
-            },
-            "type": {
-              "const": 5
-            },
-            "schema": {
-              "const": "1.0"
-            },
             "encoding": {
-              "const": "rwblHex"
+              "const": "hex"
             },
-            "payload": {
+            "bytes": {
               "type": "string",
               "pattern": "^(?:[0-9a-f]{2}){1,16384}$(?![\\s\\S])"
             }

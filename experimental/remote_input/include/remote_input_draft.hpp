@@ -1,10 +1,11 @@
 #pragma once
 // Review draft only: not installed, not a released SDK/recording version.
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace robotweax::srt::telemetry::remote_draft
@@ -15,16 +16,34 @@ enum class Synchronization
     unsynchronized,
     synchronized
 };
-enum class Sampling
+enum class EndpointRole
 {
     unknown,
-    averaged,
-    instantaneous
+    sender,
+    receiver
 };
-enum class ClearPolicy
+// Field paths are draft diagnostics, not a released C error-code contract.
+class ValidationError final : public std::invalid_argument
 {
-    unknown,
-    exclusive_no_clear
+  public:
+    explicit ValidationError(std::string field)
+        : std::invalid_argument("invalid remote-input draft field: " + field),
+          field_(std::move(field))
+    {
+    }
+    const std::string &field() const noexcept
+    {
+        return field_;
+    }
+
+  private:
+    std::string field_;
+};
+struct Origin
+{
+    std::string namespace_id, schema;
+    // Producer-owned opaque context, 0..4096 bytes. Telemetry does not parse it.
+    std::vector<std::uint8_t> context;
 };
 struct WallTime
 {
@@ -36,34 +55,21 @@ struct WallTime
 };
 struct Context
 {
-    std::string segment_id;
-    std::string device, session, resource;
-    std::array<std::uint8_t, 32> media_session_id{};
-    std::uint64_t source_generation{}, association_generation{}, component_generation{},
-        profile_revision{}, metadata_epoch{}, binding_generation{};
-    // First draft: Single / Live sender, connection row only. Unsupported
-    // roles/scopes must not be silently normalized to these values.
-    std::string media_kind, scope, role, native_kind;
-    std::uint8_t member_slot{};
-    std::uint64_t member_generation{};
-    std::vector<std::uint8_t> path_label;
+    std::string segment_id, producer_id, source_id;
+    EndpointRole role{EndpointRole::unknown};
     std::optional<std::string> producer_instance, producer_clock_domain;
     std::optional<std::string> observer_node, observer_instance;
     std::string observer_clock_domain;
-    std::optional<std::string> provider, provider_revision, build_profile, qualification_id;
-    Sampling sampling{Sampling::unknown};
-    ClearPolicy clear_policy{ClearPolicy::unknown};
+    Origin origin;
 };
 struct Observation
 {
     std::uint64_t sequence{}, producer_monotonic_nano{};
     std::optional<std::uint64_t> interval_begin_monotonic_nano;
     std::optional<WallTime> producer_wall_time;
-    bool cleared_after_sample{};
-    // Original Type 5/schema 1.0 RWBL bytes, copied exactly, never injected into
-    // the local socket adapter. Host validates/authenticates/decodes the body
-    // and binds its context before calling this recorder. No parsing here.
-    std::vector<std::uint8_t> native_rwbl;
+    // Opaque original bytes belonging to Context::origin, 1..16384 bytes.
+    // Host validates/authorizes them before storage and publication.
+    std::vector<std::uint8_t> origin_payload;
     bool operator==(const Observation &) const = default;
 };
 struct Receipt
@@ -100,10 +106,12 @@ struct Current
     std::optional<Record> record;
     std::uint64_t exported_monotonic_nano{};
 };
-// One immutable row/Metadata/observer segment per recorder, host serialized.
+// One immutable producer/source/origin/observer segment per recorder.
+// Concurrent const reads are safe only while no mutation or destruction occurs.
+// The host must externally serialize all mutations against readers/writers.
 // This is storage, not admission authority. The host must freshly recheck its
-// source/lease/pair/grants at ingestion and actual publication. No threads,
-// callbacks, socket getters, SRT/Metadata dependency, metrics/rates or UI input.
+// origin-specific authority at ingestion and publication. No internal threads,
+// callbacks, socket getters, metrics/rates or UI input.
 class Recorder final
 {
   public:
@@ -143,8 +151,7 @@ class Recorder final
     Context context_;
     std::vector<std::optional<Record>> slots_;
     std::size_t head_{}, size_{};
-    std::uint64_t maximum_age_, overwritten_{}, last_receipt_call_{};
-    mutable std::uint64_t last_export_clock_{};
+    std::uint64_t maximum_age_, overwritten_{}, last_accepted_receipt_nano_{};
     bool retired_{};
 };
 } // namespace robotweax::srt::telemetry::remote_draft

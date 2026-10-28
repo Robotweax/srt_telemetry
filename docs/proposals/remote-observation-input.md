@@ -1,132 +1,139 @@
-# Remote observation input — experimental envelope, part 1
+# Neutral remote observation input — experimental draft2
 
-Status: **draft for joint Telemetry/Broadcast Link review, not a released API or
-recording format**. Implements the first, clock/context/history slice requested
-by [Broadcast Link PR75](https://github.com/Robotweax/srt_broadcast_link/pull/75)
-at `848bcf5962d83b0bdcdaf6f6745ad17cc920d11d`. Telemetry base is main
-`341adc0da0788135af781e876d068914b00ab751` (existing ABI1, recording1alpha1–4).
-The proposed namespace/type names are review choices, not reserved versions.
+Status: joint-review draft; uninstalled C++ code, not a released API or recording
+version. Responds to the [review of PR65 at98cda94](https://github.com/Robotweax/srt_telemetry/pull/65#pullrequestreview-5685135114)
+and [Broadcast Link PR75](https://github.com/Robotweax/srt_broadcast_link/pull/75).
+Base remains Telemetry main341adc0. Draft2 replaces the unreleased, BL-specific
+`remote-input.draft1`; there is no alias/import or reinterpretation of that format.
+ABI1, existing public headers, Core/HTTP and recording1alpha1–4 are unchanged.
 
-## Why a separate input
+## Ownership boundary
 
-BL Type5 supplies producer monotonic time and original sender statistics, but
-does not supply producer Unix time, process incarnation, synchronization or
-provider/field qualification. The existing raw ABI1 timestamp is a real numeric
-Unix value; 0 is epoch0. A Cloud recorder cannot fill that field with unknown,
-receipt wall time or a fabricated producer time. Cloud1alpha4 observer labels
-identify the writer, independently of the observed media endpoint.
+Telemetry owns neutral producer/source identity, endpoint role (explicit sender,
+receiver or unknown), producer process/clock provenance, sequence, monotonic time,
+optional wall time, original first receipt, freshness-as-of-read-time and irreversible
+retirement. Labels are host-supplied metadata, not source authentication.
 
-The experimental C++ `remote_draft::Recorder` therefore stores an independent
-owned observation and immutable row/Metadata/observer context. It never constructs
-an ABI1 raw sample, calls a socket getter, or changes the current recorder,
-delta engine, sampler, history, health, UI, OTLP or Prometheus paths. It has no
-SRT/Metadata/BL dependencies and no callbacks/threads. Existing public headers,
-ABI1, package exports and schema1alpha1–4 remain unchanged.
+The producer owns an **opaque namespaced origin block**:
 
-## Proposed input and meaning
+- `Context::origin.namespace_id` and `schema`: bounded opaque identifiers;
+- `Context::origin.context`: immutable0..4096 bytes for that source/segment;
+- `Observation::origin_payload`: original1..16384 bytes per observation.
 
-- One immutable context per row and host-generated segment. Includes device,
-  route session, binary32-byte media association, resource, source generation,
-  full association/component/profile/binding generations and Metadata epoch.
-  Native kind, scope/slot/member-generation/label fields are explicit. The host
-  must supply native kind separately: a group aggregate can also use connection
-  scope, so scope alone cannot establish Single mode. This first draft
-  accepts **Single/Live sender, connection row** only; play/receiver/group/member
-  inputs fail instead of being normalized to this scope.
-- Producer process/clock domain may be null. Cloud observer node/process may be
-  null with the same64-character label rules as1alpha4. A separate, required host
-  observer-clock label and segment ID describe the local monotonic lifetime.
-  Labels are metadata, never authentication. The host must allocate a new unique
-  segment on process/row/provider/qualification/clock or Metadata replacement;
-  the module does not maintain a cross-instance identity registry.
-- Provider revision, build/profile and qualification ID may be null. Their
-  presence does not qualify any field. Sampling is unknown/averaged/instantaneous;
-  clear policy is unknown/exclusiveNoClear. No numeric projections, since-clear
-  deltas or provider options are inferred in this slice.
-- Observation carries original positive u64 sequence, producer monotonic ns,
-  optional producer interval begin, optional producer wall time and clear flag.
-  Each present wall time explicitly has synchronization quality, provenance and
-  a maximum-error bound only when synchronized. Actual epoch0 is representable;
-  missing time is null. Unknown producer clocks are never filled from the Cloud.
-- Original Type5/schema1.0 **RWBL** bytes are copied exactly (1..16384 bytes).
-  The historical envelope identifies namespace `rwx-broadcast-01`, type5,
-  schema1.0, encoding `rwblHex`. This is opaque storage, not a wire decoder or
-  canonicality check. It preserves the complete original native record, including
-  integer widths, sentinels and values not yet qualified for projection.
+Telemetry copies and exports these bytes without parsing their meaning. It does
+not define BL route sessions, media IDs, generation fields, native kinds, sampling,
+counter-clear policy, Metadata epochs, RWBL or an SDK type registry. Origin schema
+changes do not require a Telemetry envelope change. An unknown origin namespace
+or version can be retained opaquely; that is **not decoded/qualified acceptance**
+of it for numeric projection, application authority or a native effect.
 
-The caller MUST freshly obtain an owned, currently authorized BL Snapshot and
-validate/bind the full wire/context before storage and actual publication. These
-generic value types cannot authenticate a caller or grant source/lease authority.
-Arbitrary remote JSON/bytes or an old Snapshot are not an admission route. No
-production BL adapter invokes this draft.
+BL owns its first Single/Live sender scope, complete row/pair identity, native
+kind, profile/provider/sampling/clear provenance and original Type5/schema1.0
+bytes. Its own versioned origin schema and adapter must validate those facts.
+Other producers can own other origin schemas without changing this Telemetry API.
+No production BL adapter or supported SDK package adopts this draft.
 
-## Bounded storage and lifecycle
+## Typed neutral input
 
-Capacity is1..256 records (default8), one fixed vector of optional slots per
-context. A full recorder overwrites its oldest history entry and increments a
-distinct local count. That count and sequence discontinuities are not network
-loss. The source observation is allocated/copied before replacing existing data.
-Strings and payloads have explicit size/ASCII bounds; no unbounded row manager or
-per-metric queue is introduced. Hosts must also bound the number of recorders.
+A recorder contains exactly one immutable producer/source/origin/observer segment.
+The host supplies a unique segment ID, producer ID and opaque source ID, explicit
+endpoint role (default unknown), optional producer instance/clock domain and
+independent optional Cloud observer node/instance. Existing1alpha4 observer label
+rules are preserved. A required observer monotonic-clock domain is separate from
+the producer's domain; the two numeric clocks are never compared.
 
-Ordering is per immutable row/context. Equal sequence/identical producer data is
-a duplicate and leaves the first receipt—including optional original Cloud wall
-time—unchanged. Same sequence/different producer data conflicts; lower sequence
-or backward producer time fails without advancing state. Higher sequence/equal
-producer time is retained with an equality marker, never divided by zero.
-Global sequence interleaving is a boolean discontinuity, never a missing-sample
-or packet-loss count. All64-bit output values are canonical decimal strings.
+Unknown producer wall time stays null. A present wall time contains an exact
+u64 Unix-ns value (including a real epoch0), synchronization quality, provenance
+and a maximum-error bound only for the synchronized state. Unknown clocks are
+never filled from receipt/export time or a fabricated connected-at time.
+Provider/qualification/transport facts belong to the opaque origin or a separately
+reviewed future numeric-projection contract. No fields are automatically qualified.
 
-`latest(now)` returns available/noSample/stale/retired. The maximum age is positive,
-at most60s (default1s), inclusive at the exact boundary; stale results have no
-current sample. It compares original first receipt to the explicit export clock
-and rejects a backward export clock so old data cannot become fresh by backdating.
-Producer and Cloud monotonic clocks are never compared with each other. Retirement
-is irreversible; a new context requires a new recorder. `read_history` returns an
-owned copy; historical export remains possible after retirement and cannot renew
-any authority. There is no reset/resume or source-grant method.
+The caller must validate origin-specific content and current authority before
+storage and actual publication. These generic value types authenticate no caller
+and grant no source/lease/pair/native-write authority. Stored bytes or a retained
+historical snapshot cannot renew that authority. Future BL code must freshly
+obtain a currently admitted native Snapshot and retain its host lifecycle fences.
 
-## Separate draft history contract
+## Bounded history and ordering
 
-`export_history_jsonl(now)` writes one context header and bounded observation
-lines conforming to `experimental/remote_input/remote-input-line.schema.json`.
-The name `remote-input.draft1` deliberately does not announce1alpha5 or change
-the existing schema. Every record is explicitly historical, carries its original
-receipt, export/age, lifecycle state and full-lossless original RWBL payload.
-All generation/sequence/time/u64 values are decimal strings. Wall time and missing
-metadata are explicit nulls; only member slot and Type5 numeric key are small JSON
-numbers. The closed draft rejects unknown members/versions and overflowing u64s.
-The current1alpha1–4 schema rejects these lines. Current consumers must not accept
-or silently coerce this new format; there is no GUI/Doctor/history import path.
+Capacity is1..256 (default8); each slot owns an observation. A full recorder replaces
+its oldest record and increments a **local history overwrite** count. Origin and
+payload bounds are checked before record publication; source data is copied
+before replacing current state. Hosts also bound the number of recorders.
 
-Observer/device/session/resource/payload data may identify infrastructure. Export
-is a host-owned historical artifact; operator access, retention and redaction are
-required at the eventual application boundary. Do not place credentials in labels
-or use these raw labels as public metric dimensions.
+Ordering is against the **latest accepted record**. Equal latest sequence with
+identical producer data is duplicate; with different producer data it is conflict.
+A lower sequence always returns stale_sequence, whether its bytes match a retained
+older history entry or not. Historical lookup is not replay authority or a duplicate
+cache. None of these outcomes updates first receipt or advances the latest sequence.
+A backward producer clock is rejected; equal producer time/higher sequence is
+retained with an equality marker, without a rate. A sequence discontinuity is a
+boolean; it is never interpreted as missing samples or network packet loss.
 
-## Review gates and remaining slices
+Retirement is irreversible. A new source/origin/observer/provider/clock lifetime
+needs a new recorder/segment; there is no reset/resume or source-grant method.
+Owned historical copies and explicit history export remain possible after retirement,
+with retirement visible. The origin owner decides which domain changes require a
+new segment and must never reconstruct a retired context to erase replay history.
 
-This part exercises the **representation/storage** portions of BL A05–A13 only.
-The83 C++ assertions and closed-schema/negative checks use synthetic owned byte
-fixtures; they do not authenticate native peers or demonstrate full Type5 decode /
-context binding. Existing Core/ABI/recording tests remain separate regressions.
+## Pure reads and synchronization
 
-Before merging into a supported SDK or integrating BL, decide:
+`latest(now)` is an **as-of query**, returning available/no_sample/stale/retired;
+it validates positive `now >= last accepted receipt`. Maximum age is positive,
+at most60s (default1s), inclusive at the exact boundary. A stale result has no
+current sample. `export_history_jsonl(now)` uses the same supplied clock domain.
 
-1. Accept/adjust the separate missing-time model, first scope, proposed names and
-   historical schema; decide eventual C API/package/export support separately.
-2. Add typed qualified numeric projections and reuse a shared, timestamp-agnostic
-   delta implementation. Do not route through ABI1 with a fabricated wall time.
-   Cover field-local reset, equal-time/no-rate, counter clear policy and the seven
-   BL averaged versus Telemetry instantaneous queue fields. No rates/health or
-   field qualification are claimed by this first slice.
-3. Add production admission/retirement and bounded multi-row/sink ownership on
-   actual BL host/owner APIs. Recheck source/leases/grants at delayed handoff;
-   qualify process replacement, slow sinks and original receipts through real GCM
-   transport. These types do not replace BL authority or its replay tables.
-4. Only then qualify recorder import, UI/history/health/Doctor behavior and native
-   sender/Cloud/local-receiver pipelines under impairment and restarts. Separate
-   producer/observer identities and unknown wall time must survive every consumer.
+Both are pure const reads: **no shared mutable export-clock high-water mark**.
+`latest(5000)`, `latest(4999)` and `export_history_jsonl(4999)` can succeed for
+independent readers; an earlier timestamp from one reader cannot poison another.
+A caller requiring monotonically ordered reads may keep its own per-reader guard.
+Freshness-as-of a supplied timestamp is not current publication authorization;
+the host obtains a trusted clock and rechecks its current origin-specific grants
+at actual handoff. The recorder does not pretend to authenticate a supplied clock.
 
-No automatic adaptation, SRT option write, Control command, app activation,
-EdgeLink/Server/FFT integration or dependency pin update is part of this draft.
+Concurrent const reads are safe **only while no writer, retirement or destruction
+runs**. The host externally serializes every mutation against readers/writers.
+There is no internal worker, mutex, callback, socket getter, SRT/Metadata/BL library
+dependency, or synchronization with live protocol owners. A two-reader regression
+covers the read-only case; it is not TSan qualification or concurrent-write support.
+
+## Diagnostics and separate closed export
+
+Validation throws `ValidationError`, derived from `std::invalid_argument`, with
+`.field()` and a message naming a field such as `origin.namespace_id`,
+`producer_wall_time.maximum_error_nano` or `receipt.monotonic_nano`. Values/credentials
+are not echoed. These are draft C++ diagnostics, not a reserved future C error ABI.
+The draft keeps warning diagnostics but does not impose`-Werror` on consumer test
+builds. It is still built separately for tests or explicit default-OFF experimentation,
+never linked into Core/HTTP or installed/exported as a public SDK component.
+
+`remote-input.draft2` is a closed, separately versioned history JSONL envelope.
+A header contains generic producer/observer context and an opaque origin block.
+Every observation is explicitly historical, retains original first receipt,
+producer/export clocks, freshness and lifecycle markers, plus opaque origin bytes.
+All u64s are canonical decimal strings. Missing wall time is null; actual epoch0
+is a distinct present wall-time object. Unknown envelope fields/versions fail;
+unknown **origin** identifiers remain opaque. Current1alpha1–4 readers reject the
+draft. No UI/history/health/Doctor or numeric projection import path is enabled.
+
+Origins may identify infrastructure or contain private source context. Hosts own
+access, retention and redaction; raw origin labels are not public metric dimensions.
+Do not put credentials into identities or labels.
+
+## Evidence and remaining work
+
+[Review follow-up evidence](../../qualification/results/2026-10-28-remote-input-review/README.md)
+records final tests, neutral/foreign-origin roundtrips and the ownership split.
+The earlier98cda94 [draft1 evidence](../../qualification/results/2026-10-28-remote-input-draft/README.md)
+is historical, not a qualification of draft2. The ARM64 HTTP diagnostic is separated
+into an issue-ready note there; the maintainer reports passing x86-64 baseline runs.
+No broad sanitizer failure or universal root cause is claimed.
+
+Before a supported integration: agree on the neutral/opaque split and interface,
+then add qualified typed numeric projection and shared timestamp-independent delta
+reuse. The origin owner must qualify sampling/clear/reset semantics and actual
+current host/owner/sink lifecycle under GCM and impairment. Only then qualify
+recorder import, UI/history/health and Doctor consumers. No automatic adaptation,
+Control/SRT writes, app activation, Server/EdgeLink/FFT integration or dependency
+pin update is included.

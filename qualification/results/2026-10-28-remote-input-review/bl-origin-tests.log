@@ -1,0 +1,14 @@
+test_bl_rejects_unknown_origin_version_key_and_fields (__main__.Origin.test_bl_rejects_unknown_origin_version_key_and_fields) ... ok
+test_complete_bl_context_and_exact_native_key (__main__.Origin.test_complete_bl_context_and_exact_native_key) ... ok
+test_current_host_binding_cannot_be_replaced_by_sample_labels (__main__.Origin.test_current_host_binding_cannot_be_replaced_by_sample_labels) ... ok
+test_exact_u64_and_u63_epoch_bound (__main__.Origin.test_exact_u64_and_u63_epoch_bound) ... ok
+test_first_bl_scope_excludes_play_return_and_members (__main__.Origin.test_first_bl_scope_excludes_play_return_and_members) ... ok
+test_group_aggregate_cannot_be_inferred_single_from_connection_scope (__main__.Origin.test_group_aggregate_cannot_be_inferred_single_from_connection_scope) ... ok
+test_no_implicit_role_kind_or_host_fields (__main__.Origin.test_no_implicit_role_kind_or_host_fields) ... ok
+test_sampling_and_provider_do_not_gain_qualification (__main__.Origin.test_sampling_and_provider_do_not_gain_qualification) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.017s
+
+OK
+PASS explicit BL origin/native-frame byte roundtrip through neutral recorder; no native admission/runtime qualification

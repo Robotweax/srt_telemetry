@@ -20,26 +20,24 @@ rows = [json.loads(line) for line in lines]
 for row in rows:
     validator.validate(row)
 header, missing, epoch_zero = rows
-assert header['origin'] == 'remote_media_endpoint'
+assert header['originKind'] == 'remote_media_endpoint'
 assert header['maximumAgeNano'] == '100'
 maximum = (1 << 64)-1
-assert header['row'] == {
-    'device': 'Kq2x81a0kfdT7mZ3pLw9Ab', 'session': 'Q3vXn0b8cR2hY6tJ1sWe4A',
-    'resource': 'camera/"back\\slash', 'mediaSessionIdHex': 'ff'*32,
-    'sourceGeneration': str(maximum), 'mediaKind': 'live', 'scope': 'connection',
-    'memberSlot': 0, 'memberGeneration': '0', 'pathLabelHex': '', 'nativeKind':'single',
-}
-assert header['pair'] == dict(zip(
-    ['associationGeneration','componentGeneration','profileRevision','metadataEpoch','bindingGeneration'],
-    [str(maximum-i) for i in range(1,6)]))
 assert header['observer'] == {
-    'node': 'cloud-fixture', 'instance': 'cloud-process-1', 'clockDomain': 'cloud-monotonic-1',
+    'node':'cloud-fixture','instance':'cloud-process-1','clockDomain':'cloud-monotonic-1',
 }
 assert header['producer'] == {
-    'role': 'sender', 'instance': None, 'clockDomain': None, 'provider': None,
-    'providerRevision': None, 'buildProfile': None, 'qualificationId': None,
-    'sampling': 'averaged', 'clearPolicy': 'unknown',
+    'id':'producer-fixture','sourceId':'source/"back\\slash','role':'sender',
+    'instance':None,'clockDomain':None,
 }
+assert header['origin'] == {
+    'namespace':'fixture-origin','schema':'fixture/9.7','contextEncoding':'hex','context':'00ff225c',
+}
+# Origin versions are opaque identifiers, not decoded Telemetry/BL schema minors.
+foreign = copy.deepcopy(header)
+foreign['origin'] = {'namespace':'another-origin','schema':'not-understood/999.123',
+                     'contextEncoding':'hex','context':'ff0000'}
+validator.validate(foreign)
 for row, sequence, mono, receipt, age in [
         (missing, maximum-1, maximum-2, 50, 20),
         (epoch_zero, maximum, maximum-1, 51, 19)]:
@@ -50,8 +48,7 @@ for row, sequence, mono, receipt, age in [
     assert row['receiptAgeNano'] == str(age)
     assert row['exportedMonotonicNano'] == '70'
     assert row['historical'] is True and row['freshness'] == 'fresh'
-    assert row['native'] == {'namespace':'rwx-broadcast-01','type':5,'schema':'1.0',
-                             'encoding':'rwblHex','payload':'8300ff00'}
+    assert row['originPayload'] == {'encoding':'hex','bytes':'8300ff00'}
 assert missing['producerWallTime'] is None
 assert missing['firstReceipt']['wallTime'] is None
 assert epoch_zero['producerWallTime'] == {
@@ -68,7 +65,7 @@ assert not epoch_zero['sequenceDiscontinuity'] and not epoch_zero['equalProducer
 bad_rows = []
 for value in [maximum, str(maximum+1), '-1', '01', '+1', '1.0', '0', '1\n']:
     bad_rows.append(dict(missing, sequence=value))
-for key, value in [('schemaVersion','remote-input.draft2'),('historical',False),
+for key, value in [('schemaVersion','remote-input.draft1'),('historical',False),
                    ('producerWallTime',0),('inventedClock',None)]:
     bad_rows.append(dict(missing, **{key:value}))
 bad = copy.deepcopy(epoch_zero)
@@ -79,21 +76,25 @@ bad['firstReceipt']['wallTime']['maximumErrorNano'] = None
 bad_rows.append(bad)
 for value in ['', '0', 'gg', '00' * 16385, '00\n']:
     bad = copy.deepcopy(missing)
-    bad['native']['payload'] = value
+    bad['originPayload']['bytes'] = value
     bad_rows.append(bad)
 bad = copy.deepcopy(missing)
-bad['native']['schema'] = '1.1'
+bad['originPayload']['type'] = 5
 bad_rows.append(bad)
 for value in ['null', 'a/b', '', 'a'*65, 'node\n']:
     bad = copy.deepcopy(header)
     bad['observer']['instance'] = value
     bad_rows.append(bad)
 bad = copy.deepcopy(header)
-bad['producer']['role'] = 'receiver'
+bad['producer']['role'] = 'inferred-caller'
 bad_rows.append(bad)
 bad = copy.deepcopy(missing)
 del bad['producerWallTime']
 bad_rows.append(bad)
+for context in ['0','gg','00'*4097,'00\n']:
+    bad = copy.deepcopy(header); bad['origin']['context'] = context; bad_rows.append(bad)
+for key in ['row','pair','sampling','nativeKind']:
+    bad = copy.deepcopy(header); bad[key] = {}; bad_rows.append(bad)
 for i, row in enumerate(bad_rows):
     assert list(validator.iter_errors(row)), i
 
@@ -108,5 +109,5 @@ old = jsonschema.Draft202012Validator(json.loads(
     (base.parents[1]/'schema/telemetry-jsonl-line.schema.json').read_text()))
 for row in rows:
     assert list(old.iter_errors(row)), 'draft must not masquerade as 1alpha1-4'
-print(f'PASS3 closed draft lines, exact contexts/u64s/opaque payload, null versus epoch0, '
+print(f'PASS3 closed draft lines, neutral context/u64s/opaque origin, null versus epoch0, '
       f'{len(bad_rows)} negatives; old recording schema rejects draft')

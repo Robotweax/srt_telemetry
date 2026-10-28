@@ -1,24 +1,5 @@
 # Project handoff (2026-10-04)
 
-## Update 2026-10-28: remote input draft, part 1
-
-Broadcast Link PR75 requests an additive remote clock/context input. The
-[proposal](docs/proposals/remote-observation-input.md) and
-[experimental recorder](experimental/remote_input/README.md) implement the first
-representation/history slice only: explicit unknown producer wall time,
-independent producer/Cloud observer identities, complete immutable row/pair
-context, original opaque Type5 RWBL bytes, exact u64 strings, bounded storage,
-deduplication, freshness and irreversible retirement. This is uninstalled C++
-draft code, built in tests or by an explicit default-OFF option. Existing ABI1,
-schema1alpha1–4, Core/HTTP behavior and installed package exports are unchanged.
-
-The next slices still require joint contract review, qualified numeric projection
-and timestamp-independent delta reuse, actual BL host/GCM admission, and separate
-recorder/UI/history/health compatibility. No production BL adapter is enabled.
-[Executed checks and the separate baseline HTTP sanitizer finding](qualification/results/2026-10-28-remote-input-draft/README.md).
-The following handoff retains its original mission and historical maintenance
-notes; no paused GStreamer/gateway integration is started by this draft.
-
 This is the entry point for continuing **Robotweax SRT Telemetry** on any
 machine, from a checkout of this repository alone. It describes the mission,
 the working rules, how to build and test, where the work stands and what

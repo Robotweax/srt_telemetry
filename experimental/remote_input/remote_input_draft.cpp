@@ -8,77 +8,70 @@ namespace robotweax::srt::telemetry::remote_draft
 {
 namespace
 {
-void require(bool ok)
+void require(bool ok, std::string_view field)
 {
     if (!ok)
-        throw std::invalid_argument("invalid remote-input draft value");
+        throw ValidationError(std::string(field));
 }
-void ascii(const std::string &text, std::size_t maximum)
+void ascii(const std::string &text, std::size_t maximum, std::string_view field)
 {
-    require(
-        !text.empty() && text.size() <= maximum &&
-        std::all_of(text.begin(), text.end(), [](unsigned char c) { return c >= 32 && c <= 126; }));
+    require(!text.empty() && text.size() <= maximum &&
+                std::all_of(text.begin(), text.end(),
+                            [](unsigned char c) { return c >= 32 && c <= 126; }),
+            field);
 }
-void optional_ascii(const std::optional<std::string> &text)
+void optional_ascii(const std::optional<std::string> &text, std::string_view field)
 {
     if (text)
-        ascii(*text, 128);
+        ascii(*text, 128, field);
 }
-void observer(const std::optional<std::string> &text)
+void observer(const std::optional<std::string> &text, std::string_view field)
 {
     if (!text)
         return;
     require(!text->empty() && text->size() <= 64 && *text != "null" &&
-            std::all_of(text->begin(), text->end(),
-                        [](unsigned char c)
-                        {
-                            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                                   (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-';
-                        }));
+                std::all_of(text->begin(), text->end(),
+                            [](unsigned char c)
+                            {
+                                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                                       (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-';
+                            }),
+            field);
 }
-void wall(const std::optional<WallTime> &value)
+void wall(const std::optional<WallTime> &value, std::string_view field)
 {
     if (!value)
         return;
-    ascii(value->provenance, 128);
+    ascii(value->provenance, 128, std::string(field) + ".provenance");
     switch (value->synchronization)
     {
     case Synchronization::unknown:
     case Synchronization::unsynchronized:
-        require(!value->maximum_error_nano);
+        require(!value->maximum_error_nano, std::string(field) + ".maximum_error_nano");
         break;
     case Synchronization::synchronized:
-        require(value->maximum_error_nano.has_value());
+        require(value->maximum_error_nano.has_value(), std::string(field) + ".maximum_error_nano");
         break;
     default:
-        require(false);
+        require(false, std::string(field) + ".synchronization");
     }
 }
 void validate(const Context &c)
 {
-    ascii(c.segment_id, 128);
-    ascii(c.device, 128);
-    ascii(c.session, 128);
-    ascii(c.resource, 512);
-    ascii(c.observer_clock_domain, 128);
-    require(c.source_generation && c.association_generation && c.component_generation &&
-            c.profile_revision && c.metadata_epoch && c.binding_generation);
-    require(std::any_of(c.media_session_id.begin(), c.media_session_id.end(),
-                        [](auto b) { return b != 0; }));
-    require(c.native_kind == "single" && c.media_kind == "live" && c.scope == "connection" &&
-            c.role == "sender" && !c.member_slot && !c.member_generation && c.path_label.empty());
-    optional_ascii(c.producer_instance);
-    optional_ascii(c.producer_clock_domain);
-    require(!c.provider || *c.provider == "robotweax-srt" || *c.provider == "haivision-srt");
-    optional_ascii(c.provider_revision);
-    optional_ascii(c.build_profile);
-    optional_ascii(c.qualification_id);
-    observer(c.observer_node);
-    observer(c.observer_instance);
-    require(c.sampling == Sampling::unknown || c.sampling == Sampling::averaged ||
-            c.sampling == Sampling::instantaneous);
-    require(c.clear_policy == ClearPolicy::unknown ||
-            c.clear_policy == ClearPolicy::exclusive_no_clear);
+    ascii(c.segment_id, 128, "segment_id");
+    ascii(c.producer_id, 128, "producer_id");
+    ascii(c.source_id, 512, "source_id");
+    ascii(c.observer_clock_domain, 128, "observer_clock_domain");
+    ascii(c.origin.namespace_id, 128, "origin.namespace_id");
+    ascii(c.origin.schema, 128, "origin.schema");
+    require(c.origin.context.size() <= 4096, "origin.context");
+    require(c.role == EndpointRole::unknown || c.role == EndpointRole::sender ||
+                c.role == EndpointRole::receiver,
+            "role");
+    optional_ascii(c.producer_instance, "producer_instance");
+    optional_ascii(c.producer_clock_domain, "producer_clock_domain");
+    observer(c.observer_node, "observer_node");
+    observer(c.observer_instance, "observer_instance");
 }
 std::string quote(std::string_view value)
 {
@@ -137,22 +130,25 @@ Recorder::Recorder(Context context, std::size_t capacity, std::uint64_t age)
     : context_(std::move(context)), maximum_age_(age)
 {
     validate(context_);
-    require(capacity && capacity <= 256 && age && age <= 60'000'000'000);
+    require(capacity && capacity <= 256, "capacity");
+    require(age && age <= 60'000'000'000, "maximum_age_nano");
     slots_.resize(capacity);
 }
 PushResult Recorder::push(const Observation &value, const Receipt &receipt)
 {
     if (retired_)
         return PushResult::retired;
-    require(value.sequence && value.producer_monotonic_nano && receipt.monotonic_nano &&
-            receipt.monotonic_nano >= last_receipt_call_ && !value.native_rwbl.empty() &&
-            value.native_rwbl.size() <= 16384);
+    require(value.sequence != 0, "sequence");
+    require(value.producer_monotonic_nano != 0, "producer_monotonic_nano");
+    require(receipt.monotonic_nano && receipt.monotonic_nano >= last_accepted_receipt_nano_,
+            "receipt.monotonic_nano");
+    require(!value.origin_payload.empty() && value.origin_payload.size() <= 16384,
+            "origin_payload");
     require(!value.interval_begin_monotonic_nano ||
-            *value.interval_begin_monotonic_nano <= value.producer_monotonic_nano);
-    wall(value.producer_wall_time);
-    wall(receipt.wall_time);
-    require(context_.clear_policy != ClearPolicy::exclusive_no_clear ||
-            !value.cleared_after_sample);
+                *value.interval_begin_monotonic_nano <= value.producer_monotonic_nano,
+            "interval_begin_monotonic_nano");
+    wall(value.producer_wall_time, "producer_wall_time");
+    wall(receipt.wall_time, "receipt.wall_time");
     const auto *previous = size_ ? &*slots_[(head_ + size_ - 1) % slots_.size()] : nullptr;
     if (previous)
     {
@@ -181,13 +177,12 @@ PushResult Recorder::push(const Observation &value, const Receipt &receipt)
         slots_[(head_ + size_) % slots_.size()] = std::move(candidate);
         ++size_;
     }
-    last_receipt_call_ = receipt.monotonic_nano;
+    last_accepted_receipt_nano_ = receipt.monotonic_nano;
     return PushResult::accepted;
 }
 void Recorder::check_export_clock(std::uint64_t now) const
 {
-    require(now && now >= last_receipt_call_ && now >= last_export_clock_);
-    last_export_clock_ = now;
+    require(now && now >= last_accepted_receipt_nano_, "exported_monotonic_nano");
 }
 Record Recorder::read_history(std::size_t index) const
 {
@@ -211,44 +206,30 @@ std::string Recorder::export_history_jsonl(std::uint64_t now) const
 {
     check_export_clock(now);
     const auto &c = context_;
-    const char *sampling = c.sampling == Sampling::instantaneous ? "instantaneous"
-                           : c.sampling == Sampling::averaged    ? "averaged"
-                                                                 : "unknown";
-    std::string out =
-        "{\"type\":\"remoteHistory\",\"schemaVersion\":\"remote-input.draft1\""
-        ",\"origin\":\"remote_media_endpoint\",\"maximumAgeNano\":" +
-        integer(maximum_age_) + ",\"segmentId\":" + quote(c.segment_id) +
-        ",\"row\":{\"device\":" + quote(c.device) + ",\"session\":" + quote(c.session) +
-        ",\"resource\":" + quote(c.resource) +
-        ",\"mediaSessionIdHex\":" + quote(hex(c.media_session_id)) +
-        ",\"sourceGeneration\":" + integer(c.source_generation) +
-        ",\"nativeKind\":\"single\",\"mediaKind\":\"live\",\"scope\":\"connection\",\"memberSlot\":"
-        "0,\"memberGeneration\":"
-        "\"0\",\"pathLabelHex\":\"\"}" +
-        ",\"pair\":{\"associationGeneration\":" + integer(c.association_generation) +
-        ",\"componentGeneration\":" + integer(c.component_generation) +
-        ",\"profileRevision\":" + integer(c.profile_revision) +
-        ",\"metadataEpoch\":" + integer(c.metadata_epoch) +
-        ",\"bindingGeneration\":" + integer(c.binding_generation) + '}' +
-        ",\"producer\":{\"role\":\"sender\",\"instance\":" + optional_text(c.producer_instance) +
-        ",\"clockDomain\":" + optional_text(c.producer_clock_domain) +
-        ",\"provider\":" + optional_text(c.provider) +
-        ",\"providerRevision\":" + optional_text(c.provider_revision) +
-        ",\"buildProfile\":" + optional_text(c.build_profile) +
-        ",\"qualificationId\":" + optional_text(c.qualification_id) +
-        ",\"sampling\":" + quote(sampling) + ",\"clearPolicy\":" +
-        quote(c.clear_policy == ClearPolicy::exclusive_no_clear ? "exclusiveNoClear" : "unknown") +
-        '}' + ",\"observer\":{\"node\":" + optional_text(c.observer_node) +
-        ",\"instance\":" + optional_text(c.observer_instance) +
-        ",\"clockDomain\":" + quote(c.observer_clock_domain) + '}' +
-        ",\"localOverwrittenRecords\":" + integer(overwritten_) +
-        ",\"retired\":" + boolean(retired_) + "}\n";
+    const char *role = c.role == EndpointRole::sender     ? "\"sender\""
+                       : c.role == EndpointRole::receiver ? "\"receiver\""
+                                                          : "null";
+    std::string out = "{\"type\":\"remoteHistory\",\"schemaVersion\":\"remote-input.draft2\","
+                      "\"originKind\":\"remote_media_endpoint\",\"maximumAgeNano\":" +
+                      integer(maximum_age_) + ",\"segmentId\":" + quote(c.segment_id) +
+                      ",\"producer\":{\"id\":" + quote(c.producer_id) +
+                      ",\"sourceId\":" + quote(c.source_id) + ",\"role\":" + role +
+                      ",\"instance\":" + optional_text(c.producer_instance) +
+                      ",\"clockDomain\":" + optional_text(c.producer_clock_domain) + '}' +
+                      ",\"observer\":{\"node\":" + optional_text(c.observer_node) +
+                      ",\"instance\":" + optional_text(c.observer_instance) +
+                      ",\"clockDomain\":" + quote(c.observer_clock_domain) + '}' +
+                      ",\"origin\":{\"namespace\":" + quote(c.origin.namespace_id) +
+                      ",\"schema\":" + quote(c.origin.schema) +
+                      ",\"contextEncoding\":\"hex\",\"context\":" + quote(hex(c.origin.context)) +
+                      '}' + ",\"localOverwrittenRecords\":" + integer(overwritten_) +
+                      ",\"retired\":" + boolean(retired_) + "}\n";
     for (std::size_t n = 0; n < size_; ++n)
     {
         const auto &r = *slots_[(head_ + n) % slots_.size()];
         const auto &o = r.observation;
         out +=
-            "{\"type\":\"remoteObservation\",\"schemaVersion\":\"remote-input.draft1\""
+            "{\"type\":\"remoteObservation\",\"schemaVersion\":\"remote-input.draft2\""
             ",\"segmentId\":" +
             quote(c.segment_id) + ",\"historical\":true,\"sequence\":" + integer(o.sequence) +
             ",\"producerMonotonicNano\":" + integer(o.producer_monotonic_nano) +
@@ -265,10 +246,8 @@ std::string Recorder::export_history_jsonl(std::uint64_t now) const
             ",\"firstInSegment\":" + boolean(r.first_in_segment) +
             ",\"sequenceDiscontinuity\":" + boolean(r.sequence_discontinuity) +
             ",\"equalProducerTime\":" + boolean(r.equal_producer_time) +
-            ",\"clearedAfterSample\":" + boolean(o.cleared_after_sample) +
-            ",\"native\":{\"namespace\":\"rwx-broadcast-01\",\"type\":5,\"schema\":\"1.0\","
-            "\"encoding\":\"rwblHex\",\"payload\":" +
-            quote(hex(o.native_rwbl)) + "}}\n";
+            ",\"originPayload\":{\"encoding\":\"hex\",\"bytes\":" + quote(hex(o.origin_payload)) +
+            "}}\n";
     }
     return out;
 }

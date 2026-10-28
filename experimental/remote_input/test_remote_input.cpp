@@ -1,8 +1,14 @@
 #include "remote_input_draft.hpp"
+#include <atomic>
+#include <charconv>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <source_location>
 #include <stdexcept>
+#include <string_view>
+#include <thread>
 #include <type_traits>
 
 namespace d = robotweax::srt::telemetry::remote_draft;
@@ -33,29 +39,18 @@ d::Context context()
 {
     d::Context c;
     c.segment_id = "cloud-segment-1";
-    c.device = "Kq2x81a0kfdT7mZ3pLw9Ab";
-    c.session = "Q3vXn0b8cR2hY6tJ1sWe4A";
-    c.resource = "camera/\"back\\slash";
-    c.role = "sender";
-    c.media_kind = "live";
-    c.scope = "connection";
-    c.native_kind = "single";
-    c.media_session_id.fill(255);
-    c.source_generation = maximum;
-    c.association_generation = maximum - 1;
-    c.component_generation = maximum - 2;
-    c.profile_revision = maximum - 3;
-    c.metadata_epoch = maximum - 4;
-    c.binding_generation = maximum - 5;
+    c.producer_id = "producer-fixture";
+    c.source_id = "source/\"back\\slash";
+    c.role = d::EndpointRole::sender;
+    c.origin = {"fixture-origin", "fixture/9.7", {0x00, 0xff, 0x22, 0x5c}};
     c.observer_node = "cloud-fixture";
     c.observer_instance = "cloud-process-1";
     c.observer_clock_domain = "cloud-monotonic-1";
-    c.sampling = d::Sampling::averaged;
     return c;
 }
 d::Observation sample(std::uint64_t sequence = 1, std::uint64_t producer = 1000)
 {
-    return {sequence, producer, 750, {}, false, {0x83, 0x00, 0xff, 0x00}};
+    return {sequence, producer, 750, {}, {0x83, 0x00, 0xff, 0x00}};
 }
 void lifecycle_and_bounds()
 {
@@ -65,8 +60,8 @@ void lifecycle_and_bounds()
     check(r.push(value, {10, {}}) == d::PushResult::accepted);
     auto first = r.latest(11);
     check(first.record && first.record->first_in_segment);
-    value.native_rwbl[0] = 0;
-    check(r.read_history(0).observation.native_rwbl[0] == 0x83);
+    value.origin_payload[0] = 0;
+    check(r.read_history(0).observation.origin_payload[0] == 0x83);
     check(r.push(sample(10), {20, {}}) == d::PushResult::duplicate);
     check(r.latest(110).status == d::Status::available);
     check(r.latest(111).status == d::Status::stale);
@@ -100,7 +95,7 @@ void lifecycle_and_bounds()
           first.record->first_receipt.monotonic_nano == 10);
     auto c = context();
     ++c.segment_id.back();
-    --c.metadata_epoch;
+    c.origin.context.push_back(1);
     d::Recorder replacement(c);
     check(replacement.push(sample(1), {130, {}}) == d::PushResult::accepted);
     check(replacement.latest(131).record->first_in_segment);
@@ -108,42 +103,48 @@ void lifecycle_and_bounds()
 }
 void validation()
 {
-    for (unsigned n = 0; n != 16; ++n)
+    const char *fields[] = {
+        "segment_id",          "producer_id",       "source_id",      "role",
+        "origin.namespace_id", "origin.schema",     "origin.context", "observer_instance",
+        "observer_node",       "producer_instance", "source_id",      "observer_clock_domain"};
+    for (unsigned n = 0; n != 12; ++n)
     {
         auto c = context();
         if (n == 0)
-            c.role = "receiver";
+            c.segment_id.clear();
         if (n == 1)
-            c.role = "unknown";
+            c.producer_id.clear();
         if (n == 2)
-            c.media_kind = "play";
+            c.source_id.clear();
         if (n == 3)
-            c.scope = "member";
+            c.role = static_cast<d::EndpointRole>(999);
         if (n == 4)
-            c.member_slot = 1;
+            c.origin.namespace_id.clear();
         if (n == 5)
-            c.member_generation = 1;
+            c.origin.schema.clear();
         if (n == 6)
-            c.path_label = {1};
+            c.origin.context.resize(4097);
         if (n == 7)
-            c.source_generation = 0;
-        if (n == 8)
-            c.media_session_id.fill(0);
-        if (n == 9)
             c.observer_instance = "null";
-        if (n == 10)
+        if (n == 8)
             c.observer_node = "a/b";
-        if (n == 11)
+        if (n == 9)
             c.producer_instance = "";
-        if (n == 12)
-            c.resource = std::string(513, 'a');
-        if (n == 13)
-            c.provider = "guessed";
-        if (n == 14)
-            c.device = "embedded\nnewline";
-        if (n == 15)
-            c.native_kind = "group"; // group aggregates can use connection scope
-        rejects([&] { d::Recorder bad(c); });
+        if (n == 10)
+            c.source_id = std::string(513, 'a');
+        if (n == 11)
+            c.observer_clock_domain = "embedded\nnewline";
+        bool caught = false;
+        try
+        {
+            d::Recorder bad(c);
+        }
+        catch (const d::ValidationError &e)
+        {
+            caught = e.field() == fields[n] &&
+                     std::string(e.what()).find(fields[n]) != std::string::npos;
+        }
+        check(caught);
     }
     rejects([&] { d::Recorder bad(context(), 0); });
     rejects([&] { d::Recorder bad(context(), 257); });
@@ -161,9 +162,9 @@ void validation()
         if (n == 2)
             s.interval_begin_monotonic_nano = 1001;
         if (n == 3)
-            s.native_rwbl.clear();
+            s.origin_payload.clear();
         if (n == 4)
-            s.native_rwbl.resize(16385);
+            s.origin_payload.resize(16385);
         if (n == 5)
             receipt.monotonic_nano = 0;
         if (n == 6)
@@ -181,8 +182,8 @@ void validation()
     rejects([&] { r.push(sample(2), {9, {}}); });
     check(r.size() == 1 && r.overwritten_count() == 0);
     (void)r.latest(50);
-    rejects([&] { r.latest(49); });
-    rejects([&] { r.export_history_jsonl(49); });
+    check(r.latest(49).status == d::Status::available);
+    check(!r.export_history_jsonl(49).empty());
     check(r.latest(50).record->first_receipt.monotonic_nano == 10);
     d::Recorder max(context(), 1, 60'000'000'000);
     auto s = sample(maximum, maximum);
@@ -197,31 +198,82 @@ void absent_context_and_limits()
     c.observer_node.reset();
     c.observer_instance.reset();
     d::Recorder recorder(c, 256);
-    c.device = "mutated-after-construction";
-    check(recorder.context().device == "Kq2x81a0kfdT7mZ3pLw9Ab");
+    c.producer_id = "mutated-after-construction";
+    check(recorder.context().producer_id == "producer-fixture");
     auto value = sample();
-    value.native_rwbl.resize(16384, 255);
+    value.origin_payload.resize(16384, 255);
     check(recorder.push(value, {10, {}}) == d::PushResult::accepted);
     auto text = recorder.export_history_jsonl(11);
     check(text.find("\"node\":null,\"instance\":null") != std::string::npos);
-    check(recorder.read_history(0).observation.native_rwbl.size() == 16384);
-    auto empty_role = context();
-    empty_role.role.clear();
-    rejects([&] { d::Recorder invalid(empty_role); });
-    auto bad_mode = context();
-    bad_mode.sampling = static_cast<d::Sampling>(999);
-    rejects([&] { d::Recorder invalid(bad_mode); });
-    bad_mode = context();
-    bad_mode.clear_policy = static_cast<d::ClearPolicy>(999);
-    rejects([&] { d::Recorder invalid(bad_mode); });
-    auto exclusive = context();
-    exclusive.clear_policy = d::ClearPolicy::exclusive_no_clear;
-    d::Recorder no_clear(exclusive);
-    auto cleared = sample();
-    cleared.cleared_after_sample = true;
-    rejects([&] { no_clear.push(cleared, {10, {}}); });
-    check(no_clear.size() == 0);
+    check(recorder.read_history(0).observation.origin_payload.size() == 16384);
+    auto unknown = context();
+    unknown.role = d::EndpointRole::unknown;
+    unknown.origin = {"unrecognized-producer", "arbitrary-version/99.123", {}};
+    d::Recorder neutral(unknown);
+    check(neutral.push(sample(), {10, {}}) == d::PushResult::accepted);
+    check(neutral.export_history_jsonl(11).find("\"role\":null") != std::string::npos);
+    auto receiver = context();
+    receiver.role = d::EndpointRole::receiver;
+    d::Recorder other(receiver);
+    check(other.push(sample(), {10, {}}) == d::PushResult::accepted);
 }
+void independent_readers_and_late_sequences()
+{
+    d::Recorder r(context(), 2, 10000);
+    const auto one = sample(1), two = sample(2);
+    check(r.push(one, {10, {}}) == d::PushResult::accepted);
+    check(r.push(two, {11, {}}) == d::PushResult::accepted);
+    check(r.push(one, {12, {}}) == d::PushResult::stale_sequence);
+    auto different = one;
+    different.origin_payload[0] ^= 1;
+    check(r.push(different, {13, {}}) == d::PushResult::stale_sequence);
+    check(r.size() == 2 && r.read_history(0).first_receipt.monotonic_nano == 10);
+    check(r.latest(5000).record->first_receipt.monotonic_nano == 11);
+    check(r.latest(4999).status == d::Status::available);
+    check(!r.export_history_jsonl(4999).empty());
+    // No writer or retirement occurs until both readers join.
+    std::atomic<bool> failed{false};
+    std::thread a(
+        [&]
+        {
+            try
+            {
+                for (unsigned i = 0; i < 40; ++i)
+                    if (r.latest(5000 + i).record->first_receipt.monotonic_nano != 11)
+                        failed = true;
+            }
+            catch (...)
+            {
+                failed = true;
+            }
+        });
+    std::thread b(
+        [&]
+        {
+            try
+            {
+                for (unsigned i = 0; i < 40; ++i)
+                    if (r.export_history_jsonl(4900 + i).empty())
+                        failed = true;
+            }
+            catch (...)
+            {
+                failed = true;
+            }
+        });
+    a.join();
+    b.join();
+    check(!failed);
+    check(r.read_history(1).first_receipt.monotonic_nano == 11 && r.overwritten_count() == 0);
+}
+std::vector<std::uint8_t> read_bytes(const char *path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file)
+        throw std::runtime_error("test origin file unavailable");
+    return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+}
+
 void output_golden()
 {
     d::Recorder r(context(), 3, 100);
@@ -252,10 +304,43 @@ int main(int argc, char **argv)
             output_golden();
             return 0;
         }
+        if ((argc == 6 || argc == 11) && std::string(argv[1]) == "--opaque-origin")
+        {
+            auto c = context();
+            c.origin = {argv[2], argv[3], read_bytes(argv[4])};
+            d::Recorder r(c);
+            auto value = sample();
+            value.origin_payload = read_bytes(argv[5]);
+            std::uint64_t receipt = 10, exported = 11;
+            if (argc == 11)
+            {
+                const auto integer = [](const char *arg)
+                {
+                    std::string_view text(arg);
+                    std::uint64_t number{};
+                    const auto parsed =
+                        std::from_chars(text.data(), text.data() + text.size(), number);
+                    if (text.empty() || (text.size() > 1 && text[0] == '0') ||
+                        parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size())
+                        throw std::runtime_error("noncanonical test integer");
+                    return number;
+                };
+                value.sequence = integer(argv[6]);
+                value.producer_monotonic_nano = integer(argv[7]);
+                value.interval_begin_monotonic_nano = integer(argv[8]);
+                receipt = integer(argv[9]);
+                exported = integer(argv[10]);
+            }
+            if (r.push(value, {receipt, {}}) != d::PushResult::accepted)
+                throw std::runtime_error("test origin setup");
+            std::cout << r.export_history_jsonl(exported);
+            return 0;
+        }
         static_assert(!std::is_copy_constructible_v<d::Recorder>);
         lifecycle_and_bounds();
         validation();
         absent_context_and_limits();
+        independent_readers_and_late_sequences();
         std::cout << "PASS " << checks
                   << " remote draft assertions; no rate/UI/runtime qualification\n";
     }
