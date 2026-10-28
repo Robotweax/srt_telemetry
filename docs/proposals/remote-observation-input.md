@@ -142,3 +142,7 @@ current host/owner/sink lifecycle under GCM and impairment. Only then qualify
 recorder import, UI/history/health and Doctor consumers. No automatic adaptation,
 Control/SRT writes, app activation, Server/EdgeLink/FFT integration or dependency
 pin update is included.
+
+The separate uninstalled [numeric part 2 experiment](remote-numeric-input.md)
+implements the proposed typed projection boundary and shared private counter
+kernel. It does not change this draft2 envelope or activate a consumer.

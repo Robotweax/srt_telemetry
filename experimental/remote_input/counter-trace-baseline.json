@@ -1,0 +1,6 @@
+{
+  "source_commit": "f43c224a90d73dd30ae8da3207bcd1bb2b8c6726",
+  "operations": 2048,
+  "sha256": "9a7d6bc93045b8b3a5afc652cded7119a2b163f07afa6668094bd1d1296d85db",
+  "scope": "synthetic existing C API behavior oracle; no provider/runtime qualification"
+}
