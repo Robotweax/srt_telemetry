@@ -224,6 +224,35 @@ void producer_time_and_transaction()
     check(next.push(observation(1, 1000), {300, {}}, values(100)).sample->delta.quality_flags &
           ROBOTWEAX_SRT_TELEMETRY_QUALITY_FIRST_SAMPLE);
 }
+void alternative_clear_evidence()
+{
+    auto q = qualification();
+    q.since_clear = d::SinceClearPolicy::exclusive_no_clear;
+    d::NumericProcessor p(context(), q);
+    auto bad = values(100);
+    bad.clear_boundary = 0; // present0 is still a token, not missing evidence
+    rejects("values.clear_boundary", [&] { p.push(observation(1, 1000), {1, {}}, bad); });
+    check(p.latest(1).status == d::Status::no_sample);
+    check(p.push(observation(1, 1000), {1, {}}, values(100)).status == d::PushResult::accepted);
+    bad = values(200);
+    bad.extended.received_retransmitted_packet_since_clear = 100;
+    bad.clear_boundary = 1;
+    rejects("values.clear_boundary", [&] { p.push(observation(2, 2000), {2, {}}, bad); });
+    check(p.latest(2).record->observation.sequence == 1);
+    auto good = values(200);
+    good.extended.received_retransmitted_packet_since_clear = 25;
+    auto next = p.push(observation(2, 2000), {2, {}}, good);
+    check(next.status == d::PushResult::accepted &&
+          next.sample->extended_delta.received_retransmitted_packet_delta == 5);
+    // Unknown policy may retain evidence, but cannot derive since-clear deltas.
+    q.since_clear = d::SinceClearPolicy::unknown;
+    d::NumericProcessor unknown(context(), q);
+    bad.clear_boundary = 0;
+    unknown.push(observation(1, 1000), {1, {}}, bad);
+    bad.clear_boundary = 1;
+    auto raw = unknown.push(observation(2, 2000), {2, {}}, bad);
+    check(raw.status == d::PushResult::accepted && !raw.sample->since_clear_delta_eligible);
+}
 void clear_boundaries()
 {
     constexpr auto field =
@@ -281,6 +310,7 @@ int main()
         sampling_and_input_edges();
         producer_time_and_transaction();
         clear_boundaries();
+        alternative_clear_evidence();
         std::cout << "PASS " << checks
                   << " numeric qualification/producer-time/reset/order/clear-policy checks; no "
                      "runtime activation\n";

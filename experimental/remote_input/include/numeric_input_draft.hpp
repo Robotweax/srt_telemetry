@@ -95,6 +95,7 @@ struct NumericValues
     RawValues raw;
     ExtendedValues extended;
     // Origin owner provides actual clear-boundary evidence; null is unknown.
+    // Must be absent with exclusive_no_clear; choose explicit_boundary to use it.
     std::optional<std::uint64_t> clear_boundary;
 };
 struct ProcessedNumeric

@@ -144,6 +144,12 @@ NumericResult NumericProcessor::push(const Observation &observation, const Recei
     auto &s = *impl_;
     if (s.retired)
         return {PushResult::retired, {}};
+    // These are alternative evidence modes. Accepting a clear-boundary token
+    // alongside an exclusive-no-clear promise could hide a proven clear and
+    // derive an invalid since-clear delta. Reject before any publication.
+    require(s.qualification.since_clear != SinceClearPolicy::exclusive_no_clear ||
+                !values.clear_boundary,
+            "values.clear_boundary");
     auto qualified = qualify(values, s.qualification);
     auto next = s.state;
     const bool boundary_changed = s.previous && s.previous->clear_boundary &&

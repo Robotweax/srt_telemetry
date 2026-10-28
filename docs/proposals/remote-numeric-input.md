@@ -67,11 +67,12 @@ The two since-clear extended observations retain their qualified original values
 Their derived deltas require one immutable policy:
 
 - `unknown`: no since-clear deltas;
-- `exclusive_no_clear`: host evidence that no caller clears counters;
+- `exclusive_no_clear`: host evidence that no caller clears counters; per-sample
+  `clear_boundary` must be absent. Present0 is a token and is also refused;
 - `explicit_boundary`: both consecutive accepted observations carry the same
   proven clear-boundary token. Zero is a valid token; absent is unknown.
 
-A changed or missing token suppresses since-clear deltas across that interval,
+Under `explicit_boundary`, a changed or missing token suppresses since-clear deltas across that interval,
 even if counters increased. Lifetime-counter rates continue. After a missing
 boundary, two consecutive records with a known matching token are needed.
 `since_clear_delta_eligible` reports policy/time continuity; actual per-field
@@ -113,3 +114,9 @@ Repeat component cases at actual GCM/impairment and bounded sink/lifecycle
 boundaries. Numeric history/import, windows/health/UI/Doctor and both local/remote
 pipelines need their own contracts and qualification. Nothing here enables
 Control/SRT writes, app integration, automatic tuning, EdgeLink, Server or FFT.
+
+Review follow-up: the alternative no-clear/token modes are now disjoint. A token
+with `exclusive_no_clear` throws field diagnostic `values.clear_boundary` before
+publication, preserving the original latest record and numeric baseline. An origin
+with actual tokens must use `explicit_boundary`; unknown policy may retain evidence
+but derives no since-clear deltas. Existing public C ABI behavior is unchanged.

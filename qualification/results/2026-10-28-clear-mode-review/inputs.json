@@ -1,0 +1,10 @@
+{
+  "reviewed_head": "9a586429c80fa2d1466f698b7a9df27c6312ba2f",
+  "finding": "exclusive_no_clear accepted changing actual clear-boundary evidence and derived an invalid since-clear delta",
+  "resolution": "reject any present boundary token in exclusive-no-clear mode before record/numeric publication; explicit-boundary mode retains its previous semantics",
+  "source_sha256": {
+    "experimental/remote_input/numeric_input_draft.cpp": "6acb09a7c6c08c29ec1e501aa2b429f2a63c4b9871cd577b9c1fcc365a7c9adb",
+    "experimental/remote_input/include/numeric_input_draft.hpp": "f3ce0b9861e7f4c552776424ec5eedb1d96037744a290bbd64bbed1d0f3cc2ea",
+    "experimental/remote_input/test_numeric.cpp": "6cf2f4dd7d44ce222c7c58e65e70b782964b4b1654e7af6ebf2533fdd8a95619"
+  }
+}
