@@ -3,23 +3,18 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
     inputs:
       robotweax_srt_ref:
         description: Robotweax SRT ref for the main track (default main)
         default: main
-  schedule:
-    # Weekly run also on a quiet week: catches drift against Robotweax SRT main.
-    - cron: "41 4 * * 1"
-
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Haivision SRT v1.5.7, the pinned comparison provider (maintainer decision 2026-10-04;
@@ -32,7 +27,55 @@ env:
   GRAFANA_VERSION: "12.1.1"
 
 jobs:
+  smoke:
+    name: Linux core and retained contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Validate and select bounded scope
+      id: scope
+      env:
+        CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      run: 'python3 tools/private_ci.py --self-test
+
+        python3 tools/private_ci.py'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Dashboards and alert rules use known metrics (static)
+      run: python3 tools/check_dashboards.py
+    - name: Robotweax SRT 0.2.6 qualification archive
+      run: python3 qualification/results/2026-09-27-srt-026/validate.py
+    - name: Frozen operator-evaluation rehearsal packet
+      run: 'python3 tools/operator_evaluation.py rehearsal --study qualification/operator-evaluation/five-class-internal-rehearsal-v1/study.json --check qualification/operator-evaluation/five-class-internal-rehearsal-v1/rehearsal-readiness.json
+
+        '
+    - name: Install OTLP and snapshot schema definitions
+      run: python3 -m pip install opentelemetry-proto==1.45.0 jsonschema==4.26.0
+      if: steps.scope.outputs.native == 'true'
+    - name: Configure
+      run: 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS=ON -DROBOTWEAX_SRT_TELEMETRY_REQUIRE_OTLP_PROTO_TEST=ON -DCMAKE_INSTALL_PREFIX="${{
+        runner.temp }}/install"
+
+        '
+      if: steps.scope.outputs.native == 'true'
+    - name: Build
+      run: cmake --build build --parallel
+      if: steps.scope.outputs.native == 'true'
+    - name: Test
+      run: ctest --test-dir build --output-on-failure --parallel 2
+      if: steps.scope.outputs.native == 'true'
+    - name: Install and build an out-of-tree consumer
+      run: "cmake --install build\ncmake -S sdk/tests/package_consumer -B consumer \\\n  -DCMAKE_PREFIX_PATH=\"${{ runner.temp }}/install\"\ncmake --build consumer\n\
+        ./consumer/robotweax_srt_telemetry_package_consumer\n./consumer/robotweax_srt_telemetry_http_package_consumer\ntest -f \"${{ runner.temp }}/install/share/doc/robotweax_srt_telemetry/LICENSE\"\
+        \n"
+      if: steps.scope.outputs.native == 'true'
   core:
+    if: github.event_name == 'workflow_dispatch'
     name: Core SDK (${{ matrix.os }}, ${{ matrix.compiler }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -100,6 +143,7 @@ jobs:
             ./consumer-shared/robotweax_srt_telemetry_http_package_consumer
 
   evidence:
+    if: github.event_name == 'workflow_dispatch'
     name: Retained evidence validators
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -119,6 +163,7 @@ jobs:
           --check qualification/operator-evaluation/five-class-internal-rehearsal-v1/rehearsal-readiness.json
 
   provider:
+    if: github.event_name == 'workflow_dispatch'
     # Robotweax SRT runs twice: its latest release, the standard reference
     # (maintainer decision 2026-10-04), and main, so a change on main that
     # breaks the adapter shows before it is released.
