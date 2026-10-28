@@ -124,6 +124,12 @@ const char *boolean(bool v)
 {
     return v ? "true" : "false";
 }
+// A reader's clock may predate a receipt: it was read before a later push
+// was accepted. Such a record is as young as possible, never an error.
+std::uint64_t age_at(std::uint64_t now, std::uint64_t receipt)
+{
+    return now > receipt ? now - receipt : 0;
+}
 } // namespace
 
 Recorder::Recorder(Context context, std::size_t capacity, std::uint64_t age)
@@ -182,7 +188,7 @@ PushResult Recorder::push(const Observation &value, const Receipt &receipt)
 }
 void Recorder::check_export_clock(std::uint64_t now) const
 {
-    require(now && now >= last_accepted_receipt_nano_, "exported_monotonic_nano");
+    require(now != 0, "exported_monotonic_nano");
 }
 Record Recorder::read_history(std::size_t index) const
 {
@@ -198,7 +204,7 @@ Current Recorder::latest(std::uint64_t now) const
     if (!size_)
         return {Status::no_sample, {}, now};
     const auto &value = *slots_[(head_ + size_ - 1) % slots_.size()];
-    if (now - value.first_receipt.monotonic_nano > maximum_age_)
+    if (age_at(now, value.first_receipt.monotonic_nano) > maximum_age_)
         return {Status::stale, {}, now};
     return {Status::available, value, now};
 }
@@ -238,11 +244,11 @@ std::string Recorder::export_history_jsonl(std::uint64_t now) const
             ",\"firstReceipt\":{\"monotonicNano\":" + integer(r.first_receipt.monotonic_nano) +
             ",\"wallTime\":" + render_wall(r.first_receipt.wall_time) + '}' +
             ",\"exportedMonotonicNano\":" + integer(now) +
-            ",\"receiptAgeNano\":" + integer(now - r.first_receipt.monotonic_nano) +
+            ",\"receiptAgeNano\":" + integer(age_at(now, r.first_receipt.monotonic_nano)) +
             ",\"freshness\":" +
-            quote(retired_                                              ? "retired"
-                  : now - r.first_receipt.monotonic_nano > maximum_age_ ? "stale"
-                                                                        : "fresh") +
+            quote(retired_                                                       ? "retired"
+                  : age_at(now, r.first_receipt.monotonic_nano) > maximum_age_ ? "stale"
+                                                                                : "fresh") +
             ",\"firstInSegment\":" + boolean(r.first_in_segment) +
             ",\"sequenceDiscontinuity\":" + boolean(r.sequence_discontinuity) +
             ",\"equalProducerTime\":" + boolean(r.equal_producer_time) +

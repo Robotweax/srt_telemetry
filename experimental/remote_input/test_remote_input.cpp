@@ -177,8 +177,12 @@ void validation()
         check(r.size() == 0);
     }
     check(r.push(sample(), {10, {}}) == d::PushResult::accepted);
-    rejects([&] { r.latest(9); });
-    rejects([&] { r.export_history_jsonl(9); });
+    // Reads before the receipt see it with age 0; only a zero clock is refused.
+    check(r.latest(9).status == d::Status::available);
+    check(r.export_history_jsonl(9).find("\"receiptAgeNano\":\"0\"") != std::string::npos);
+    rejects([&] { r.latest(0); });
+    rejects([&] { r.export_history_jsonl(0); });
+    // Writers stay ordered: a receipt before the last accepted one is refused.
     rejects([&] { r.push(sample(2), {9, {}}); });
     check(r.size() == 1 && r.overwritten_count() == 0);
     (void)r.latest(50);
@@ -231,6 +235,27 @@ void independent_readers_and_late_sequences()
     check(r.latest(5000).record->first_receipt.monotonic_nano == 11);
     check(r.latest(4999).status == d::Status::available);
     check(!r.export_history_jsonl(4999).empty());
+    // A reader that took its clock before a later push was accepted reads
+    // that record with age 0: fresh, never an error.
+    {
+        d::Recorder late(context(), 2, 100);
+        check(late.push(one, {1000, {}}) == d::PushResult::accepted);
+        const auto current = late.latest(900);
+        check(current.status == d::Status::available && current.record->first_receipt.monotonic_nano == 1000);
+        const auto exported = late.export_history_jsonl(900);
+        check(exported.find("\"receiptAgeNano\":\"0\"") != std::string::npos &&
+              exported.find("\"freshness\":\"fresh\"") != std::string::npos);
+        bool refused = false;
+        try
+        {
+            static_cast<void>(late.latest(0));
+        }
+        catch (const d::ValidationError &e)
+        {
+            refused = e.field() == "exported_monotonic_nano";
+        }
+        check(refused);
+    }
     // No writer or retirement occurs until both readers join.
     std::atomic<bool> failed{false};
     std::thread a(

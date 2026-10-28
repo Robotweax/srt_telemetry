@@ -34,8 +34,9 @@ checks closed output, exact u64s, unknown wall time/epoch0, foreign opaque origi
 and negative vectors. C++ tests cover latest-record duplicate/conflict versus
 stale history, field diagnostics and two independent read-only threads. All writes
 and retirement still require external exclusion; no concurrent-write support or
-TSan qualification is claimed. Reads validate only their own clock against receipt,
-not a shared high-water mark. Their as-of freshness is not authorization to publish.
+TSan qualification is claimed. Reads need only a positive clock, with no shared
+high-water mark: a reader whose clock predates a receipt (taken before a later push
+was accepted) reads that record with age 0. As-of freshness is not authorization to publish.
 
 For an explicit producer-owned byte roundtrip, the test executable accepts:
 

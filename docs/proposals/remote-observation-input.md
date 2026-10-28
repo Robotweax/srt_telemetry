@@ -80,7 +80,9 @@ new segment and must never reconstruct a retired context to erase replay history
 ## Pure reads and synchronization
 
 `latest(now)` is an **as-of query**, returning available/no_sample/stale/retired;
-it validates positive `now >= last accepted receipt`. Maximum age is positive,
+it validates only a positive `now`. A reader whose clock predates a receipt (it was
+read before a later push was accepted) sees that record with age 0, so an ordinary
+interleaving of reader and writer is never an error. Maximum age is positive,
 at most60s (default1s), inclusive at the exact boundary. A stale result has no
 current sample. `export_history_jsonl(now)` uses the same supplied clock domain.
 
@@ -125,14 +127,17 @@ Do not put credentials into identities or labels.
 
 [Review follow-up evidence](../../qualification/results/2026-10-28-remote-input-review/README.md)
 records final tests, neutral/foreign-origin roundtrips and the ownership split.
-The earlier98cda94 [draft1 evidence](../../qualification/results/2026-10-28-remote-input-draft/README.md)
-is historical, not a qualification of draft2. The ARM64 HTTP diagnostic is separated
+The earlier draft1 evidence is not kept in this branch (it qualified code this
+draft replaced); it remains at [98cda94](https://github.com/Robotweax/srt_telemetry/tree/98cda94210696424bde9637abdfadc6a581dcced/qualification/results/2026-10-28-remote-input-draft). The ARM64 HTTP diagnostic is separated
 into an issue-ready note there; the maintainer reports passing x86-64 baseline runs.
 No broad sanitizer failure or universal root cause is claimed.
 
 Before a supported integration: agree on the neutral/opaque split and interface,
 then add qualified typed numeric projection and shared timestamp-independent delta
-reuse. The origin owner must qualify sampling/clear/reset semantics and actual
+reuse. The projection boundary keeps the split: the origin owner decodes its own
+payload and hands Telemetry typed, qualified values (with their units, sampling and
+clear semantics) beside the original bytes. Telemetry never parses an origin
+payload such as RWBL; otherwise the producer coupling this draft removed returns. The origin owner must qualify sampling/clear/reset semantics and actual
 current host/owner/sink lifecycle under GCM and impairment. Only then qualify
 recorder import, UI/history/health and Doctor consumers. No automatic adaptation,
 Control/SRT writes, app activation, Server/EdgeLink/FFT integration or dependency
