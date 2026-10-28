@@ -43,7 +43,7 @@ struct Context
         profile_revision{}, metadata_epoch{}, binding_generation{};
     // First draft: Single / Live sender, connection row only. Unsupported
     // roles/scopes must not be silently normalized to these values.
-    std::string media_kind, scope, role;
+    std::string media_kind, scope, role, native_kind;
     std::uint8_t member_slot{};
     std::uint64_t member_generation{};
     std::vector<std::uint8_t> path_label;

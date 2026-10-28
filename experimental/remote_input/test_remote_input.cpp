@@ -39,6 +39,7 @@ d::Context context()
     c.role = "sender";
     c.media_kind = "live";
     c.scope = "connection";
+    c.native_kind = "single";
     c.media_session_id.fill(255);
     c.source_generation = maximum;
     c.association_generation = maximum - 1;
@@ -107,7 +108,7 @@ void lifecycle_and_bounds()
 }
 void validation()
 {
-    for (unsigned n = 0; n != 15; ++n)
+    for (unsigned n = 0; n != 16; ++n)
     {
         auto c = context();
         if (n == 0)
@@ -140,6 +141,8 @@ void validation()
             c.provider = "guessed";
         if (n == 14)
             c.device = "embedded\nnewline";
+        if (n == 15)
+            c.native_kind = "group"; // group aggregates can use connection scope
         rejects([&] { d::Recorder bad(c); });
     }
     rejects([&] { d::Recorder bad(context(), 0); });

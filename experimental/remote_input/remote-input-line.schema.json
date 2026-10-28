@@ -112,7 +112,8 @@
             "scope",
             "memberSlot",
             "memberGeneration",
-            "pathLabelHex"
+            "pathLabelHex",
+            "nativeKind"
           ],
           "properties": {
             "device": {
@@ -166,6 +167,9 @@
             },
             "pathLabelHex": {
               "const": ""
+            },
+            "nativeKind": {
+              "const": "single"
             }
           },
           "additionalProperties": false

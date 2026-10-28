@@ -12,8 +12,8 @@ test 61
 61: Test command: /Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote/experimental/remote_input/robotweax_srt_telemetry_remote_draft_tests
 61: Working Directory: /Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote/experimental/remote_input
 61: Test timeout computed to be: 30
-61: PASS 82 remote draft assertions; no rate/UI/runtime qualification
-1/2 Test #61: robotweax_srt_telemetry_remote_draft_tests ....   Passed    0.30 sec
+61: PASS 83 remote draft assertions; no rate/UI/runtime qualification
+1/2 Test #61: robotweax_srt_telemetry_remote_draft_tests ....   Passed    0.00 sec
 test 62
     Start 62: robotweax_srt_telemetry_remote_draft_schema
 
@@ -21,7 +21,7 @@ test 62
 62: Working Directory: /Users/robotweax/Documents/Codex/robotweax-srt-public/srt_broadcast_link/.cache/telemetry-remote-input/build-remote/experimental/remote_input
 62: Test timeout computed to be: 30
 62: PASS3 closed draft lines, exact contexts/u64s/opaque payload, null versus epoch0, 27 negatives; old recording schema rejects draft
-2/2 Test #62: robotweax_srt_telemetry_remote_draft_schema ...   Passed    0.15 sec
+2/2 Test #62: robotweax_srt_telemetry_remote_draft_schema ...   Passed    0.13 sec
 
 The following tests passed:
 	robotweax_srt_telemetry_remote_draft_tests
@@ -29,4 +29,4 @@ The following tests passed:
 
 100% tests passed out of 2
 
-Total Test time (real) =   0.46 sec
+Total Test time (real) =   0.15 sec

@@ -27,7 +27,7 @@ assert header['row'] == {
     'device': 'Kq2x81a0kfdT7mZ3pLw9Ab', 'session': 'Q3vXn0b8cR2hY6tJ1sWe4A',
     'resource': 'camera/"back\\slash', 'mediaSessionIdHex': 'ff'*32,
     'sourceGeneration': str(maximum), 'mediaKind': 'live', 'scope': 'connection',
-    'memberSlot': 0, 'memberGeneration': '0', 'pathLabelHex': '',
+    'memberSlot': 0, 'memberGeneration': '0', 'pathLabelHex': '', 'nativeKind':'single',
 }
 assert header['pair'] == dict(zip(
     ['associationGeneration','componentGeneration','profileRevision','metadataEpoch','bindingGeneration'],

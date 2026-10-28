@@ -28,7 +28,9 @@ ABI1, package exports and schema1alpha1–4 remain unchanged.
 - One immutable context per row and host-generated segment. Includes device,
   route session, binary32-byte media association, resource, source generation,
   full association/component/profile/binding generations and Metadata epoch.
-  Scope/slot/member-generation/label fields are explicit. This first draft
+  Native kind, scope/slot/member-generation/label fields are explicit. The host
+  must supply native kind separately: a group aggregate can also use connection
+  scope, so scope alone cannot establish Single mode. This first draft
   accepts **Single/Live sender, connection row** only; play/receiver/group/member
   inputs fail instead of being normalized to this scope.
 - Producer process/clock domain may be null. Cloud observer node/process may be
@@ -105,7 +107,7 @@ or use these raw labels as public metric dimensions.
 ## Review gates and remaining slices
 
 This part exercises the **representation/storage** portions of BL A05–A13 only.
-The82 C++ assertions and closed-schema/negative checks use synthetic owned byte
+The83 C++ assertions and closed-schema/negative checks use synthetic owned byte
 fixtures; they do not authenticate native peers or demonstrate full Type5 decode /
 context binding. Existing Core/ABI/recording tests remain separate regressions.
 

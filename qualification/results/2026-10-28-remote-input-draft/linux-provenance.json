@@ -4,11 +4,11 @@
   "ubsan": "halt_on_error=1:print_stacktrace=1",
   "inputs": {
     "robotweax_srt_telemetry_remote_draft_tests": {
-      "sha256": "014239123d7bfd0e058b8ca7922fcf6563edae262111411a6dd15513b99d81e8",
+      "sha256": "aebfb108332fe989b9a06d0f80108aabb662677917c14147955317386364afcb",
       "asan_instrumented": true
     },
     "librobotweax_srt_telemetry_remote_draft.a": {
-      "sha256": "fc597600f825f0549cbe35c25ecd3b8e890865bf1ddf49711920244869663011",
+      "sha256": "56742646f02dabb5e9d5fd00b7fe4b08ac7365167007c9ee93d533861e90141b",
       "asan_instrumented": true
     }
   },

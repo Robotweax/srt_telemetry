@@ -9,7 +9,7 @@ BL adapter, released API/schema, dependency pin or existing ABI1 behavior change
 - macOS ARM64: **62/62 CTests pass** at the final draft source, including the
   existing C ABI, delta/metrics/sampler/health, recording1alpha2–4, closed recording
   schema, required OTLP-Protobuf and HTTP/export regressions.
-- New draft tests: **82 C++ assertions and27 schema negatives**, pass on both macOS
+- New draft tests: **83 C++ assertions and27 schema negatives**, pass on both macOS
   and Linux ARM64. The schema test additionally checks70 u64 boundary values,
  3 actual output lines, exact contexts/escaping/opaque byte preservation, unknown
   producer wall time versus real epoch0, and old recording-schema refusal.

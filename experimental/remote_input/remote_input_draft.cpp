@@ -65,8 +65,8 @@ void validate(const Context &c)
             c.profile_revision && c.metadata_epoch && c.binding_generation);
     require(std::any_of(c.media_session_id.begin(), c.media_session_id.end(),
                         [](auto b) { return b != 0; }));
-    require(c.media_kind == "live" && c.scope == "connection" && c.role == "sender" &&
-            !c.member_slot && !c.member_generation && c.path_label.empty());
+    require(c.native_kind == "single" && c.media_kind == "live" && c.scope == "connection" &&
+            c.role == "sender" && !c.member_slot && !c.member_generation && c.path_label.empty());
     optional_ascii(c.producer_instance);
     optional_ascii(c.producer_clock_domain);
     require(!c.provider || *c.provider == "robotweax-srt" || *c.provider == "haivision-srt");
@@ -222,7 +222,8 @@ std::string Recorder::export_history_jsonl(std::uint64_t now) const
         ",\"resource\":" + quote(c.resource) +
         ",\"mediaSessionIdHex\":" + quote(hex(c.media_session_id)) +
         ",\"sourceGeneration\":" + integer(c.source_generation) +
-        ",\"mediaKind\":\"live\",\"scope\":\"connection\",\"memberSlot\":0,\"memberGeneration\":"
+        ",\"nativeKind\":\"single\",\"mediaKind\":\"live\",\"scope\":\"connection\",\"memberSlot\":"
+        "0,\"memberGeneration\":"
         "\"0\",\"pathLabelHex\":\"\"}" +
         ",\"pair\":{\"associationGeneration\":" + integer(c.association_generation) +
         ",\"componentGeneration\":" + integer(c.component_generation) +
