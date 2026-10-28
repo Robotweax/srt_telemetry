@@ -13,12 +13,14 @@
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -61,6 +63,15 @@ struct RecordingConfig final
     std::size_t capacity = 4'096;
 };
 
+// A plain UDP endpoint for the opaque media relay: the caller's local input
+// (one datagram = one SRT message) or the listener's output destination.
+struct MediaEndpoint final
+{
+    sockaddr_storage address{};
+    int address_size = 0;
+    std::string text;
+};
+
 struct Options final
 {
     std::string role;
@@ -70,8 +81,10 @@ struct Options final
     int port = 0;
     int message_ttl_milliseconds = -1;
     int receive_timeout_milliseconds = 15'000;
+    std::optional<int> peer_idle_timeout_milliseconds;
     std::optional<bool> too_late_packet_drop;
     bool verify_message_sequence = false;
+    std::optional<MediaEndpoint> media;
     std::optional<RecordingConfig> recording;
 };
 
@@ -168,6 +181,13 @@ bool configure_live_message_profile(const SRTSOCKET socket, const Options &optio
                     "too-late packet drop"))
             return false;
     }
+    if (options.peer_idle_timeout_milliseconds.has_value())
+    {
+        const int idle = *options.peer_idle_timeout_milliseconds;
+        if (!srt_ok(srt_setsockflag(socket, SRTO_PEERIDLETIMEO, &idle, sizeof(idle)),
+                    "peer idle timeout"))
+            return false;
+    }
     return true;
 }
 
@@ -215,6 +235,36 @@ int address_port(const sockaddr_storage &address)
         return ntohs(reinterpret_cast<const sockaddr_in6 *>(&address)->sin6_port);
     }
     return 0;
+}
+
+bool parse_media_endpoint(const std::string &text, MediaEndpoint &endpoint)
+{
+    std::string host;
+    std::string port_text;
+    if (!text.empty() && text.front() == '[')
+    {
+        const auto close = text.find(']');
+        if (close == std::string::npos || close + 1 >= text.size() || text[close + 1] != ':')
+            return false;
+        host = text.substr(1, close - 1);
+        port_text = text.substr(close + 2);
+    }
+    else
+    {
+        const auto colon = text.rfind(':');
+        if (colon == std::string::npos || text.find(':') != colon)
+            return false;
+        host = text.substr(0, colon);
+        port_text = text.substr(colon + 1);
+    }
+    char *end = nullptr;
+    const auto port = std::strtol(port_text.c_str(), &end, 10);
+    if (port_text.empty() || *end != '\0' || port <= 0 || port > 65'535)
+        return false;
+    endpoint.address_size =
+        parse_ip_address(host, static_cast<std::uint16_t>(port), endpoint.address);
+    endpoint.text = text;
+    return endpoint.address_size != 0;
 }
 
 bool bind_ephemeral_udp(const SRTSOCKET listener, const std::string &bind_address, int &port)
@@ -430,6 +480,233 @@ class TransferWorker final
     bool success_ = false;
 };
 
+#if defined(_WIN32)
+using NativeSocket = SOCKET;
+constexpr NativeSocket invalid_native_socket = INVALID_SOCKET;
+void close_native_socket(const NativeSocket native)
+{
+    static_cast<void>(closesocket(native));
+}
+#else
+using NativeSocket = int;
+constexpr NativeSocket invalid_native_socket = -1;
+void close_native_socket(const NativeSocket native)
+{
+    static_cast<void>(close(native));
+}
+#endif
+
+std::uint64_t relay_monotonic_now()
+{
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::steady_clock::now().time_since_epoch())
+                                          .count());
+}
+
+bool connection_ended(const int code)
+{
+    return code == SRT_ECONNLOST || code == SRT_ENOCONN || code == SRT_EINVSOCK ||
+           code == SRT_ECONNFAIL;
+}
+
+// Counters of one media relay epoch. The relay carries opaque datagrams and
+// never inspects or validates the media; gaps are recorded, not fatal.
+struct MediaCounters final
+{
+    std::uint64_t messages = 0;
+    std::uint64_t bytes = 0;
+    std::uint64_t oversize_datagrams = 0;
+    std::uint64_t send_failures = 0;
+    std::uint64_t receive_timeouts = 0;
+    std::uint64_t output_failures = 0;
+    std::uint64_t first_message_nano = 0;
+    std::uint64_t last_message_nano = 0;
+    std::uint64_t longest_gap_nano = 0;
+    bool connection_broken = false;
+};
+
+class MediaRelay final
+{
+  public:
+    MediaRelay() = default;
+    MediaRelay(const MediaRelay &) = delete;
+    MediaRelay &operator=(const MediaRelay &) = delete;
+
+    ~MediaRelay()
+    {
+        static_cast<void>(stop());
+    }
+
+    [[nodiscard]] bool active() const noexcept
+    {
+        return thread_.joinable();
+    }
+
+    // The native socket is created (and, for input, bound) before this
+    // returns, so a source started after MEDIA_STARTED cannot race the bind.
+    bool start(const SRTSOCKET socket, const bool sender, const MediaEndpoint &endpoint,
+               const int ttl_milliseconds)
+    {
+        if (active())
+            return false;
+        native_ = ::socket(endpoint.address.ss_family, SOCK_DGRAM, 0);
+        if (native_ == invalid_native_socket)
+        {
+            std::cerr << "FAIL: media relay UDP socket creation\n";
+            return false;
+        }
+        if (sender)
+        {
+            const int receive_buffer = 4 * 1024 * 1024;
+            static_cast<void>(::setsockopt(native_, SOL_SOCKET, SO_RCVBUF,
+                                           reinterpret_cast<const char *>(&receive_buffer),
+                                           sizeof(receive_buffer)));
+            if (::bind(native_, reinterpret_cast<const sockaddr *>(&endpoint.address),
+                       endpoint.address_size) != 0)
+            {
+                std::cerr << "FAIL: media relay UDP input bind " << endpoint.text << '\n';
+                close_native_socket(native_);
+                native_ = invalid_native_socket;
+                return false;
+            }
+        }
+        counters_ = {};
+        stopping_.store(false);
+        try
+        {
+            thread_ = std::thread(
+                [this, socket, sender, endpoint, ttl_milliseconds]()
+                {
+                    if (sender)
+                        relay_to_srt(socket, ttl_milliseconds);
+                    else
+                        relay_from_srt(socket, endpoint);
+                });
+        }
+        catch (const std::system_error &error)
+        {
+            std::cerr << "FAIL: media relay startup: " << error.what() << '\n';
+            close_native_socket(native_);
+            native_ = invalid_native_socket;
+            return false;
+        }
+        return true;
+    }
+
+    MediaCounters stop()
+    {
+        stopping_.store(true);
+        if (thread_.joinable())
+            thread_.join();
+        if (native_ != invalid_native_socket)
+        {
+            close_native_socket(native_);
+            native_ = invalid_native_socket;
+        }
+        return counters_;
+    }
+
+  private:
+    void delivered(const std::size_t size)
+    {
+        const auto now = relay_monotonic_now();
+        if (counters_.messages == 0)
+            counters_.first_message_nano = now;
+        else
+            counters_.longest_gap_nano =
+                std::max(counters_.longest_gap_nano, now - counters_.last_message_nano);
+        counters_.last_message_nano = now;
+        ++counters_.messages;
+        counters_.bytes += size;
+    }
+
+    void relay_to_srt(const SRTSOCKET socket, const int ttl_milliseconds)
+    {
+        std::array<char, 2'048> datagram{};
+        while (!stopping_.load())
+        {
+            fd_set readable;
+            FD_ZERO(&readable);
+            FD_SET(native_, &readable);
+            timeval wait{0, 100'000};
+            const auto ready =
+                ::select(static_cast<int>(native_) + 1, &readable, nullptr, nullptr, &wait);
+            if (ready <= 0)
+                continue;
+            const auto size =
+                ::recv(native_, datagram.data(), static_cast<int>(datagram.size()), 0);
+            if (size <= 0)
+                continue;
+            if (static_cast<std::size_t>(size) > maximum_message_bytes)
+            {
+                ++counters_.oversize_datagrams;
+                continue;
+            }
+            const auto sent =
+                srt_sendmsg(socket, datagram.data(), static_cast<int>(size), ttl_milliseconds, 1);
+            if (sent == static_cast<int>(size))
+            {
+                delivered(static_cast<std::size_t>(size));
+                continue;
+            }
+            if (connection_ended(srt_getlasterror(nullptr)))
+            {
+                counters_.connection_broken = true;
+                return;
+            }
+            ++counters_.send_failures;
+        }
+    }
+
+    void relay_from_srt(const SRTSOCKET socket, const MediaEndpoint &endpoint)
+    {
+        std::array<char, maximum_message_bytes> message{};
+        while (!stopping_.load())
+        {
+            const auto size = srt_recvmsg(socket, message.data(), static_cast<int>(message.size()));
+            if (size == SRT_ERROR)
+            {
+                const auto code = srt_getlasterror(nullptr);
+                if (connection_ended(code))
+                {
+                    counters_.connection_broken = true;
+                    return;
+                }
+                ++counters_.receive_timeouts;
+                continue;
+            }
+            if (size <= 0)
+                continue;
+            delivered(static_cast<std::size_t>(size));
+            if (::sendto(native_, message.data(), size, 0,
+                         reinterpret_cast<const sockaddr *>(&endpoint.address),
+                         endpoint.address_size) != size)
+                ++counters_.output_failures;
+        }
+    }
+
+    std::atomic<bool> stopping_{false};
+    std::thread thread_;
+    NativeSocket native_ = invalid_native_socket;
+    MediaCounters counters_;
+};
+
+void emit_media_stopped(const MediaCounters &counters)
+{
+    std::cout << "MEDIA_STOPPED {\"messages\":" << counters.messages
+              << ",\"bytes\":" << counters.bytes
+              << ",\"oversizeDatagrams\":" << counters.oversize_datagrams
+              << ",\"sendFailures\":" << counters.send_failures
+              << ",\"receiveTimeouts\":" << counters.receive_timeouts
+              << ",\"outputFailures\":" << counters.output_failures
+              << ",\"firstMessageMonotonicNano\":" << counters.first_message_nano
+              << ",\"lastMessageMonotonicNano\":" << counters.last_message_nano
+              << ",\"longestGapNano\":" << counters.longest_gap_nano
+              << ",\"connectionBroken\":" << (counters.connection_broken ? "true" : "false")
+              << "}\n"
+              << std::flush;
+}
+
 void emit_sample(const std::string_view role, const std::uint64_t sample_index,
                  const robotweax_srt_telemetry_public_srt_result_v1 &result)
 {
@@ -600,6 +877,7 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
                  const std::string_view role, const Options &options)
 {
     TransferWorker transfer_worker;
+    MediaRelay media_relay;
     const auto message_bytes = options.message_bytes;
     const auto &recording = options.recording;
     bool message_api = false;
@@ -608,6 +886,8 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
     int drop_size = sizeof(too_late_packet_drop);
     int receive_timeout_milliseconds = 0;
     int timeout_size = sizeof(receive_timeout_milliseconds);
+    int peer_idle_timeout_milliseconds = 0;
+    int idle_size = sizeof(peer_idle_timeout_milliseconds);
     if (!srt_ok(srt_getsockflag(socket, SRTO_MESSAGEAPI, &message_api, &message_size),
                 "profile message API") ||
         !message_api ||
@@ -616,8 +896,13 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
         !srt_ok(
             srt_getsockflag(socket, SRTO_RCVTIMEO, &receive_timeout_milliseconds, &timeout_size),
             "profile receive timeout") ||
+        !srt_ok(srt_getsockflag(socket, SRTO_PEERIDLETIMEO, &peer_idle_timeout_milliseconds,
+                                &idle_size),
+                "profile peer idle timeout") ||
         (options.too_late_packet_drop.has_value() &&
          too_late_packet_drop != *options.too_late_packet_drop) ||
+        (options.peer_idle_timeout_milliseconds.has_value() &&
+         peer_idle_timeout_milliseconds != *options.peer_idle_timeout_milliseconds) ||
         receive_timeout_milliseconds != options.receive_timeout_milliseconds)
     {
         std::cerr << "FAIL: incident peer profile mismatch\n";
@@ -631,7 +916,13 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
               << ",\"receiveTimeoutMillis\":" << receive_timeout_milliseconds
               << ",\"configuredMessageTtlMillis\":" << options.message_ttl_milliseconds
               << ",\"sequenceVerification\":"
-              << (options.verify_message_sequence ? "true" : "false") << "}\n"
+              << (options.verify_message_sequence ? "true" : "false")
+              << ",\"peerIdleTimeoutMillis\":" << peer_idle_timeout_milliseconds
+              << ",\"mediaRelay\":\""
+              << (!options.media.has_value() ? "none"
+                  : sender                   ? "udp-to-srt"
+                                             : "srt-to-udp")
+              << "\"}\n"
               << std::flush;
     std::optional<robotweax::srt::telemetry::BoundedRecorder> recorder;
     if (recording.has_value())
@@ -645,7 +936,8 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
         std::istringstream command(line);
         std::string operation;
         command >> operation;
-        if (operation == "DONE" && no_extra_input(command) && !transfer_worker.active())
+        if (operation == "DONE" && no_extra_input(command) && !transfer_worker.active() &&
+            !media_relay.active())
         {
             if (window.has_value())
             {
@@ -659,6 +951,31 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
                 return EXIT_FAILURE;
             }
             return EXIT_SUCCESS;
+        }
+        if (operation == "START_MEDIA")
+        {
+            if (!no_extra_input(command) || !options.media.has_value() || media_relay.active() ||
+                transfer_worker.active() ||
+                !media_relay.start(socket, sender, *options.media,
+                                   options.message_ttl_milliseconds))
+            {
+                std::cerr << "FAIL: invalid or failed START_MEDIA command\n";
+                return EXIT_FAILURE;
+            }
+            std::cout << "MEDIA_STARTED {\"direction\":\"" << (sender ? "udp-to-srt" : "srt-to-udp")
+                      << "\"}\n"
+                      << std::flush;
+            continue;
+        }
+        if (operation == "STOP_MEDIA")
+        {
+            if (!no_extra_input(command) || !media_relay.active())
+            {
+                std::cerr << "FAIL: invalid STOP_MEDIA command\n";
+                return EXIT_FAILURE;
+            }
+            emit_media_stopped(media_relay.stop());
+            continue;
         }
         if (operation == "ARM")
         {
@@ -738,7 +1055,7 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
             std::uint64_t message_count = 0;
             std::uint64_t pacing_microseconds = 0;
             if (!(command >> transfer_id >> message_count >> pacing_microseconds) ||
-                message_count == 0 || !no_extra_input(command) ||
+                message_count == 0 || !no_extra_input(command) || media_relay.active() ||
                 !transfer_worker.start(socket, sender, transfer_id, message_count, message_bytes,
                                        options.message_ttl_milliseconds,
                                        options.verify_message_sequence, pacing_microseconds))
@@ -890,6 +1207,7 @@ bool parse_options(const int argc, char **argv, Options &options)
 {
     std::optional<RecordingConfig> recording;
     bool saw_recording_option = false;
+    std::string media_option;
     for (int index = 1; index < argc; ++index)
     {
         const std::string_view option(argv[index]);
@@ -936,6 +1254,21 @@ bool parse_options(const int argc, char **argv, Options &options)
         {
             if (!parse_integer(value, 1, 60'000, options.receive_timeout_milliseconds))
                 return false;
+        }
+        else if (option == "--peer-idle-timeout-ms")
+        {
+            int idle = 0;
+            if (!parse_integer(value, 1'000, 300'000, idle))
+                return false;
+            options.peer_idle_timeout_milliseconds = idle;
+        }
+        else if (option == "--media-udp-input" || option == "--media-udp-output")
+        {
+            MediaEndpoint endpoint;
+            if (options.media.has_value() || !parse_media_endpoint(value, endpoint))
+                return false;
+            media_option = std::string(option);
+            options.media = endpoint;
         }
         else if (option == "--too-late-packet-drop")
         {
@@ -1000,6 +1333,10 @@ bool parse_options(const int argc, char **argv, Options &options)
     }
     if (options.verify_message_sequence && options.message_bytes < 16)
         return false;
+    // The caller relays UDP input into SRT; the listener relays SRT to UDP.
+    if ((media_option == "--media-udp-input" && options.role != "caller") ||
+        (media_option == "--media-udp-output" && options.role != "listener"))
+        return false;
     options.recording = std::move(recording);
     return true;
 }
@@ -1018,6 +1355,9 @@ int main(const int argc, char **argv)
                          "[--message-bytes 1..1316] "
                          "[--too-late-packet-drop enabled|disabled] "
                          "[--message-ttl-ms -1..60000] [--receive-timeout-ms 1..60000] "
+                         "[--peer-idle-timeout-ms 1000..300000] "
+                         "[--media-udp-input HOST:PORT (caller) | "
+                         "--media-udp-output HOST:PORT (listener)] "
                          "[--verify-message-sequence (requires >=16 message bytes)] "
                          "[--jsonl-output PATH --flow-id ID --provider-version VERSION "
                          "--provider-revision REVISION --build-profile PROFILE "

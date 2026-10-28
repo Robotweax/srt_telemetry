@@ -41,6 +41,37 @@ recording. The JSONL exporter and telemetry schema are unchanged.
 - `DONE`: freeze and export. If the post deadline was not reached, the state
   explicitly reports `connection-ended`; with no trigger, `untriggered-end`.
 
+### Opaque media relay and peer idle timeout
+
+For experiments that must observe the same SRT stream with Telemetry and with
+an independent downstream process (for example a separate media decoder), the
+peer can relay opaque UDP datagrams instead of its numbered synthetic payload:
+
+- `--media-udp-input HOST:PORT` (caller only): bind a local UDP input; each
+  datagram of at most 1316 bytes becomes one live SRT message. Larger
+  datagrams are counted as `oversizeDatagrams` and not sent.
+- `--media-udp-output HOST:PORT` (listener only): send each received SRT
+  message as one UDP datagram to that destination. IPv6 uses `[addr]:port`.
+- `--peer-idle-timeout-ms 1000..300000`: set `SRTO_PEERIDLETIMEO` before
+  connect/listen, so a session can be kept across an underlay outage longer
+  than the 5 s default. `PROFILE` reports the effective value as
+  `peerIdleTimeoutMillis` and the relay direction as `mediaRelay`.
+- `START_MEDIA` / `STOP_MEDIA`: start and stop the relay worker;
+  `MEDIA_STARTED {"direction":…}` and `MEDIA_STOPPED {…}` reply. The input
+  socket is bound before `MEDIA_STARTED`, so a source started afterwards
+  cannot race the bind. `SAMPLE` and `SAMPLE_NOW` keep working while the relay
+  runs; `START_TRANSFER` or `DONE` before `STOP_MEDIA` fail the peer.
+
+The relay never inspects or validates the payload. Gaps are recorded, not
+fatal: a receive timeout (`--receive-timeout-ms`) is counted and retried, and
+only a lost connection ends the relay early (`connectionBroken: true`).
+`MEDIA_STOPPED` reports message and byte counts, send, receive-timeout and
+output failures, and the first/last delivery time and longest inter-message gap
+on the peer's `steady_clock` (the same caveat on clock origins as below
+applies). The listener's `STOP_MEDIA` returns within one receive timeout.
+Recording and the JSONL schema are unchanged: the exported file is still
+`1alpha1`.
+
 A sample later than the deadline freezes capture without being appended. An
 exact-deadline sample is appended and freezes it. Capacity exhaustion freezes
 without overwriting pre-trigger evidence and reports `capacity`, so shortened
