@@ -1,0 +1,15 @@
+{
+  "asan_options": "detect_leaks=1:halt_on_error=1",
+  "ubsan_options": "halt_on_error=1:print_stacktrace=1",
+  "platform": "Linux 7.0.14-linuxkit aarch64",
+  "inputs": {
+    "robotweax_srt_telemetry_remote_draft_tests": {
+      "sha256": "97f03bae120fd55e2b602786a19ce7d784c92a87739d48948186e0e004af1cf0",
+      "asan_instrumented": true
+    },
+    "librobotweax_srt_telemetry_remote_draft.a": {
+      "sha256": "566aaa2dd8e59aa08ca1a287632b2d214befddf5acd363b092c7a5f2f0231466",
+      "asan_instrumented": true
+    }
+  }
+}

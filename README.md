@@ -159,6 +159,7 @@ The installed targets are `RobotweaxSRTTelemetry::core` and, when enabled,
 
 - [Project handoff for another machine](HANDOFF.md)
 - [Telemetry contract](docs/architecture/telemetry-contract.md)
+- [Remote observation input proposal (experimental, uninstalled)](docs/proposals/remote-observation-input.md)
 - [Provider and capability model](docs/architecture/provider-model.md)
 - [SRT statistics field map](docs/architecture/srt-stats-field-map.md)
 - [Public SRT API adapter](docs/architecture/public-srt-adapter.md)
