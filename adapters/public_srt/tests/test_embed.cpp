@@ -1439,6 +1439,68 @@ void test_recording_failure_counter()
     robotweax_srt_telemetry_embed_stop(embed);
 }
 
+/* A write whose directory cannot be synced is not done: a directory without
+ * read permission still takes the temporary file and the rename, but cannot
+ * be opened for its sync. Root ignores the permission, so the case needs an
+ * unprivileged user (CI runners are). */
+void test_recording_directory_sync_failure()
+{
+    if (::geteuid() == 0)
+    {
+        std::cout << "directory sync failure: not testable as root\n";
+        return;
+    }
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-dirsync-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    auto config = base_config();
+    const auto spec = "off,name=cam-9,jsonl=" + directory.string() + ",linger_s=0";
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "dirsync spec");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "dirsync start");
+    if (embed == nullptr)
+    {
+        return;
+    }
+    RecordingEvents events;
+    check(robotweax_srt_telemetry_embed_set_recording_callback(embed, RecordingEvents::callback, &events) ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "dirsync callback set");
+    Stream stream;
+    check(stream.open(nullptr) && robotweax_srt_telemetry_embed_attach(embed, stream.sender,
+                                                                       ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                                       nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "dirsync attach");
+    stream.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    std::filesystem::permissions(directory, std::filesystem::perms::owner_write | std::filesystem::perms::owner_exec);
+    check(robotweax_srt_telemetry_embed_write_recording(embed, stream.sender) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              wait_until([&] { return events.size() == 1; }, 5'000),
+          "write into an unsyncable directory reported");
+    std::uint64_t failed = 0;
+    check(events.at(0).flags == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_FAILED && events.at(0).record_count == 0 &&
+              recordings_written(embed, &failed) == 0 && failed == 1,
+          "an unsynced directory fails the write: flags " + std::to_string(events.at(0).flags));
+
+    /* Once the directory can be synced, the next request writes again,
+     * although no sample may have come in between. */
+    std::filesystem::permissions(directory, std::filesystem::perms::owner_all);
+    check(robotweax_srt_telemetry_embed_write_recording(embed, stream.sender) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              wait_until([&] { return events.size() == 2; }, 5'000) &&
+              events.at(1).flags == ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_WRITTEN,
+          "the next request writes and syncs again");
+    std::size_t samples = 0;
+    check(complete_recording(read_lines(events.path(1)), "sender", samples) && samples == events.at(1).record_count,
+          "the rewritten file is complete");
+    check(robotweax_srt_telemetry_embed_detach(embed, stream.sender) == ROBOTWEAX_SRT_TELEMETRY_OK, "dirsync detach");
+    stream.stop();
+    robotweax_srt_telemetry_embed_stop(embed);
+    std::filesystem::remove_all(directory);
+}
+
 #if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)
 /* The "peer" object of the source with this stream label and role. */
 std::string peer_json(robotweax_srt_telemetry_embed *embed, const std::string &stream, const std::string &role)
@@ -1599,6 +1661,7 @@ int main()
     test_recordings();
     test_recording_lifecycle();
     test_recording_failure_counter();
+    test_recording_directory_sync_failure();
     test_live_recording();
     test_recording_1alpha3_pair();
     test_recording_1alpha3_continuation();
