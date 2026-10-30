@@ -1108,10 +1108,50 @@ void handle_request(Server &server, Connection &c, const Request &request)
             reply(500, text, "history read failed\n");
             return;
         }
+        /* The identity as of this read: the records may span earlier
+         * connections of the source. */
+        robotweax_srt_telemetry_source_identity_v1 identity{};
+        identity.struct_size = sizeof(identity);
+        identity.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        const bool has_identity = robotweax_srt_telemetry_sampler_source_identity_v1(server.config.sampler, id,
+                                                                                     &identity) ==
+                                  ROBOTWEAX_SRT_TELEMETRY_OK;
+        robotweax_srt_telemetry_observer_v1 observer{};
+        observer.struct_size = sizeof(observer);
+        observer.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        const bool has_observer =
+            robotweax_srt_telemetry_sampler_observer_v1(server.config.sampler, &observer) == ROBOTWEAX_SRT_TELEMETRY_OK;
+        const auto nullable = [](std::string &out, const char *value)
+        {
+            if (value[0] == '\0')
+                out += "null";
+            else
+                json_string(out, value);
+        };
         const bool more = count > history_page;
         const auto shown = std::min(count, history_page);
         std::string body = "{\"source_id\":";
         json_u64(body, id);
+        body += ",\"observer\":";
+        if (has_observer)
+        {
+            body += "{\"node\":";
+            nullable(body, observer.node);
+            body += ",\"instance\":";
+            nullable(body, observer.instance);
+            body += '}';
+        }
+        else
+        {
+            body += "null";
+        }
+        body += ",\"connection_seq\":";
+        if (has_identity && identity.connection_seq != 0)
+            json_u64(body, identity.connection_seq);
+        else
+            body += "null";
+        body += ",\"session_ref\":";
+        nullable(body, has_identity ? identity.session_ref : "");
         body += ",\"more\":";
         body += more ? "true" : "false";
         if (more)

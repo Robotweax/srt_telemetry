@@ -35,6 +35,12 @@ robotweax_srt_telemetry_http_server_stop(server);   /* before destroying the sam
 
 HEAD is served for every GET endpoint except the feed.
 
+A history response names its source as of the read: `source_id`,
+`observer`, `connection_seq` and `session_ref`, with the same meaning and
+`null` rules as in the [JSON snapshot](metric-names.md#json-snapshot). The
+records can span earlier connections of a continued source; a reader that
+compares `connection_seq` between reads sees a new connection.
+
 History records carry, per window:
 - `start_unix_ms`, `window_ms`, `samples`;
 - `quality` (window flag bits);

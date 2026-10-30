@@ -17,6 +17,12 @@ _Static_assert(sizeof(robotweax_srt_telemetry_rtt_metadata_v1) == 64, "RTT metad
 _Static_assert(sizeof(robotweax_srt_telemetry_peer_metadata_v1) == 148, "peer metadata ABI");
 _Static_assert(offsetof(robotweax_srt_telemetry_peer_metadata_v1, identity_name) == 40, "peer name offset");
 _Static_assert(offsetof(robotweax_srt_telemetry_peer_metadata_v1, reserved) == 140, "peer reserved offset");
+_Static_assert(sizeof(robotweax_srt_telemetry_source_identity_v1) == 288, "source identity ABI");
+_Static_assert(offsetof(robotweax_srt_telemetry_source_identity_v1, session_ref) == 16, "session ref offset");
+_Static_assert(offsetof(robotweax_srt_telemetry_source_identity_v1, reserved) == 280, "identity reserved offset");
+_Static_assert(sizeof(robotweax_srt_telemetry_observer_v1) == 152, "observer ABI");
+_Static_assert(offsetof(robotweax_srt_telemetry_observer_v1, instance) == 73, "observer instance offset");
+_Static_assert(offsetof(robotweax_srt_telemetry_observer_v1, reserved) == 144, "observer reserved offset");
 _Static_assert(sizeof(robotweax_srt_telemetry_label_copy_v1) == 320, "label copy ABI");
 _Static_assert(sizeof(robotweax_srt_telemetry_recorder_member_v1) == 24, "recorder member ABI");
 _Static_assert(sizeof(robotweax_srt_telemetry_jsonl_export_v2_options) == 24, "JSONL v2 options ABI");

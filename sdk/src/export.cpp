@@ -733,6 +733,34 @@ void json_field(std::string &out, const char *key, const double value, bool &fir
 
 } // namespace
 
+namespace
+{
+
+void nullable_string(std::string &out, const std::string &value)
+{
+    if (value.empty())
+        out += "null";
+    else
+        json_string(out, value);
+}
+
+/* The current connection's start: the latest sample's clock minus the
+ * connection age the provider reported, while connected; 0 unknown. */
+std::uint64_t connected_at_unix_nano(const ExportSource &s)
+{
+    if (s.failed || s.connection != ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED || !s.has_raw || !s.has_ext ||
+        (s.ext.available_fields & ROBOTWEAX_SRT_TELEMETRY_EXT_FIELD_CONNECTION_AGE_SECONDS) == 0 ||
+        !std::isfinite(s.ext.connection_age_seconds) || s.ext.connection_age_seconds < 0)
+        return 0;
+    const double age_nano = s.ext.connection_age_seconds * 1e9;
+    const auto observed = s.raw.observed_at_unix_nano;
+    if (age_nano >= static_cast<double>(observed))
+        return 0;
+    return observed - static_cast<std::uint64_t>(age_nano);
+}
+
+} // namespace
+
 std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view)
 {
     std::string out = "{\"schema\":\"srt-telemetry.snapshot.v1\",\"metric_schema\":";
@@ -744,6 +772,19 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
     integer(out, view.generated_unix_nano / 1'000'000);
     out += ",\"window_seconds\":";
     json_number(out, static_cast<double>(view.window_nano) / 1e9);
+    out += ",\"observer\":";
+    if (view.has_observer)
+    {
+        out += "{\"node\":";
+        nullable_string(out, view.observer_node);
+        out += ",\"instance\":";
+        nullable_string(out, view.observer_instance);
+        out += '}';
+    }
+    else
+    {
+        out += "null";
+    }
     out += ",\"sources\":[";
     bool first_source = true;
     for (const auto &s : view.sources)
@@ -768,6 +809,19 @@ std::string robotweax_srt_telemetry_internal::render_json(const ExportView &view
         out += s.failed ? "false" : "true";
         out += ",\"connection\":";
         json_string(out, connection_name(s.connection));
+        out += ",\"connection_seq\":";
+        if (s.connection_seq != 0)
+            integer(out, s.connection_seq);
+        else
+            out += "null";
+        out += ",\"connected_at_unix_ms\":";
+        const auto connected_at = connected_at_unix_nano(s);
+        if (connected_at != 0)
+            integer(out, connected_at / 1'000'000);
+        else
+            out += "null";
+        out += ",\"session_ref\":";
+        nullable_string(out, s.session_ref);
         const auto &rtt = s.rtt_metadata;
         out += ",\"rtt_metadata\":{\"version\":1,\"availability\":";
         json_string(out, rtt.availability == 2   ? "available"

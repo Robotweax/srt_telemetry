@@ -452,6 +452,66 @@ extern "C"
         robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
         const robotweax_srt_telemetry_peer_metadata_v1 *metadata);
 
+    /* Identity of a source's connection, for the JSON snapshot and the HTTP
+     * history (additive fields of srt-telemetry.snapshot.v1).
+     *
+     * connection_seq: 0 when none was reported; otherwise it grows by one
+     * with every new connection of the source, so a reader sees that a
+     * source continued over a new connection.
+     * session_ref: the host's session reference (as the 1alpha3 recording
+     * header's sessionRef), 1-256 bytes of printable ASCII, NUL-terminated,
+     * zero after the terminator; all zero when none. Never derived.
+     * padding and reserved must be zero. */
+#define ROBOTWEAX_SRT_TELEMETRY_SOURCE_SESSION_REF_CAPACITY 256u
+    typedef struct robotweax_srt_telemetry_source_identity_v1
+    {
+        uint32_t struct_size, abi_version;
+        uint64_t connection_seq;
+        char session_ref[ROBOTWEAX_SRT_TELEMETRY_SOURCE_SESSION_REF_CAPACITY + 1];
+        uint8_t padding[7];
+        uint32_t reserved[2];
+    } robotweax_srt_telemetry_source_identity_v1;
+
+    /* Copies a source's connection identity; NULL clears it. Thread-safe,
+     * forbidden from sampler callbacks. Removal forgets it. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_source_identity_v1(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
+        const robotweax_srt_telemetry_source_identity_v1 *identity);
+
+    /* The identity last set for the source (all zero when none). Thread-safe,
+     * forbidden from sampler callbacks. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_source_identity_v1(
+        robotweax_srt_telemetry_sampler *sampler, uint64_t source_id,
+        robotweax_srt_telemetry_source_identity_v1 *identity);
+
+    /* The process that observes the sources (as the 1alpha4 recording
+     * header's observerNode and observerInstance), for the JSON snapshot and
+     * the HTTP history. Exported only once a host sets it: it names the
+     * deployment to every reader of those outputs.
+     *
+     * node, instance: 1-64 of [A-Za-z0-9_.-], not "null", NUL-terminated,
+     * zero after the terminator; all zero when unknown. padding and reserved
+     * must be zero. */
+#define ROBOTWEAX_SRT_TELEMETRY_OBSERVER_CAPACITY 64u
+    typedef struct robotweax_srt_telemetry_observer_v1
+    {
+        uint32_t struct_size, abi_version;
+        char node[ROBOTWEAX_SRT_TELEMETRY_OBSERVER_CAPACITY + 1];
+        char instance[ROBOTWEAX_SRT_TELEMETRY_OBSERVER_CAPACITY + 1];
+        uint8_t padding[6];
+        uint32_t reserved[2];
+    } robotweax_srt_telemetry_observer_v1;
+
+    /* Exports this observer from now on; NULL stops exporting it.
+     * Thread-safe, forbidden from sampler callbacks. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_observer_v1(
+        robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_observer_v1 *observer);
+
+    /* The exported observer; NOT_FOUND when none is exported. Thread-safe,
+     * forbidden from sampler callbacks. */
+    ROBOTWEAX_SRT_TELEMETRY_API robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_observer_v1(
+        robotweax_srt_telemetry_sampler *sampler, robotweax_srt_telemetry_observer_v1 *observer);
+
 #ifdef __cplusplus
 }
 #endif

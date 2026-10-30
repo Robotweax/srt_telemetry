@@ -165,9 +165,16 @@ JSON, host labels appear unchanged under `labels`.
 
 `schema` is `srt-telemetry.snapshot.v1`. Top level: `metric_schema`,
 `generated_unix_nano` and `generated_unix_ms` (time of the latest tick),
-`window_seconds`, `sources`. Each source has:
+`window_seconds`, `observer`, `sources`. `observer` is `null` unless the host
+exports it (`sampler_set_observer_v1`, or `embed_export_observer_v1`), else
+`{node, instance}`, each `null` when unknown. Each source has:
 
 - `id`, `role`, `labels`, `up`, `connection`;
+- `connection_seq` (grows by one with each new connection of the source),
+  `connected_at_unix_ms` (the current connection's start, wall clock of the
+  latest sample minus the provider's connection age, while connected; it can
+  move by a few milliseconds between reads, so do not use it as a key) and `session_ref` (the host's session
+  reference), each `null` when unknown (`sampler_set_source_identity_v1`);
 - `window` (when a window has closed): `start_unix_nano`, `end_unix_nano`,
   `start_unix_ms`, `end_unix_ms`, `samples`, `quality`, `metrics`;
 - `latest` (the latest sample): `observed_unix_nano`, `observed_unix_ms`,
