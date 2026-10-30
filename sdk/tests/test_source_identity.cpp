@@ -80,6 +80,50 @@ robotweax_srt_telemetry_observer_v1 observer(const char *node, const char *insta
         std::strncpy(value.instance, instance, sizeof(value.instance) - 1);
     return value;
 }
+/* From inside a sampler callback every new function refuses. */
+struct Reentry
+{
+    robotweax_srt_telemetry_sampler *sampler = nullptr;
+    bool called = false;
+    bool refused = true;
+};
+void on_sample_reentry(void *user_data, const robotweax_srt_telemetry_source_info_v1 *source,
+                       const robotweax_srt_telemetry_source_output_v1 *, const robotweax_srt_telemetry_metric_sample_v1 *)
+{
+    auto &reentry = *static_cast<Reentry *>(user_data);
+    reentry.called = true;
+    auto value = identity(1, "x");
+    auto node = observer("n", "i");
+    reentry.refused =
+        robotweax_srt_telemetry_sampler_set_source_identity_v1(reentry.sampler, source->source_id, &value) ==
+            ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE &&
+        robotweax_srt_telemetry_sampler_source_identity_v1(reentry.sampler, source->source_id, &value) ==
+            ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE &&
+        robotweax_srt_telemetry_sampler_set_observer_v1(reentry.sampler, &node) ==
+            ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE &&
+        robotweax_srt_telemetry_sampler_observer_v1(reentry.sampler, &node) == ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+}
+void test_callback_reentry()
+{
+    Reentry reentry;
+    robotweax_srt_telemetry_sampler_config_v1 config{};
+    robotweax_srt_telemetry_sampler_config_default(&config);
+    config.callbacks.user_data = &reentry;
+    config.callbacks.on_sample = on_sample_reentry;
+    check(robotweax_srt_telemetry_sampler_create(&config, &reentry.sampler) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "reentry sampler created");
+    robotweax_srt_telemetry_source_config_v1 source{};
+    source.struct_size = sizeof(source);
+    source.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    source.sample = sample;
+    std::uint64_t id = 0;
+    check(robotweax_srt_telemetry_sampler_add_source(reentry.sampler, &source, &id) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              robotweax_srt_telemetry_sampler_tick(reentry.sampler, base_unix, 1'000'000'000) ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK,
+          "reentry tick");
+    check(reentry.called && reentry.refused, "identity and observer calls refused inside a callback");
+    robotweax_srt_telemetry_sampler_destroy(reentry.sampler);
+}
 } // namespace
 
 int main()
@@ -259,6 +303,7 @@ int main()
           "removal forgets the identity");
 
     robotweax_srt_telemetry_sampler_destroy(sampler);
+    test_callback_reentry();
     if (failures != 0)
     {
         std::cerr << failures << " source identity checks failed\n";

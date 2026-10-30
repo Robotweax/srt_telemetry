@@ -434,7 +434,12 @@ Every source in the JSON snapshot and the HTTP history carries
 `connection_seq`, which the embed counts up each time the source connects
 (a source continued over a new connection gets the next number), and
 `session_ref`, the value of `embed_set_session_ref` (members follow their
-group's; a new connection starts without one). Both are `null` until known.
+group's). Both are `null` until known. `connection_seq` counts every return to
+connected: a socket or group continued over a new handle, a path's new member
+socket, and a group handle whose members reconnect. Only a new handle starts
+without a session reference; a group handle that reconnects keeps the one the
+host set. The embed owns these fields and the exported observer, so do not
+set them on `embed_sampler` directly.
 `connected_at_unix_ms` comes from the provider's connection age while the
 source is connected. All of this works with every recording schema.
 

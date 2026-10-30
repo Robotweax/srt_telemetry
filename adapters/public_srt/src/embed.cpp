@@ -1239,6 +1239,9 @@ Endpoint *member_endpoint(Embed &embed, Endpoint &group, const std::string &path
         embed.retired.erase(std::next(it).base());
         slot->retired = false;
         slot->cached_ok = false;
+        /* The group's session reference now (none after its reconnect), not
+         * the previous connection's. */
+        slot->session_ref = group.session_ref;
         return slot.get();
     }
     try
@@ -1365,6 +1368,9 @@ void group_member(Embed &embed, Endpoint &group, const robotweax_srt_telemetry_g
         if (member->socket >= 0)
             next_recording(embed, *member, recording_group_type(link.type), ROBOTWEAX_SRT_TELEMETRY_RECORDING_ROW_MEMBER);
         member->socket = entry.socket;
+        /* A new socket on the path is a new connection, even when the old
+         * one never showed as lost. */
+        member->identity_connected = false;
         /* The old socket's RTT history says nothing about the new one. */
         member->rtt_fresh = false;
         static_cast<void>(robotweax_srt_telemetry_sampler_set_standby_rtt_metadata_v1(
@@ -3096,17 +3102,18 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer
 
 namespace
 {
-/* Gives the sampler the observer to export, or none. Lock held. */
-robotweax_srt_telemetry_error apply_observer(Embed &embed)
+/* Gives the sampler this observer to export, or none. Lock held. */
+robotweax_srt_telemetry_error export_observer(Embed &embed, const bool enable, const std::string &node,
+                                              const std::string &instance)
 {
-    if (!embed.export_observer)
+    if (!enable)
         return robotweax_srt_telemetry_sampler_set_observer_v1(embed.sampler, nullptr);
     robotweax_srt_telemetry_observer_v1 observer{};
     observer.struct_size = sizeof(observer);
     observer.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
     /* set_observer_v1 admits at most the capacity, so both fit. */
-    embed.observer_node.copy(observer.node, sizeof(observer.node) - 1);
-    embed.observer_instance.copy(observer.instance, sizeof(observer.instance) - 1);
+    node.copy(observer.node, sizeof(observer.node) - 1);
+    instance.copy(observer.instance, sizeof(observer.instance) - 1);
     return robotweax_srt_telemetry_sampler_set_observer_v1(embed.sampler, &observer);
 }
 } // namespace
@@ -3138,9 +3145,17 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_obser
         std::lock_guard lock(embed->mutex);
         if (embed->stopping)
             return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+        /* The sampler first, so that a refusal changes nothing; untouched
+         * while the observer is not exported. */
+        if (embed->export_observer)
+        {
+            const auto error = export_observer(*embed, true, new_node, new_instance);
+            if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+                return error;
+        }
         embed->observer_node.swap(new_node);
         embed->observer_instance.swap(new_instance);
-        return apply_observer(*embed);
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
     }
     catch (const std::bad_alloc &)
     {
@@ -3156,8 +3171,20 @@ robotweax_srt_telemetry_embed_export_observer_v1(robotweax_srt_telemetry_embed *
     std::lock_guard lock(embed->mutex);
     if (embed->stopping)
         return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    if (embed->export_observer == (enable != 0))
+        return ROBOTWEAX_SRT_TELEMETRY_OK;
+    try
+    {
+        const auto error = export_observer(*embed, enable != 0, embed->observer_node, embed->observer_instance);
+        if (error != ROBOTWEAX_SRT_TELEMETRY_OK)
+            return error;
+    }
+    catch (const std::bad_alloc &)
+    {
+        return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
+    }
     embed->export_observer = enable != 0;
-    return apply_observer(*embed);
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
 
 extern "C" robotweax_srt_telemetry_error

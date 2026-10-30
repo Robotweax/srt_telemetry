@@ -451,9 +451,12 @@ extern "C"
     /* enable 1: the JSON snapshot and the HTTP history also name the observer
      * (as set with embed_set_observer_v1, now or later; "observer":{node,
      * instance}); 0 (the default): "observer":null. Off by default because
-     * it names the deployment to every reader of those outputs. Refused
-     * values change nothing (INVALID_ARGUMENT); INVALID_STATE once stop has
-     * begun. Thread-safe. */
+     * it names the deployment to every reader of those outputs. The embed
+     * owns the sampler's observer and source identities: a host's own
+     * sampler_set_observer_v1 or sampler_set_source_identity_v1 on
+     * embed_sampler is replaced by the embed's next change. Refused values
+     * change nothing (INVALID_ARGUMENT); INVALID_STATE once stop has begun.
+     * Thread-safe. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_embed_export_observer_v1(robotweax_srt_telemetry_embed *embed, uint32_t enable);
 
