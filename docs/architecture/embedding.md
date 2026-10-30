@@ -285,7 +285,11 @@ the format SRT Doctor and the Flight Recorder read:
   file (`mkstemp`) in the same directory, syncs it, renames it over the
   previous version and syncs the directory, so a reader never sees a partial
   recording; on Linux a completed write normally survives a power loss too
-  (macOS `fsync` does not flush the drive cache). Files get mode 0644 within
+  (macOS `fsync` does not flush the drive cache). A write counts as done only
+  when the directory sync succeeded too: if opening or syncing the directory
+  fails, the new version is in place but the write is reported `FAILED`, and
+  the next request for that recording writes it again. On a file system that
+  cannot sync directories every write therefore fails. Files get mode 0644 within
   the process umask read at `start`. A reconnection that
   continues the source continues its recording. A write that finds no new
   sample or health line since the source's last written version leaves the

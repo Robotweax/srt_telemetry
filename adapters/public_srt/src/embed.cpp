@@ -742,14 +742,16 @@ bool write_recording(const Embed &embed, Recording &recording)
     }
     recording.written_records = sink.samples;
     /* The rename itself survives a power loss only once the directory is
-     * synced. */
+     * synced: until then the write is not done, and the next request for
+     * this recording writes and syncs again. */
     const int directory = ::open(recording.directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (directory >= 0)
+    if (directory < 0)
     {
-        static_cast<void>(::fsync(directory));
-        ::close(directory);
+        return false;
     }
-    return true;
+    const bool synced = ::fsync(directory) == 0;
+    ::close(directory);
+    return synced;
 }
 
 void writer_loop(Embed &embed)
