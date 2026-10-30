@@ -273,13 +273,16 @@ extern "C"
     robotweax_srt_telemetry_embed_sampler(robotweax_srt_telemetry_embed *embed);
 
 /* recording_event_v1.flags */
-/* A new version of the file was written (renamed into place). */
+/* A new version of the file was written, synced, renamed into place and
+ * its directory synced. */
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_WRITTEN UINT32_C(1)
 /* The source took no samples since its last written version, so the file
  * was left as it is (not rewritten). */
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_UNCHANGED (UINT32_C(1) << 1)
 /* The write failed (directory gone, disk full); the previous version, if
- * any, stays. */
+ * any, stays. If only syncing the directory failed, the new version is in
+ * place but its rename may not survive a power loss; the next request for
+ * the recording writes it again. */
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_FAILED (UINT32_C(1) << 2)
 /* The source never sampled (an attempt that never connected): no file. */
 #define ROBOTWEAX_SRT_TELEMETRY_EMBED_RECORDING_EMPTY (UINT32_C(1) << 3)
