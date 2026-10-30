@@ -560,6 +560,11 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_TESTS)
     target_compile_features(robotweax_srt_telemetry_peer_metadata_tests PRIVATE cxx_std_20)
     add_test(NAME robotweax_srt_telemetry_peer_metadata_tests
         COMMAND robotweax_srt_telemetry_peer_metadata_tests)
+    add_executable(robotweax_srt_telemetry_source_identity_tests sdk/tests/test_source_identity.cpp)
+    target_link_libraries(robotweax_srt_telemetry_source_identity_tests PRIVATE RobotweaxSRTTelemetry::core)
+    target_compile_features(robotweax_srt_telemetry_source_identity_tests PRIVATE cxx_std_20)
+    add_test(NAME robotweax_srt_telemetry_source_identity_tests
+        COMMAND robotweax_srt_telemetry_source_identity_tests)
     find_program(ROBOTWEAX_SRT_TELEMETRY_NODE_EXECUTABLE node)
     if(ROBOTWEAX_SRT_TELEMETRY_NODE_EXECUTABLE)
         add_test(NAME robotweax_srt_telemetry_standby_ui_test

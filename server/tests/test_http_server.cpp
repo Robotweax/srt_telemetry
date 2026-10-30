@@ -373,6 +373,38 @@ void test_endpoints()
               "snapshot carries the group's paths and verdict");
         static_cast<void>(robotweax_srt_telemetry_sampler_set_health_group(s.sampler, s.id, nullptr));
     }
+    r = get(port, "/api/v1/sources/1/history?since_ms=0");
+    check(r.status == 200 && r.body.find("{\"source_id\":1,\"observer\":null,\"connection_seq\":null,"
+                                         "\"session_ref\":null,\"more\":") != std::string::npos,
+          "history without identity: null fields");
+    {
+        /* Identity and observer in the history (and the snapshot). */
+        robotweax_srt_telemetry_source_identity_v1 identity{};
+        identity.struct_size = sizeof(identity);
+        identity.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        identity.connection_seq = 2;
+        std::strcpy(identity.session_ref, "sha256:\"x\"");
+        robotweax_srt_telemetry_observer_v1 observer{};
+        observer.struct_size = sizeof(observer);
+        observer.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        std::strcpy(observer.node, "edge-1");
+        check(robotweax_srt_telemetry_sampler_set_source_identity_v1(s.sampler, s.id, &identity) ==
+                      ROBOTWEAX_SRT_TELEMETRY_OK &&
+                  robotweax_srt_telemetry_sampler_set_observer_v1(s.sampler, &observer) == ROBOTWEAX_SRT_TELEMETRY_OK,
+              "identity and observer set");
+        r = get(port, "/api/v1/sources/1/history?since_ms=0");
+        check(r.status == 200 &&
+                  r.body.find("{\"source_id\":1,\"observer\":{\"node\":\"edge-1\",\"instance\":null},"
+                              "\"connection_seq\":2,\"session_ref\":\"sha256:\\\"x\\\"\",\"more\":") !=
+                      std::string::npos,
+              "history carries identity and observer: " + r.body.substr(0, 160));
+        r = get(port, "/api/v1/snapshot");
+        check(r.status == 200 && r.body.find("\"observer\":{\"node\":\"edge-1\",\"instance\":null}") != std::string::npos &&
+                  r.body.find("\"connection_seq\":2,") != std::string::npos,
+              "snapshot carries identity and observer");
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_source_identity_v1(s.sampler, s.id, nullptr));
+        static_cast<void>(robotweax_srt_telemetry_sampler_set_observer_v1(s.sampler, nullptr));
+    }
     r = get(port, "/api/v1/sources/99/history?since_ms=0");
     check(r.status == 404, "history of an unknown source: 404");
     r = get(port, "/api/v1/sources/x/history");

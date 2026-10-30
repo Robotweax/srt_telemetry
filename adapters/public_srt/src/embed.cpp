@@ -249,6 +249,14 @@ struct Endpoint
     std::string session_ref;
     std::int32_t peer_group = -1;
     std::string path_label;
+    /* Connection identity for the snapshot and history: the number of
+     * connections this source has had, whether it is connected now, and
+     * what the sampler was last given. */
+    std::uint64_t connection_seq = 0;
+    bool identity_connected = false;
+    bool identity_published = false;
+    std::uint64_t published_seq = 0;
+    std::string published_session_ref;
 
     /* Group endpoints. */
     std::unique_ptr<GroupLink> group;
@@ -456,6 +464,8 @@ struct robotweax_srt_telemetry_embed
     /* The observer for new 1alpha4 recordings (mutex). */
     std::string observer_node;
     std::string observer_instance;
+    /* The host exports the observer in the snapshot and history (mutex). */
+    bool export_observer = false;
     robotweax_srt_telemetry_sampler *sampler = nullptr;
     robotweax_srt_telemetry_http_server *server = nullptr;
     robotweax_srt_telemetry_otlp_exporter *exporter = nullptr;
@@ -1008,8 +1018,41 @@ void record(Embed &embed, Endpoint &endpoint, const robotweax_srt_telemetry_publ
     }
 }
 
+/* Hands the source's connection identity to the sampler when it changed:
+ * every new connection counts one up. Lock held. */
+void publish_identity(Embed &embed, Endpoint &endpoint)
+{
+    const bool connected = endpoint.context.connection == ROBOTWEAX_SRT_TELEMETRY_CONNECTION_CONNECTED;
+    if (connected && !endpoint.identity_connected)
+        ++endpoint.connection_seq;
+    endpoint.identity_connected = connected;
+    if (!endpoint.added || (endpoint.identity_published && endpoint.published_seq == endpoint.connection_seq &&
+                            endpoint.published_session_ref == endpoint.session_ref))
+        return;
+    robotweax_srt_telemetry_source_identity_v1 identity{};
+    identity.struct_size = sizeof(identity);
+    identity.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    identity.connection_seq = endpoint.connection_seq;
+    /* set_session_ref admits at most the capacity, so it always fits. */
+    endpoint.session_ref.copy(identity.session_ref, sizeof(identity.session_ref) - 1);
+    if (robotweax_srt_telemetry_sampler_set_source_identity_v1(embed.sampler, endpoint.source_id, &identity) !=
+        ROBOTWEAX_SRT_TELEMETRY_OK)
+        return;
+    try
+    {
+        endpoint.published_session_ref = endpoint.session_ref;
+        endpoint.published_seq = endpoint.connection_seq;
+        endpoint.identity_published = true;
+    }
+    catch (const std::bad_alloc &)
+    {
+        endpoint.identity_published = false; /* tried again on the next change */
+    }
+}
+
 void apply_context(Embed &embed, Endpoint &endpoint)
 {
+    publish_identity(embed, endpoint);
     if (endpoint.has_applied && same_context(endpoint.applied, endpoint.context))
     {
         return;
@@ -1884,6 +1927,7 @@ void note_group_meta(Embed &embed, Endpoint &group)
         }
         if (member->peer_group >= 0)
             group.peer_group = member->peer_group;
+        publish_identity(embed, *member);
     }
     note_recording_meta(embed, group, group.socket);
     for (auto &[path, member] : group.group->members)
@@ -3050,6 +3094,23 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_note_peer
                         });
 }
 
+namespace
+{
+/* Gives the sampler the observer to export, or none. Lock held. */
+robotweax_srt_telemetry_error apply_observer(Embed &embed)
+{
+    if (!embed.export_observer)
+        return robotweax_srt_telemetry_sampler_set_observer_v1(embed.sampler, nullptr);
+    robotweax_srt_telemetry_observer_v1 observer{};
+    observer.struct_size = sizeof(observer);
+    observer.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    /* set_observer_v1 admits at most the capacity, so both fit. */
+    embed.observer_node.copy(observer.node, sizeof(observer.node) - 1);
+    embed.observer_instance.copy(observer.instance, sizeof(observer.instance) - 1);
+    return robotweax_srt_telemetry_sampler_set_observer_v1(embed.sampler, &observer);
+}
+} // namespace
+
 extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_observer_v1(
     robotweax_srt_telemetry_embed *embed, const char *node, const char *instance)
 {
@@ -3079,12 +3140,24 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_obser
             return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
         embed->observer_node.swap(new_node);
         embed->observer_instance.swap(new_instance);
+        return apply_observer(*embed);
     }
     catch (const std::bad_alloc &)
     {
         return ROBOTWEAX_SRT_TELEMETRY_ALLOCATION_FAILURE;
     }
-    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error
+robotweax_srt_telemetry_embed_export_observer_v1(robotweax_srt_telemetry_embed *embed, const uint32_t enable)
+{
+    if (embed == nullptr || enable > 1)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(embed->mutex);
+    if (embed->stopping)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    embed->export_observer = enable != 0;
+    return apply_observer(*embed);
 }
 
 extern "C" robotweax_srt_telemetry_error
@@ -3132,11 +3205,13 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_embed_set_sessi
         auto &endpoint = *found->second;
         endpoint.session_ref = value;
         note_recording_meta(*embed, endpoint, endpoint.kind == EndpointKind::group ? endpoint.socket : -1);
+        publish_identity(*embed, endpoint);
         if (endpoint.group)
             for (auto &[path, member] : endpoint.group->members)
             {
                 member->session_ref = value;
                 note_recording_meta(*embed, *member, endpoint.socket);
+                publish_identity(*embed, *member);
             }
     }
     catch (const std::bad_alloc &)

@@ -35,6 +35,9 @@ struct ExportSource
     robotweax_srt_telemetry_group_send_metadata_v1 group_send_metadata{};
     double group_send_capture_age_seconds = 0;
     robotweax_srt_telemetry_peer_metadata_v1 peer_metadata{};
+    /* Connection identity: 0 none reported; empty none. */
+    std::uint64_t connection_seq = 0;
+    std::string session_ref;
     bool has_raw = false;
     robotweax_srt_telemetry_raw_sample_v1 raw{};
     bool has_ext = false;
@@ -53,6 +56,10 @@ struct ExportView
     std::uint64_t window_nano = 0;
     std::uint32_t flags = 0;
     std::vector<ExportSource> sources;
+    /* The observer, exported only when a host set it; empty: unknown. */
+    bool has_observer = false;
+    std::string observer_node;
+    std::string observer_instance;
     /* OTLP resource attributes from the host. */
     std::vector<std::pair<std::string, std::string>> resource;
 };

@@ -440,12 +440,22 @@ extern "C"
      * deployment node the operator assigned to this host, and instance, this
      * process's incarnation. Each is 1..64 bytes of [A-Za-z0-9_.-], not the
      * word "null"; NULL means unknown (null in the header). Telemetry never
-     * derives either itself. Set it before the first attach. Refused values
+     * derives either itself. Set it before the first attach. It reaches the
+     * snapshot and HTTP history only after embed_export_observer_v1. Refused values
      * change nothing (INVALID_ARGUMENT); INVALID_STATE once stop has begun.
      * Thread-safe. */
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_embed_set_observer_v1(robotweax_srt_telemetry_embed *embed, const char *node,
                                                  const char *instance);
+
+    /* enable 1: the JSON snapshot and the HTTP history also name the observer
+     * (as set with embed_set_observer_v1, now or later; "observer":{node,
+     * instance}); 0 (the default): "observer":null. Off by default because
+     * it names the deployment to every reader of those outputs. Refused
+     * values change nothing (INVALID_ARGUMENT); INVALID_STATE once stop has
+     * begun. Thread-safe. */
+    ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
+    robotweax_srt_telemetry_embed_export_observer_v1(robotweax_srt_telemetry_embed *embed, uint32_t enable);
 
     ROBOTWEAX_SRT_TELEMETRY_EMBED_API robotweax_srt_telemetry_error
     robotweax_srt_telemetry_embed_note_peer_group_v1(robotweax_srt_telemetry_embed *embed, int32_t socket,

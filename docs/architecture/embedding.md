@@ -421,10 +421,22 @@ robotweax_srt_telemetry_embed_set_observer_v1(telemetry, "edge-fra-2", instance_
   EXPORT uses), removal after the linger and `stop`. A later call changes
   only recordings started after it; with one recording per connection a file
   never mixes observers.
-- It is not a label: it spends none of the five host labels and is not
-  exported to the snapshot, Prometheus or OTLP.
+- It is not a label: it spends none of the five host labels and is never
+  exported to Prometheus or OTLP. The JSON snapshot and the HTTP history
+  name it only after `robotweax_srt_telemetry_embed_export_observer_v1(telemetry, 1)`,
+  because it names the deployment to every reader of those outputs.
 - There is no spec option for it: the embed config's layout is fixed, and a
   host that knows its node and instance calls the function.
+
+### Connection identity in the snapshot
+
+Every source in the JSON snapshot and the HTTP history carries
+`connection_seq`, which the embed counts up each time the source connects
+(a source continued over a new connection gets the next number), and
+`session_ref`, the value of `embed_set_session_ref` (members follow their
+group's; a new connection starts without one). Both are `null` until known.
+`connected_at_unix_ms` comes from the provider's connection age while the
+source is connected. All of this works with every recording schema.
 
 ## Threading
 

@@ -1439,6 +1439,92 @@ void test_recording_failure_counter()
     robotweax_srt_telemetry_embed_stop(embed);
 }
 
+/* The embed's JSON snapshot. */
+std::string snapshot_json(robotweax_srt_telemetry_embed *embed)
+{
+    robotweax_srt_telemetry_render_options_v1 options{};
+    robotweax_srt_telemetry_render_options_default(ROBOTWEAX_SRT_TELEMETRY_RENDER_JSON, &options);
+    std::vector<char> buffer(1 << 20);
+    std::size_t length = 0;
+    if (robotweax_srt_telemetry_sampler_render(robotweax_srt_telemetry_embed_sampler(embed), &options, buffer.data(),
+                                               buffer.size(), &length) != ROBOTWEAX_SRT_TELEMETRY_OK)
+        return {};
+    return std::string(buffer.data(), length);
+}
+
+/* Connection identity in the snapshot: each new connection of a continued
+ * source counts one up, the session reference follows the host's, and the
+ * observer is exported only after the host asks for it. */
+void test_http_identity()
+{
+    auto config = base_config();
+    check(robotweax_srt_telemetry_embed_config_parse(&config, "off,name=cam-9,linger_s=30") ==
+              ROBOTWEAX_SRT_TELEMETRY_OK,
+          "identity spec");
+    robotweax_srt_telemetry_embed *embed = nullptr;
+    check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "identity start");
+    if (embed == nullptr)
+        return;
+    check(robotweax_srt_telemetry_embed_set_observer_v1(embed, "edge-fra-2", "i-1") == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "observer set");
+    Stream first;
+    check(first.open(nullptr) &&
+              robotweax_srt_telemetry_embed_attach(embed, first.sender, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                   nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "identity: first connection attached");
+    first.start();
+    check(wait_until([&] { return snapshot_json(embed).find("\"connection_seq\":1,") != std::string::npos; }, 5'000),
+          "first connection: sequence 1");
+    auto json = snapshot_json(embed);
+    check(json.find(",\"observer\":null,") != std::string::npos, "observer not exported by default");
+    check(json.find("\"session_ref\":null") != std::string::npos, "no session reference yet");
+    check(wait_until([&] { return snapshot_json(embed).find("\"connected_at_unix_ms\":null") == std::string::npos; },
+                     5'000),
+          "a connected source names its start");
+
+    check(robotweax_srt_telemetry_embed_set_session_ref(embed, first.sender, "sha256:6b1f0c2e") ==
+                  ROBOTWEAX_SRT_TELEMETRY_OK &&
+              snapshot_json(embed).find("\"session_ref\":\"sha256:6b1f0c2e\"") != std::string::npos,
+          "session reference in the snapshot at once");
+    check(robotweax_srt_telemetry_embed_export_observer_v1(embed, 1) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              snapshot_json(embed).find("\"observer\":{\"node\":\"edge-fra-2\",\"instance\":\"i-1\"}") !=
+                  std::string::npos,
+          "observer exported on request");
+    check(robotweax_srt_telemetry_embed_set_observer_v1(embed, "edge-fra-3", nullptr) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              snapshot_json(embed).find("\"observer\":{\"node\":\"edge-fra-3\",\"instance\":null}") !=
+                  std::string::npos,
+          "a later observer replaces the exported one");
+    check(robotweax_srt_telemetry_embed_export_observer_v1(embed, 2) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT &&
+              robotweax_srt_telemetry_embed_export_observer_v1(nullptr, 1) == ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT,
+          "bad export arguments refused");
+
+    /* The source continues over a new connection: sequence 2, and the new
+     * connection starts without a session reference. */
+    check(robotweax_srt_telemetry_embed_detach(embed, first.sender) == ROBOTWEAX_SRT_TELEMETRY_OK, "identity detach");
+    first.stop();
+    check(wait_until([&] { return snapshot_json(embed).find("\"connected_at_unix_ms\":null") != std::string::npos; },
+                     5'000) &&
+              snapshot_json(embed).find("\"connection_seq\":1,") != std::string::npos,
+          "lost: no start, sequence kept");
+    Stream second;
+    check(second.open(nullptr) &&
+              robotweax_srt_telemetry_embed_attach(embed, second.sender, ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
+                                                   nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+          "identity: second connection continues the source");
+    second.start();
+    check(wait_until([&] { return snapshot_json(embed).find("\"connection_seq\":2,") != std::string::npos; }, 5'000),
+          "second connection: sequence 2");
+    json = snapshot_json(embed);
+    check(json.find("\"session_ref\":null") != std::string::npos && json.find("\"id\":2,") == std::string::npos,
+          "same source, no session reference on the new connection");
+
+    check(robotweax_srt_telemetry_embed_export_observer_v1(embed, 0) == ROBOTWEAX_SRT_TELEMETRY_OK &&
+              snapshot_json(embed).find(",\"observer\":null,") != std::string::npos,
+          "observer export turned off");
+    robotweax_srt_telemetry_embed_stop(embed);
+    second.stop();
+}
+
 #if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)
 /* The "peer" object of the source with this stream label and role. */
 std::string peer_json(robotweax_srt_telemetry_embed *embed, const std::string &stream, const std::string &role)
@@ -1599,6 +1685,7 @@ int main()
     test_recordings();
     test_recording_lifecycle();
     test_recording_failure_counter();
+    test_http_identity();
     test_live_recording();
     test_recording_1alpha3_pair();
     test_recording_1alpha3_continuation();

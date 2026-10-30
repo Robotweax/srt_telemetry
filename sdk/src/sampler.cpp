@@ -15,11 +15,13 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -77,6 +79,7 @@ struct Source
     robotweax_srt_telemetry_standby_rtt_metadata_v1 standby_rtt_metadata{};
     std::uint64_t standby_rtt_updated_steady = 0;
     robotweax_srt_telemetry_peer_metadata_v1 peer_metadata{};
+    robotweax_srt_telemetry_source_identity_v1 identity{};
     robotweax_srt_telemetry_rtt_metadata_v1 rtt_metadata{};
     std::uint64_t rtt_updated_steady = 0;
     robotweax_srt_telemetry_group_send_metadata_v1 group_send_metadata{};
@@ -267,6 +270,9 @@ struct robotweax_srt_telemetry_sampler
     std::array<std::array<ThresholdOverride, ROBOTWEAX_SRT_TELEMETRY_INDICATOR_COUNT>, 3> health_thresholds{};
     /* Unix time of the latest tick, for staleness of exported windows. */
     std::uint64_t last_tick_unix = 0;
+    /* The exported observer (none: not exported), under `mutex`. */
+    bool has_observer = false;
+    robotweax_srt_telemetry_observer_v1 observer{};
     std::mutex mutex; /* sources, tick execution */
     std::map<std::uint64_t, std::unique_ptr<Source>> sources;
     std::uint64_t next_id = 1;
@@ -1760,6 +1766,12 @@ robotweax_srt_telemetry_error render_impl(robotweax_srt_telemetry_sampler *sampl
             const auto now_steady = steady_nano();
             view.generated_unix_nano = sampler->last_tick_unix != 0 ? sampler->last_tick_unix : system_nano();
             view.sources.reserve(sampler->sources.size());
+            view.has_observer = sampler->has_observer;
+            if (view.has_observer)
+            {
+                view.observer_node = sampler->observer.node;
+                view.observer_instance = sampler->observer.instance;
+            }
             for (const auto &entry : sampler->sources)
             {
                 const auto &source = *entry.second;
@@ -1793,6 +1805,8 @@ robotweax_srt_telemetry_error render_impl(robotweax_srt_telemetry_sampler *sampl
                     static_cast<double>(now_steady - source.rtt_updated_steady) / 1e9;
                 out.group_send_metadata = source.group_send_metadata;
                 out.peer_metadata = source.peer_metadata;
+                out.connection_seq = source.identity.connection_seq;
+                out.session_ref = source.identity.session_ref;
                 out.group_send_capture_age_seconds =
                     static_cast<double>(now_steady - source.group_send_updated_steady) / 1e9;
                 out.has_ext = source.has_latest_ext;
@@ -2090,5 +2104,140 @@ extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_pee
     if (found == sampler->sources.end())
         return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
     found->second->peer_metadata = metadata == nullptr ? robotweax_srt_telemetry_peer_metadata_v1{} : *metadata;
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+namespace
+{
+
+/* A NUL-terminated text of 1..capacity bytes, zero after the terminator,
+ * or all zero (none); each byte passes allowed. */
+template <typename Allowed>
+bool fixed_text(const char *text, const std::size_t size, Allowed allowed)
+{
+    const auto length = ::strnlen(text, size);
+    if (length == size)
+        return false;
+    for (std::size_t i = length; i < size; ++i)
+        if (text[i] != 0)
+            return false;
+    return std::all_of(text, text + length, allowed);
+}
+
+bool valid_identity(const robotweax_srt_telemetry_source_identity_v1 &identity)
+{
+    return identity.struct_size >= sizeof(identity) && identity.abi_version == ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION &&
+           std::all_of(std::begin(identity.padding), std::end(identity.padding), [](const auto b) { return b == 0; }) &&
+           identity.reserved[0] == 0 && identity.reserved[1] == 0 &&
+           fixed_text(identity.session_ref, sizeof(identity.session_ref),
+                      [](const char c) { return static_cast<unsigned char>(c) >= 0x20 && static_cast<unsigned char>(c) <= 0x7e; });
+}
+
+bool observer_char(const char c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '.' ||
+           c == '-';
+}
+
+bool valid_observer(const robotweax_srt_telemetry_observer_v1 &observer)
+{
+    return observer.struct_size >= sizeof(observer) && observer.abi_version == ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION &&
+           std::all_of(std::begin(observer.padding), std::end(observer.padding), [](const auto b) { return b == 0; }) &&
+           observer.reserved[0] == 0 && observer.reserved[1] == 0 &&
+           fixed_text(observer.node, sizeof(observer.node), observer_char) &&
+           fixed_text(observer.instance, sizeof(observer.instance), observer_char) &&
+           std::string_view(observer.node) != "null" && std::string_view(observer.instance) != "null";
+}
+
+robotweax_srt_telemetry_source_identity_v1 no_identity()
+{
+    robotweax_srt_telemetry_source_identity_v1 identity{};
+    identity.struct_size = sizeof(identity);
+    identity.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    return identity;
+}
+
+} // namespace
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_source_identity_v1(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+    const robotweax_srt_telemetry_source_identity_v1 *identity)
+{
+    if (sampler == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    if (in_callback_of(sampler))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    if (identity != nullptr && !valid_identity(*identity))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    auto &stored = found->second->identity;
+    stored = no_identity();
+    if (identity != nullptr)
+    {
+        stored.connection_seq = identity->connection_seq;
+        std::memcpy(stored.session_ref, identity->session_ref, sizeof(stored.session_ref));
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_source_identity_v1(
+    robotweax_srt_telemetry_sampler *sampler, const std::uint64_t source_id,
+    robotweax_srt_telemetry_source_identity_v1 *identity)
+{
+    if (sampler == nullptr || identity == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    if (identity->struct_size < sizeof(*identity) || identity->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    if (in_callback_of(sampler))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    std::lock_guard lock(sampler->mutex);
+    const auto found = sampler->sources.find(source_id);
+    if (found == sampler->sources.end())
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    const auto &stored = found->second->identity;
+    *identity = no_identity();
+    identity->connection_seq = stored.connection_seq;
+    std::memcpy(identity->session_ref, stored.session_ref, sizeof(identity->session_ref));
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_set_observer_v1(
+    robotweax_srt_telemetry_sampler *sampler, const robotweax_srt_telemetry_observer_v1 *observer)
+{
+    if (sampler == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    if (in_callback_of(sampler))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    if (observer != nullptr && !valid_observer(*observer))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    std::lock_guard lock(sampler->mutex);
+    sampler->has_observer = observer != nullptr;
+    sampler->observer = robotweax_srt_telemetry_observer_v1{};
+    sampler->observer.struct_size = sizeof(sampler->observer);
+    sampler->observer.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+    if (observer != nullptr)
+    {
+        std::memcpy(sampler->observer.node, observer->node, sizeof(sampler->observer.node));
+        std::memcpy(sampler->observer.instance, observer->instance, sizeof(sampler->observer.instance));
+    }
+    return ROBOTWEAX_SRT_TELEMETRY_OK;
+}
+
+extern "C" robotweax_srt_telemetry_error robotweax_srt_telemetry_sampler_observer_v1(
+    robotweax_srt_telemetry_sampler *sampler, robotweax_srt_telemetry_observer_v1 *observer)
+{
+    if (sampler == nullptr || observer == nullptr)
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_ARGUMENT;
+    if (observer->struct_size < sizeof(*observer) || observer->abi_version != ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION)
+        return ROBOTWEAX_SRT_TELEMETRY_ABI_MISMATCH;
+    if (in_callback_of(sampler))
+        return ROBOTWEAX_SRT_TELEMETRY_INVALID_STATE;
+    std::lock_guard lock(sampler->mutex);
+    if (!sampler->has_observer)
+        return ROBOTWEAX_SRT_TELEMETRY_NOT_FOUND;
+    *observer = sampler->observer;
     return ROBOTWEAX_SRT_TELEMETRY_OK;
 }
