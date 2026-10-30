@@ -1457,14 +1457,22 @@ std::string snapshot_json(robotweax_srt_telemetry_embed *embed)
  * observer is exported only after the host asks for it. */
 void test_http_identity()
 {
+    /* "off" needs a sink: recordings, which this test does not read. */
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("srt-telemetry-embed-identity-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
     auto config = base_config();
-    check(robotweax_srt_telemetry_embed_config_parse(&config, "off,name=cam-9,linger_s=30") ==
-              ROBOTWEAX_SRT_TELEMETRY_OK,
+    const auto spec = "off,name=cam-9,linger_s=30,jsonl=" + directory.string();
+    check(robotweax_srt_telemetry_embed_config_parse(&config, spec.c_str()) == ROBOTWEAX_SRT_TELEMETRY_OK,
           "identity spec");
     robotweax_srt_telemetry_embed *embed = nullptr;
     check(robotweax_srt_telemetry_embed_start(&config, &embed) == ROBOTWEAX_SRT_TELEMETRY_OK, "identity start");
     if (embed == nullptr)
+    {
+        std::filesystem::remove_all(directory);
         return;
+    }
     check(robotweax_srt_telemetry_embed_set_observer_v1(embed, "edge-fra-2", "i-1") == ROBOTWEAX_SRT_TELEMETRY_OK,
           "observer set");
     Stream first;
@@ -1523,6 +1531,7 @@ void test_http_identity()
           "observer export turned off");
     robotweax_srt_telemetry_embed_stop(embed);
     second.stop();
+    std::filesystem::remove_all(directory);
 }
 
 #if defined(ROBOTWEAX_SRT_PEER_IDENTITY_VERSION) && defined(ROBOTWEAX_SRT_PEER_HANDSHAKE_VERSION)
