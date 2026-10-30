@@ -4,7 +4,7 @@ This is the entry point for continuing **Robotweax SRT Telemetry** on any
 machine, from a checkout of this repository alone. It describes the mission,
 the working rules, how to build and test, where the work stands and what
 comes next. It was first written at `main` = `fc4b707` (merge of PR #22) and
-brought up to date at `main` = `5a2b498` (PR #68). Check GitHub for newer
+brought up to date at `main` = `1497c2b` (PR #72). Check GitHub for newer
 commits and open PRs before changing anything.
 
 Everything needed is in the repository. Read in this order:
@@ -106,6 +106,7 @@ What was added after the first handoff, by area:
 | Robotweax SRT releases | #45, #53, #54, #59 | 0.2.9, 0.3.0 (listener `IF_OFFERED` policies, peer identity and admission handshake in the snapshot, `peer`), 0.3.1 (no Telemetry change) |
 | Flight Recorder capture host | #67 | Incident peer relays opaque UDP media and takes a peer idle timeout |
 | CI | #64 | Automatic CI is a bounded Linux smoke job; the full matrix runs on dispatch (see *Build and test*) |
+| Platform history identity | #70, #71, #72 | Answers to the platform's questions on sample identity, durability and cadence, with the maintainer's decisions ([proposal](docs/proposals/platform-history-identity.md)); a failed directory `fsync` after a recording rename now reports `FAILED` and is retried; the JSON snapshot and the HTTP history carry `observer`, `connection_seq`, `connected_at_unix_ms` and `session_ref` (history identity is as of the read, not per record; [HTTP server](docs/architecture/http-server.md), [embedding](docs/architecture/embedding.md)) |
 | Experimental, uninstalled | #65, #68 | Neutral remote observation envelope with producer-owned opaque origins, and qualified remote numeric input on a shared counter kernel ([remote observation](docs/proposals/remote-observation-input.md), [remote numeric](docs/proposals/remote-numeric-input.md)). Built only in test builds or with `ROBOTWEAX_SRT_TELEMETRY_BUILD_REMOTE_INPUT_DRAFT`; not part of ABI 1 or the package |
 
 The [roadmap](docs/roadmap.md) still describes the state of early October and
@@ -124,7 +125,7 @@ Component map (each with its doc):
 | `experimental/` | Uninstalled remote-input drafts (#65, #68) | [proposals](docs/proposals/) |
 | `schema/` | JSONL line schema (vendored by SRT Doctor), snapshot metadata schemas | [bounded recorder](docs/architecture/bounded-recorder.md) |
 
-Results that hold today, at `main` = `5a2b498`: the fault-lab gate passes 14
+Results that hold today, at `main` = `5a2b498` (unchanged at `1497c2b`): the fault-lab gate passes 14
 of 14 fault classes per role on Haivision SRT 1.5.7 and Robotweax SRT 0.3.1,
 with no wrong OK, and the advice names the right knob 10/10 (sender) and 8/8
 (receiver). Under CPU load it fails now and then on advice persistence
@@ -196,6 +197,9 @@ cases, `1alpha3` pairing of both ends), not here.
 
 - The fault-lab gate fails intermittently on advice persistence under load
   (#66).
+- Once on a GitHub runner the fault-lab clean control on Haivision SRT went
+  `failing` (`recovery_headroom_low`) at 47.9 s with every fault verdict
+  right; a re-run passed (#73). Not attributed to a code change yet.
 - MAXBW advice overshoots (about 1.27–1.29 MB/s suggested for a 5.3 Mbit/s
   stream): libsrt counts sender drops while packets still go out, so the
   offered rate reads high. Needs calibration.
