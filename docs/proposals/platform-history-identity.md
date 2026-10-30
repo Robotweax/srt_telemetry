@@ -129,10 +129,14 @@ to a fresh temporary file, `fsync`ed, renamed over the previous version, and
 the directory `fsync`ed (`adapters/public_srt/src/embed.cpp`,
 `write_recording`). Two limits:
 
-- the directory `fsync` result is ignored, so `WRITTEN` does not prove the
-  rename survived a power loss if that sync failed. Treat `WRITTEN` as
-  "published locally", and say so in the RPO; a fix (report the sync failure)
-  is a small embed change;
+- **Known limitation:** the directory `fsync` result is ignored (and a
+  directory that cannot be opened is not synced at all), yet the event still
+  reports `WRITTEN`. A consumer that treats `WRITTEN` as its durability
+  boundary, as the platform's history contract does, therefore has a
+  boundary that holds for the file's content but not necessarily for the
+  rename after a power loss. Treat `WRITTEN` as "published locally", and say
+  so in the RPO; a fix (report the sync failure as `FAILED` or a separate
+  flag) is a small embed change that needs the maintainer's go;
 - on macOS `fsync` does not flush the drive cache.
 
 Data since the last `WRITTEN` is lost on a crash, or everything if no write
