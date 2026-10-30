@@ -1468,10 +1468,12 @@ void test_recording_directory_sync_failure()
     check(robotweax_srt_telemetry_embed_set_recording_callback(embed, RecordingEvents::callback, &events) ==
               ROBOTWEAX_SRT_TELEMETRY_OK,
           "dirsync callback set");
+    /* The flow complete_recording expects. */
+    const robotweax_srt_telemetry_label_v1 flow[] = {{"flow", "studio-link"}};
     Stream stream;
     check(stream.open(nullptr) && robotweax_srt_telemetry_embed_attach(embed, stream.sender,
                                                                        ROBOTWEAX_SRT_TELEMETRY_ENDPOINT_ROLE_SENDER,
-                                                                       nullptr, 0) == ROBOTWEAX_SRT_TELEMETRY_OK,
+                                                                       flow, 1) == ROBOTWEAX_SRT_TELEMETRY_OK,
           "dirsync attach");
     stream.start();
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
