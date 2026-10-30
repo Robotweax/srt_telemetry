@@ -272,11 +272,21 @@ restart between two reads can go unseen.
   the last complete version; `FINAL | EMPTY` means the source never sampled
   and no file exists.
 
-## 5. What the maintainer decides
+## 5. Maintainer decisions (2026-10-30)
 
-- Whether to add the `1alpha5` epoch fields (section 1) and when.
-- The live-write cadence proposal (60 s, default ring) as a starting point,
-  and whether to approve a run that measures it.
-- Whether to stop ignoring the directory `fsync` result.
-- Whether the HTTP reads expose observer, connection sequence and session
-  reference (section 3), and whether the observer is opt-in.
+The maintainer approved all four recommendations:
+
+1. **Epoch fields (`1alpha5`, section 1):** yes, but only after SRT Doctor and
+   srt_server read `1alpha4` (#60). Not started; until then the file name is
+   the epoch.
+2. **Live-write cadence (section 2):** 60 s with the default 600 s ring,
+   staggered across sources, as a provisional target. A run that measures it
+   waits for the maintainer's explicit test approval.
+3. **Directory `fsync`:** stop ignoring its result, so that `WRITTEN` means the
+   rename is synced too. Own draft PR.
+4. **HTTP identity (section 3):** add `observer` (opt-in), `connection_seq`,
+   `connected_at_unix_ms` and `session_ref` as additive fields, with an
+   independent review before the PR. Own draft PR.
+
+The repository's other next work (#60, #66, mobile, remote input, GStreamer,
+Phase 4) stays parked.
