@@ -72,6 +72,70 @@ applies). The listener's `STOP_MEDIA` returns within one receive timeout.
 Recording and the JSONL schema are unchanged: the exported file is still
 `1alpha1`.
 
+### Connection group mode
+
+For experiments that compare one SRT connection with a connection group over
+separate paths, the peer can open or accept a Broadcast or Backup group and run
+the same commands over the group handle. It needs a provider with connection
+groups. Without one the caller fails with "created no connection group" and
+the listener fails at "group admission" before `READY`.
+
+- `--group broadcast|backup` on both peers.
+- Caller: `--port PORT` and 2 to 8 times `--member LOCAL_IP,REMOTE_IP[,WEIGHT]`.
+  Each member binds its local address and connects to its remote address on
+  the common port; the weight (0 to 32767, higher preferred) selects the active
+  Backup member. `--remote-address` is not used.
+  `--group-min-stable-timeout-ms 60..5000` sets `SRTO_GROUPMINSTABLETIMEO` on a
+  Backup group before it connects.
+- Listener: `--group-members N` (2 to 8), the number of members to wait for.
+  One listener accepts all members, so it must be bound to an address every
+  member can reach (for example `::`). Its replies leave by the host's route to
+  each caller address; the peer does not pin them to the arrival interface.
+
+After the first member is up (the caller's connect timeout is 15 s), both
+peers wait up to a further 15 s until every member is connected (running, or
+idle for a Backup standby) and then print, before `CONNECTED`:
+
+```text
+GROUP {"type":…,"members":[{"index":…,"socket":…,"weight":…,"localAddress":…,"localPort":…,"peerAddress":…,"peerPort":…},…]}
+```
+
+The caller numbers members in `--member` order. The listener numbers them by
+the caller's address bytes and then port, both numerically ascending, so the
+two sides' indexes need not agree: match members by address and port, not by
+index. An IPv4 peer of a dual-stack listener is printed as plain IPv4. `PROFILE` gains `group` and
+`groupMembers`; without `--group` it is unchanged. Members are fixed at
+connection time. A member that breaks is reported and never replaced.
+
+`START_MEDIA`, `STOP_MEDIA` and the transfer commands use the group handle, so
+the group delivers each message once however many members carried it.
+`SAMPLE` and `SAMPLE_NOW` answer with one group line and then one
+`INCIDENT_SAMPLE` per sampled member, in index order, each carrying `member`:
+
+```text
+GROUP_SAMPLE {"role":…,"type":…,"sampleIndex":…,"observedAtUnixNano":…,"sampleMonotonicNano":…,"membersListed":…,"groupCounters":{…}|null,"members":[{"index":…,"socket":…,"state":"pending|idle|running|broken|removed","sampled":…},…]}
+```
+
+Each member has its own statistics session on its member socket. `state` is the
+provider's member state, `removed` once the group no longer lists the member,
+or `unknown` when the member list could not be read (`membersListed: false`).
+When a member's statistics can no longer be read it is reported with
+`sampled: false`, a `NOTE:` line with the native result goes to stderr, and
+it is not sampled again; the peer keeps running. A reader
+takes as many `INCIDENT_SAMPLE` lines as the group line has `sampled: true`.
+`groupCounters` are the group handle's own cumulative totals read with
+`srt_bistats` (`uniqueSentPacketTotal`, `uniqueReceivedPacketTotal`,
+`receiverDropPacketTotal`, `retransmittedPacketTotal`). They are raw provider
+values printed by this fixture, not Telemetry observations, and are not recorded.
+
+Recording does not change format. With `--jsonl-output PATH`, each member is
+written to its own `1alpha1` file `<stem>.member-<index><extension>` beside
+`PATH`, with flow ID `<flow-id>-m<index>`; `PATH` itself is not written.
+`RECORDED` is printed once per member with `member`; a member that was never
+sampled reports `recordCount: 0` and gets no file. This fixture does not use
+the adapter's group session or the `1alpha2` group context. `ARM` and the
+trigger commands are single-socket features and fail in group mode.
+
 A sample later than the deadline freezes capture without being appended. An
 exact-deadline sample is appended and freezes it. Capacity exhaustion freezes
 without overwriting pre-trigger evidence and reports `capacity`, so shortened
