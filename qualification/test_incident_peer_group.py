@@ -8,6 +8,7 @@ unchanged single-socket schema.
 """
 import argparse
 import json
+import random
 import socket
 import subprocess
 import sys
@@ -24,9 +25,22 @@ BACKUP_STABLE_MS = 1000
 
 
 def free_udp_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
+    """A free loopback UDP port below the ephemeral range.
+
+    The caller binds its media input only at START_MEDIA, after the listener and both
+    group members took ephemeral ports. A port probed with bind(0) and released can be
+    handed to one of those sockets in between, so the input port is taken from a range
+    the system does not allocate from.
+    """
+    for _ in range(200):
+        port = random.randint(20_000, 29_999)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise RuntimeError("no free UDP port below the ephemeral range")
 
 
 def payload(index: int) -> bytes:
@@ -65,10 +79,11 @@ def sample(peer: Peer, index: int, members: int) -> tuple:
 
 
 def run_group(peer_path: Path, provider: str, group_type: str) -> bool:
-    output_port = free_udp_port()
-    input_port = free_udp_port()
+    # The sink keeps its port bound from here on; only the input port is released.
     sink = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sink.bind(("127.0.0.1", output_port))
+    sink.bind(("127.0.0.1", 0))
+    output_port = sink.getsockname()[1]
+    input_port = free_udp_port()
     source = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     common = ["--group", group_type, "--receive-timeout-ms", str(RECEIVE_TIMEOUT_MS)]
     with tempfile.TemporaryDirectory() as directory:
