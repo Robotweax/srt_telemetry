@@ -451,6 +451,16 @@ if(ROBOTWEAX_SRT_TELEMETRY_BUILD_PUBLIC_SRT_ADAPTER)
                 set_tests_properties(robotweax_srt_telemetry_public_srt_incident_media_relay_test
                     PROPERTIES TIMEOUT 30
                         ENVIRONMENT "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
+                # Group mode needs a provider with connection groups; the test
+                # exits 77 when the library creates none.
+                add_test(NAME robotweax_srt_telemetry_public_srt_incident_group_test
+                    COMMAND "${Python3_EXECUTABLE}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_incident_peer_group.py"
+                        --peer $<TARGET_FILE:robotweax_srt_telemetry_public_srt_incident_peer>
+                        --provider "${ROBOTWEAX_SRT_TELEMETRY_RUNTIME_TEST_PROVIDER}")
+                set_tests_properties(robotweax_srt_telemetry_public_srt_incident_group_test
+                    PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77
+                        ENVIRONMENT "PYTHONPYCACHEPREFIX=${CMAKE_CURRENT_BINARY_DIR}/python-cache")
                 add_test(NAME robotweax_srt_telemetry_public_srt_jsonl_recording_test
                     COMMAND "${Python3_EXECUTABLE}"
                         "${CMAKE_CURRENT_SOURCE_DIR}/qualification/test_jsonl_peer_recording.py"

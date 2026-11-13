@@ -30,12 +30,15 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -72,9 +75,24 @@ struct MediaEndpoint final
     std::string text;
 };
 
+// One caller-side member of a connection group: its local and remote IP
+// address (the port is --port for every member) and its Backup weight.
+struct MemberSpec final
+{
+    std::string local_address;
+    std::string remote_address;
+    int weight = 0;
+};
+
+constexpr std::size_t maximum_group_members = 8;
+
 struct Options final
 {
     std::string role;
+    std::string group; // empty, "broadcast" or "backup"
+    std::vector<MemberSpec> members; // caller in group mode
+    std::size_t group_members = 0;   // listener in group mode: members to wait for
+    std::optional<int> group_min_stable_timeout_milliseconds;
     std::string bind_address = "127.0.0.1";
     std::string remote_address = "127.0.0.1";
     std::size_t message_bytes = maximum_message_bytes;
@@ -352,6 +370,180 @@ bool sample_at(Session &session, const std::uint64_t unix_nano, const std::uint6
         return false;
     }
     return true;
+}
+
+// A connection group as the peer runs it: one statistics session and, when
+// recording, one bounded recorder per member socket. Members are fixed at
+// connection time; a member that breaks is reported, never replaced.
+struct GroupMember final
+{
+    std::size_t index = 0;
+    SRTSOCKET socket = SRT_INVALID_SOCK;
+    int weight = 0;
+    std::string local_address;
+    int local_port = 0;
+    std::string peer_address;
+    int peer_port = 0;
+    Session session;
+    std::optional<robotweax::srt::telemetry::BoundedRecorder> recorder;
+    bool statistics_available = true;
+};
+
+struct Group final
+{
+    std::string type;
+    SRTSOCKET handle = SRT_INVALID_SOCK;
+    std::vector<std::unique_ptr<GroupMember>> members;
+};
+
+std::string address_text(const sockaddr_storage &address)
+{
+    std::array<char, INET6_ADDRSTRLEN> text{};
+    if (address.ss_family == AF_INET)
+    {
+        const auto *ipv4 = reinterpret_cast<const sockaddr_in *>(&address);
+        if (inet_ntop(AF_INET, &ipv4->sin_addr, text.data(), text.size()) != nullptr)
+            return text.data();
+    }
+    if (address.ss_family == AF_INET6)
+    {
+        const auto *ipv6 = reinterpret_cast<const sockaddr_in6 *>(&address);
+        // An IPv4 peer of a dual-stack socket is printed as plain IPv4, so both
+        // ends name the same address the same way.
+        if (IN6_IS_ADDR_V4MAPPED(&ipv6->sin6_addr))
+        {
+            if (inet_ntop(AF_INET, ipv6->sin6_addr.s6_addr + 12, text.data(), text.size()) !=
+                nullptr)
+                return text.data();
+        }
+        else if (inet_ntop(AF_INET6, &ipv6->sin6_addr, text.data(), text.size()) != nullptr)
+        {
+            return text.data();
+        }
+    }
+    return "";
+}
+
+// Orders members by address bytes (IPv4 before IPv6, IPv4-mapped as IPv4) and
+// then port, both numerically.
+std::pair<std::vector<std::uint8_t>, int> address_order_key(const sockaddr_storage &address)
+{
+    std::vector<std::uint8_t> bytes;
+    if (address.ss_family == AF_INET)
+    {
+        const auto *raw = reinterpret_cast<const std::uint8_t *>(
+            &reinterpret_cast<const sockaddr_in *>(&address)->sin_addr);
+        bytes.assign(raw, raw + 4);
+    }
+    else if (address.ss_family == AF_INET6)
+    {
+        const auto *ipv6 = reinterpret_cast<const sockaddr_in6 *>(&address);
+        if (IN6_IS_ADDR_V4MAPPED(&ipv6->sin6_addr))
+            bytes.assign(ipv6->sin6_addr.s6_addr + 12, ipv6->sin6_addr.s6_addr + 16);
+        else
+            bytes.assign(ipv6->sin6_addr.s6_addr, ipv6->sin6_addr.s6_addr + 16);
+    }
+    return {bytes, address_port(address)};
+}
+
+std::string_view member_state_name(const SRT_MEMBERSTATUS state)
+{
+    switch (state)
+    {
+    case SRT_GST_PENDING:
+        return "pending";
+    case SRT_GST_IDLE:
+        return "idle";
+    case SRT_GST_RUNNING:
+        return "running";
+    case SRT_GST_BROKEN:
+        return "broken";
+    }
+    return "unknown";
+}
+
+bool group_snapshot(const SRTSOCKET group, std::vector<SRT_SOCKGROUPDATA> &members)
+{
+    members.assign(maximum_group_members, SRT_SOCKGROUPDATA{});
+    std::size_t count = members.size();
+    const auto result = srt_group_data(group, members.data(), &count);
+    if (result == SRT_ERROR)
+    {
+        members.clear();
+        return false;
+    }
+    members.resize(static_cast<std::size_t>(result));
+    return true;
+}
+
+// srt_connect_group and a group accept return after the first member. Wait
+// until `expected` members are connected (running, or idle for a Backup
+// standby), bounded by the connect timeout.
+bool wait_for_group_members(const SRTSOCKET group, const std::size_t expected,
+                            std::vector<SRT_SOCKGROUPDATA> &members)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        if (group_snapshot(group, members))
+        {
+            const auto connected = std::count_if(
+                members.begin(), members.end(), [](const SRT_SOCKGROUPDATA &member)
+                {
+                    return member.sockstate == SRTS_CONNECTED &&
+                           (member.memberstate == SRT_GST_RUNNING ||
+                            member.memberstate == SRT_GST_IDLE);
+                });
+            if (members.size() == expected && static_cast<std::size_t>(connected) == expected)
+                return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    std::cerr << "FAIL: group members did not all connect\n";
+    return false;
+}
+
+bool add_group_member(Group &group, const SRT_SOCKGROUPDATA &data)
+{
+    auto member = std::make_unique<GroupMember>();
+    member->index = group.members.size();
+    member->socket = data.id;
+    member->weight = data.weight;
+    sockaddr_storage address{};
+    int address_size = sizeof(address);
+    if (!srt_ok(srt_getsockname(data.id, reinterpret_cast<sockaddr *>(&address), &address_size),
+                "group member local address"))
+        return false;
+    member->local_address = address_text(address);
+    member->local_port = address_port(address);
+    address = {};
+    address_size = sizeof(address);
+    if (!srt_ok(srt_getpeername(data.id, reinterpret_cast<sockaddr *>(&address), &address_size),
+                "group member peer address"))
+        return false;
+    member->peer_address = address_text(address);
+    member->peer_port = address_port(address);
+    if (!create_session(data.id, member->session))
+    {
+        std::cerr << "FAIL: group member telemetry session\n";
+        return false;
+    }
+    group.members.push_back(std::move(member));
+    return true;
+}
+
+void emit_group(const Group &group)
+{
+    std::cout << "GROUP {\"type\":\"" << group.type << "\",\"members\":[";
+    for (const auto &member : group.members)
+    {
+        std::cout << (member->index == 0 ? "" : ",") << "{\"index\":" << member->index
+                  << ",\"socket\":" << member->socket << ",\"weight\":" << member->weight
+                  << ",\"localAddress\":\"" << member->local_address
+                  << "\",\"localPort\":" << member->local_port << ",\"peerAddress\":\""
+                  << member->peer_address << "\",\"peerPort\":" << member->peer_port << "}";
+    }
+    std::cout << "]}\n" << std::flush;
 }
 
 void write_u64(std::array<char, maximum_message_bytes> &payload, const std::size_t offset,
@@ -708,13 +900,17 @@ void emit_media_stopped(const MediaCounters &counters)
 }
 
 void emit_sample(const std::string_view role, const std::uint64_t sample_index,
-                 const robotweax_srt_telemetry_public_srt_result_v1 &result)
+                 const robotweax_srt_telemetry_public_srt_result_v1 &result,
+                 const std::optional<std::size_t> member = std::nullopt)
 {
+    std::string member_field;
+    if (member.has_value())
+        member_field = ",\"member\":" + std::to_string(*member);
     const auto &raw = result.raw;
     const auto &delta = result.delta;
     std::cout << std::setprecision(17) << "INCIDENT_SAMPLE {\"provider\":\""
-              << runtime_provider_name << "\",\"role\":\"" << role
-              << "\",\"sampleIndex\":" << sample_index
+              << runtime_provider_name << "\",\"role\":\"" << role << "\"" << member_field
+              << ",\"sampleIndex\":" << sample_index
               << ",\"availableFields\":" << raw.available_fields
               << ",\"observedAtUnixNano\":" << raw.observed_at_unix_nano
               << ",\"sampleMonotonicNano\":" << raw.sample_monotonic_nano
@@ -780,8 +976,22 @@ bool no_extra_input(std::istringstream &command)
     return !(command >> extra);
 }
 
+// In group mode each member's recording is its own file beside the configured
+// output, named <stem>.member-<index><extension>, with the member in its flow
+// and stream identifiers. The schema is the single-socket one.
+RecordingConfig member_recording_config(const RecordingConfig &config, const std::size_t member)
+{
+    RecordingConfig result = config;
+    const auto suffix = ".member-" + std::to_string(member);
+    result.output = config.output.parent_path() /
+                    (config.output.stem().string() + suffix + config.output.extension().string());
+    result.flow_id = config.flow_id + "-m" + std::to_string(member);
+    return result;
+}
+
 bool export_recording(const robotweax::srt::telemetry::BoundedRecorder &recorder,
-                      const RecordingConfig &config, const std::string_view role)
+                      const RecordingConfig &config, const std::string_view role,
+                      const std::optional<std::size_t> member = std::nullopt)
 {
     if (recorder.size() == 0)
     {
@@ -839,7 +1049,10 @@ bool export_recording(const robotweax::srt::telemetry::BoundedRecorder &recorder
         return false;
     }
     remove_partial();
-    std::cout << "RECORDED {\"role\":\"" << role << "\",\"recordCount\":" << recorder.size()
+    std::cout << "RECORDED {\"role\":\"" << role << "\"";
+    if (member.has_value())
+        std::cout << ",\"member\":" << *member;
+    std::cout << ",\"recordCount\":" << recorder.size()
               << ",\"capacity\":" << recorder.capacity()
               << ",\"overwrittenCount\":" << recorder.overwritten_count() << "}\n"
               << std::flush;
@@ -873,11 +1086,88 @@ void emit_window(const TriggerWindow &window)
               << ",\"finishReason\":\"" << window.reason() << "\"}\n" << std::flush;
 }
 
-int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
+// One group sample: the group's own counters, each member's state, and then
+// one INCIDENT_SAMPLE per member whose statistics could be read. A member whose
+// statistics read fails (its socket is gone) is not sampled again.
+bool sample_group(Group &group, const std::string_view role, const std::uint64_t sample_index,
+                  const std::uint64_t unix_nano, const std::uint64_t monotonic_nano)
+{
+    std::vector<SRT_SOCKGROUPDATA> snapshot;
+    const bool listed = group_snapshot(group.handle, snapshot);
+    std::vector<std::optional<robotweax_srt_telemetry_public_srt_result_v1>> results(
+        group.members.size());
+    for (auto &member : group.members)
+    {
+        if (!member->statistics_available)
+            continue;
+        robotweax_srt_telemetry_public_srt_result_v1 result{};
+        result.struct_size = sizeof(result);
+        result.abi_version = ROBOTWEAX_SRT_TELEMETRY_ABI_VERSION;
+        if (robotweax_srt_telemetry_public_srt_session_sample(
+                member->session.value, unix_nano, monotonic_nano, &result) !=
+            ROBOTWEAX_SRT_TELEMETRY_OK)
+        {
+            member->statistics_available = false;
+            std::cerr << "NOTE: group member " << member->index
+                      << " statistics unavailable (native " << result.native_result
+                      << "); it is not sampled again\n";
+            continue;
+        }
+        if (member->recorder.has_value())
+            member->recorder->push(result.raw, result.delta);
+        results[member->index] = result;
+    }
+    SRT_TRACEBSTATS counters{};
+    const bool counted = srt_bistats(group.handle, &counters, 0, 1) != SRT_ERROR;
+    std::cout << "GROUP_SAMPLE {\"role\":\"" << role << "\",\"type\":\"" << group.type
+              << "\",\"sampleIndex\":" << sample_index << ",\"observedAtUnixNano\":" << unix_nano
+              << ",\"sampleMonotonicNano\":" << monotonic_nano << ",\"membersListed\":"
+              << (listed ? "true" : "false") << ",\"groupCounters\":";
+    if (counted)
+    {
+        std::cout << "{\"uniqueSentPacketTotal\":" << counters.pktSentUniqueTotal
+                  << ",\"uniqueReceivedPacketTotal\":" << counters.pktRecvUniqueTotal
+                  << ",\"receiverDropPacketTotal\":" << counters.pktRcvDropTotal
+                  << ",\"retransmittedPacketTotal\":" << counters.pktRetransTotal << "}";
+    }
+    else
+    {
+        std::cout << "null";
+    }
+    std::cout << ",\"members\":[";
+    for (const auto &member : group.members)
+    {
+        // Without a member list the state is unknown, not removed.
+        std::string_view state = listed ? "removed" : "unknown";
+        for (const auto &data : snapshot)
+        {
+            if (data.id == member->socket)
+                state = member_state_name(data.memberstate);
+        }
+        std::cout << (member->index == 0 ? "" : ",") << "{\"index\":" << member->index
+                  << ",\"socket\":" << member->socket << ",\"state\":\"" << state
+                  << "\",\"sampled\":" << (results[member->index].has_value() ? "true" : "false")
+                  << "}";
+    }
+    std::cout << "]}\n" << std::flush;
+    for (const auto &member : group.members)
+    {
+        if (results[member->index].has_value())
+            emit_sample(role, sample_index, *results[member->index], member->index);
+    }
+    return true;
+}
+
+// `socket` carries the data: a connected socket, or the group handle. In group
+// mode `session` is null and `group` holds one session per member.
+int run_commands(const SRTSOCKET socket, Session *session, Group *group, const bool sender,
                  const std::string_view role, const Options &options)
 {
     TransferWorker transfer_worker;
     MediaRelay media_relay;
+    // A group handle answers for its own I/O timeouts; link options are read
+    // from the first member.
+    const SRTSOCKET link = group != nullptr ? group->members.front()->socket : socket;
     const auto message_bytes = options.message_bytes;
     const auto &recording = options.recording;
     bool message_api = false;
@@ -888,15 +1178,15 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
     int timeout_size = sizeof(receive_timeout_milliseconds);
     int peer_idle_timeout_milliseconds = 0;
     int idle_size = sizeof(peer_idle_timeout_milliseconds);
-    if (!srt_ok(srt_getsockflag(socket, SRTO_MESSAGEAPI, &message_api, &message_size),
+    if (!srt_ok(srt_getsockflag(link, SRTO_MESSAGEAPI, &message_api, &message_size),
                 "profile message API") ||
         !message_api ||
-        !srt_ok(srt_getsockflag(socket, SRTO_TLPKTDROP, &too_late_packet_drop, &drop_size),
+        !srt_ok(srt_getsockflag(link, SRTO_TLPKTDROP, &too_late_packet_drop, &drop_size),
                 "profile too-late packet drop") ||
         !srt_ok(
             srt_getsockflag(socket, SRTO_RCVTIMEO, &receive_timeout_milliseconds, &timeout_size),
             "profile receive timeout") ||
-        !srt_ok(srt_getsockflag(socket, SRTO_PEERIDLETIMEO, &peer_idle_timeout_milliseconds,
+        !srt_ok(srt_getsockflag(link, SRTO_PEERIDLETIMEO, &peer_idle_timeout_milliseconds,
                                 &idle_size),
                 "profile peer idle timeout") ||
         (options.too_late_packet_drop.has_value() &&
@@ -922,12 +1212,20 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
               << (!options.media.has_value() ? "none"
                   : sender                   ? "udp-to-srt"
                                              : "srt-to-udp")
-              << "\"}\n"
-              << std::flush;
+              << "\"";
+    if (group != nullptr)
+        std::cout << ",\"group\":\"" << group->type << "\",\"groupMembers\":"
+                  << group->members.size();
+    std::cout << "}\n" << std::flush;
     std::optional<robotweax::srt::telemetry::BoundedRecorder> recorder;
-    if (recording.has_value())
+    if (recording.has_value() && group == nullptr)
     {
         recorder.emplace(recording->capacity);
+    }
+    if (recording.has_value() && group != nullptr)
+    {
+        for (auto &member : group->members)
+            member->recorder.emplace(recording->capacity);
     }
     std::optional<TriggerWindow> window;
     std::string line;
@@ -943,6 +1241,28 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
             {
                 window->finish(window->trigger_count() == 0 ? "untriggered-end" : "connection-ended");
                 emit_window(*window);
+            }
+            if (recording.has_value() && group != nullptr)
+            {
+                for (const auto &member : group->members)
+                {
+                    // A member that broke before its first sample has nothing
+                    // to write; say so and keep the other members' files.
+                    if (member->recorder->size() == 0)
+                    {
+                        std::cout << "RECORDED {\"role\":\"" << role << "\",\"member\":"
+                                  << member->index << ",\"recordCount\":0,\"capacity\":"
+                                  << member->recorder->capacity()
+                                  << ",\"overwrittenCount\":0}\n"
+                                  << std::flush;
+                        continue;
+                    }
+                    if (!export_recording(*member->recorder,
+                                          member_recording_config(*recording, member->index), role,
+                                          member->index))
+                        return EXIT_FAILURE;
+                }
+                return EXIT_SUCCESS;
             }
             if (recording.has_value() &&
                 !export_recording(window.has_value() ? window->recording() : *recorder,
@@ -981,9 +1301,10 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
         {
             std::size_t pre_records = 0;
             std::uint64_t post_ms = 0;
-            if (!recording.has_value() || window.has_value() ||
+            if (!recording.has_value() || window.has_value() || group != nullptr ||
                 !(command >> pre_records >> post_ms) || !no_extra_input(command))
-                throw std::invalid_argument("invalid ARM command (requires recording; once per epoch)");
+                throw std::invalid_argument(
+                    "invalid ARM command (requires recording; once per epoch; not in group mode)");
             recorder.reset();
             window.emplace(pre_records, recording->capacity, post_ms);
             emit_window(*window);
@@ -1018,8 +1339,14 @@ int run_commands(const SRTSOCKET socket, Session &session, const bool sender,
                 unix_nano = unix_now();
                 monotonic_nano = monotonic_now();
             }
+            if (group != nullptr)
+            {
+                if (!sample_group(*group, role, sample_index, unix_nano, monotonic_nano))
+                    return EXIT_FAILURE;
+                continue;
+            }
             robotweax_srt_telemetry_public_srt_result_v1 result{};
-            if (!sample_at(session, unix_nano, monotonic_nano, result))
+            if (!sample_at(*session, unix_nano, monotonic_nano, result))
             {
                 return EXIT_FAILURE;
             }
@@ -1114,9 +1441,19 @@ int run_listener(const Options &options)
         std::cerr << "FAIL: listener startup\n";
         return EXIT_FAILURE;
     }
+    const bool grouped = !options.group.empty();
+    if (grouped)
+    {
+        const int accept_groups = 1;
+        if (!srt_ok(srt_setsockflag(listener.get(), SRTO_GROUPCONNECT, &accept_groups,
+                                    sizeof(accept_groups)),
+                    "group admission"))
+            return EXIT_FAILURE;
+    }
     int port = 0;
     if (!bind_ephemeral_udp(listener.get(), options.bind_address, port) ||
-        !srt_ok(srt_listen(listener.get(), 1), "incident listen"))
+        !srt_ok(srt_listen(listener.get(), grouped ? static_cast<int>(maximum_group_members) : 1),
+                "incident listen"))
     {
         return EXIT_FAILURE;
     }
@@ -1128,6 +1465,34 @@ int run_listener(const Options &options)
         std::cerr << "FAIL: incident accept\n";
         return EXIT_FAILURE;
     }
+    if (grouped)
+    {
+        // The accepted handle is the mirror group. Members are ordered by the
+        // caller's address and port, which the coordinator knows per path.
+        std::vector<SRT_SOCKGROUPDATA> members;
+        if (!wait_for_group_members(accepted.get(), options.group_members, members))
+            return EXIT_FAILURE;
+        std::sort(members.begin(), members.end(),
+                  [](const SRT_SOCKGROUPDATA &left, const SRT_SOCKGROUPDATA &right)
+                  {
+                      const auto left_key = address_order_key(left.peeraddr);
+                      const auto right_key = address_order_key(right.peeraddr);
+                      if (left_key.first.size() != right_key.first.size())
+                          return left_key.first.size() < right_key.first.size();
+                      return left_key < right_key;
+                  });
+        Group group;
+        group.type = options.group;
+        group.handle = accepted.get();
+        for (const auto &member : members)
+        {
+            if (!add_group_member(group, member))
+                return EXIT_FAILURE;
+        }
+        emit_group(group);
+        std::cout << "CONNECTED\n" << std::flush;
+        return run_commands(accepted.get(), nullptr, &group, false, "receiver", options);
+    }
     Session session;
     if (!create_session(accepted.get(), session))
     {
@@ -1135,7 +1500,7 @@ int run_listener(const Options &options)
         return EXIT_FAILURE;
     }
     std::cout << "CONNECTED\n" << std::flush;
-    return run_commands(accepted.get(), session, false, "receiver", options);
+    return run_commands(accepted.get(), &session, nullptr, false, "receiver", options);
 }
 
 int parse_port(const char *text)
@@ -1177,7 +1542,84 @@ int run_caller(const Options &options)
         return EXIT_FAILURE;
     }
     std::cout << "CONNECTED\n" << std::flush;
-    return run_commands(caller.get(), session, true, "sender", options);
+    return run_commands(caller.get(), &session, nullptr, true, "sender", options);
+}
+
+int run_group_caller(const Options &options)
+{
+    Runtime runtime;
+    const bool backup = options.group == "backup";
+    Socket handle(srt_create_group(backup ? SRT_GTYPE_BACKUP : SRT_GTYPE_BROADCAST));
+    if (!runtime.active() || handle.get() == SRT_INVALID_SOCK)
+    {
+        std::cerr << "FAIL: this SRT library created no connection group\n";
+        return EXIT_FAILURE;
+    }
+    // Group options are the defaults of every member.
+    if (!configure_caller(handle.get(), options))
+    {
+        std::cerr << "FAIL: group caller startup\n";
+        return EXIT_FAILURE;
+    }
+    if (options.group_min_stable_timeout_milliseconds.has_value())
+    {
+        const int stable = *options.group_min_stable_timeout_milliseconds;
+        if (!srt_ok(srt_setsockflag(handle.get(), SRTO_GROUPMINSTABLETIMEO, &stable,
+                                    sizeof(stable)),
+                    "group minimum stability timeout"))
+            return EXIT_FAILURE;
+    }
+    std::vector<SRT_SOCKGROUPCONFIG> endpoints;
+    for (const auto &spec : options.members)
+    {
+        sockaddr_storage local{};
+        sockaddr_storage remote{};
+        const auto local_size = parse_ip_address(spec.local_address, 0, local);
+        const auto remote_size = parse_ip_address(
+            spec.remote_address, static_cast<std::uint16_t>(options.port), remote);
+        if (local_size == 0 || remote_size == 0 || local_size != remote_size)
+        {
+            std::cerr << "FAIL: invalid group member addresses\n";
+            return EXIT_FAILURE;
+        }
+        auto endpoint = srt_prepare_endpoint(reinterpret_cast<const sockaddr *>(&local),
+                                             reinterpret_cast<const sockaddr *>(&remote),
+                                             remote_size);
+        if (endpoint.errorcode != SRT_SUCCESS)
+        {
+            std::cerr << "FAIL: group endpoint preparation\n";
+            return EXIT_FAILURE;
+        }
+        endpoint.weight = static_cast<std::uint16_t>(spec.weight);
+        endpoints.push_back(endpoint);
+    }
+    if (!srt_ok(srt_connect_group(handle.get(), endpoints.data(),
+                                  static_cast<int>(endpoints.size())),
+                "incident group connect"))
+        return EXIT_FAILURE;
+    std::vector<SRT_SOCKGROUPDATA> members;
+    if (!wait_for_group_members(handle.get(), endpoints.size(), members))
+        return EXIT_FAILURE;
+    Group group;
+    group.type = options.group;
+    group.handle = handle.get();
+    // Members keep the order of the --member options.
+    for (const auto &endpoint : endpoints)
+    {
+        const auto found = std::find_if(members.begin(), members.end(),
+                                        [&](const SRT_SOCKGROUPDATA &member)
+                                        {
+                                            return member.id == endpoint.id;
+                                        });
+        if (found == members.end() || !add_group_member(group, *found))
+        {
+            std::cerr << "FAIL: group member is not connected\n";
+            return EXIT_FAILURE;
+        }
+    }
+    emit_group(group);
+    std::cout << "CONNECTED\n" << std::flush;
+    return run_commands(handle.get(), nullptr, &group, true, "sender", options);
 }
 
 bool parse_size(const char *text, std::size_t &result)
@@ -1270,6 +1712,44 @@ bool parse_options(const int argc, char **argv, Options &options)
             media_option = std::string(option);
             options.media = endpoint;
         }
+        else if (option == "--group")
+        {
+            if (std::string_view(value) != "broadcast" && std::string_view(value) != "backup")
+                return false;
+            options.group = value;
+        }
+        else if (option == "--member")
+        {
+            // LOCAL_IP,REMOTE_IP[,WEIGHT]; IP addresses contain no comma.
+            const std::string text(value);
+            const auto first = text.find(',');
+            if (first == std::string::npos)
+                return false;
+            const auto second = text.find(',', first + 1);
+            MemberSpec spec;
+            spec.local_address = text.substr(0, first);
+            spec.remote_address = text.substr(
+                first + 1, second == std::string::npos ? std::string::npos : second - first - 1);
+            sockaddr_storage probe{};
+            if (parse_ip_address(spec.local_address, 0, probe) == 0 ||
+                parse_ip_address(spec.remote_address, 0, probe) == 0 ||
+                (second != std::string::npos &&
+                 !parse_integer(text.substr(second + 1).c_str(), 0, 32'767, spec.weight)))
+                return false;
+            options.members.push_back(spec);
+        }
+        else if (option == "--group-members")
+        {
+            if (!parse_size(value, options.group_members))
+                return false;
+        }
+        else if (option == "--group-min-stable-timeout-ms")
+        {
+            int stable = 0;
+            if (!parse_integer(value, 60, 5'000, stable))
+                return false;
+            options.group_min_stable_timeout_milliseconds = stable;
+        }
         else if (option == "--too-late-packet-drop")
         {
             if (std::string_view(value) != "enabled" && std::string_view(value) != "disabled")
@@ -1324,6 +1804,20 @@ bool parse_options(const int argc, char **argv, Options &options)
     {
         return false;
     }
+    // Group mode: the caller names its members, the listener how many to wait for.
+    const bool grouped = !options.group.empty();
+    const bool group_caller = grouped && options.role == "caller";
+    const bool group_listener = grouped && options.role == "listener";
+    if ((group_caller ? options.members.size() < 2 || options.members.size() > maximum_group_members
+                      : !options.members.empty()) ||
+        (group_listener ? options.group_members < 2 || options.group_members > maximum_group_members
+                        : options.group_members != 0) ||
+        (group_caller && options.remote_address != "127.0.0.1") ||
+        (options.group_min_stable_timeout_milliseconds.has_value() &&
+         !(group_caller && options.group == "backup")))
+    {
+        return false;
+    }
     if (saw_recording_option &&
         (recording->output.empty() || recording->flow_id.empty() ||
          recording->provider_version.empty() || recording->provider_revision.empty() ||
@@ -1352,6 +1846,9 @@ int main(const int argc, char **argv)
         {
             std::cerr << "usage: incident-peer --role listener|caller "
                          "[--bind-address IP | --remote-address IP --port PORT] "
+                         "[--group broadcast|backup with --group-members 2..8 (listener) or "
+                         "--port PORT and 2..8 times --member LOCAL_IP,REMOTE_IP[,WEIGHT] "
+                         "(caller); --group-min-stable-timeout-ms 60..5000 (backup caller)] "
                          "[--message-bytes 1..1316] "
                          "[--too-late-packet-drop enabled|disabled] "
                          "[--message-ttl-ms -1..60000] [--receive-timeout-ms 1..60000] "
@@ -1364,7 +1861,9 @@ int main(const int argc, char **argv)
                          "[--recorder-capacity RECORDS]]\n";
             return EXIT_FAILURE;
         }
-        return options.role == "listener" ? run_listener(options) : run_caller(options);
+        if (options.role == "listener")
+            return run_listener(options);
+        return options.group.empty() ? run_caller(options) : run_group_caller(options);
     }
     catch (const std::exception &error)
     {
